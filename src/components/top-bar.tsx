@@ -2,21 +2,22 @@ import { useRouterState } from "@tanstack/react-router";
 import {
   BarChart3,
   Bell,
-  Building2,
   FilePlus2,
   FolderOpen,
   LayoutDashboard,
+  Moon,
   Plus,
   Search,
   Settings,
+  Sun,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { store, useSettings } from "@/lib/files-store";
 
 const titles: Record<string, string> = {
   "/": "Dashboard",
   "/add": "Add File",
   "/search": "Search Files",
-  "/divisions": "Divisions",
   "/reports": "Reports",
   "/settings": "Settings",
 };
@@ -25,14 +26,15 @@ const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/add", label: "Add File", icon: FilePlus2 },
   { to: "/search", label: "Search Files", icon: Search },
-  { to: "/divisions", label: "Divisions", icon: Building2 },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 export function TopBar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const settings = useSettings();
   const title = titles[pathname] ?? "Dashboard";
+  const isDark = settings.theme === "dark";
 
   return (
     <header className="border-b border-border bg-card sticky top-0 z-10">
@@ -84,6 +86,15 @@ export function TopBar() {
           <button className="relative size-9 rounded-md border border-border bg-card hover:bg-accent grid place-items-center">
             <Bell className="size-4" />
             <span className="absolute top-2 right-2 size-1.5 rounded-full bg-primary" />
+          </button>
+          <button
+            type="button"
+            onClick={() => store.updateSettings({ theme: isDark ? "light" : "dark" })}
+            title={isDark ? "Switch to white theme" : "Switch to dark theme"}
+            aria-label={isDark ? "Switch to white theme" : "Switch to dark theme"}
+            className="size-9 rounded-md border border-border bg-card hover:bg-accent grid place-items-center"
+          >
+            {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </button>
           <Link
             to="/add"

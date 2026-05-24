@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   FilePlus2,
   Search,
-  Building2,
   BarChart3,
   Settings,
   FolderOpen,
@@ -18,7 +17,6 @@ const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/add", label: "Add File", icon: FilePlus2 },
   { to: "/search", label: "Search Files", icon: Search },
-  { to: "/divisions", label: "Divisions", icon: Building2 },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;

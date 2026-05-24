@@ -10,6 +10,7 @@ import {
 
 import appCss from "../styles.css?url";
 import { TopBar } from "@/components/top-bar";
+import { useSettings } from "@/lib/files-store";
 
 function NotFoundComponent() {
   return (
@@ -111,10 +112,13 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const settings = useSettings();
+  const themeClass = settings.theme === "dark" ? "dark" : "";
+  const tintClass = `theme-tint-${settings.themeTint}`;
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen w-full bg-background text-foreground">
+      <div className={`${themeClass} ${tintClass} min-h-screen w-full bg-background text-foreground`}>
         <TopBar />
         <main className="p-6 lg:p-8">
           <Outlet />

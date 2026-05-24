@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { store, type FileRecord, useDivisions, useFiles } from "@/lib/files-store";
+import { store, type FileRecord, useDivisions, useFiles, useSettings } from "@/lib/files-store";
 import { Filter, Pencil, Search, SlidersHorizontal, X } from "lucide-react";
+import { requestDeletionPassword } from "@/lib/delete-password";
 
 export const Route = createFileRoute("/search")({
   component: SearchPage,
@@ -15,6 +16,26 @@ type FieldDef = {
   type?: "date" | "textarea";
   options?: string[];
 };
+
+const tcecDisabledKeys: FileKey[] = [
+  "highValue",
+  "highValueMeetingDate",
+  "highValueMinutesDate",
+  "preTcecDate",
+  "preTcecMinutesDate",
+  "preTcecCommitteeNo",
+  "ad",
+  "adVettingDate",
+  "postTcecDate",
+  "postTcecMinutesDate",
+  "postTcecCommitteeNumber",
+  "refloatPostTcecDate",
+  "refloatPostTcecCommitteeNo",
+  "cncDate",
+  "cncApprovalDate",
+];
+
+const ifaDisabledKeys: FileKey[] = ["ifa", "ifaSentDate", "ifaFinalDate"];
 
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
@@ -66,6 +87,7 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "bidDate", label: "Bid date", type: "date" },
       { key: "bidOpeningDate", label: "Bid opening Date", type: "date" },
       { key: "bidOpened", label: "Bid opened (YES/NO)", options: yesNoCaps },
+      { key: "refloat", label: "Refloat (Yes/No)", options: yesNo },
       { key: "postTcecDate", label: "Post-TCEC date", type: "date" },
       { key: "postTcecMinutesDate", label: "Post TCEC minutes date", type: "date" },
       { key: "postTcecCommitteeNumber", label: "Post TCEC committee number" },
@@ -107,8 +129,10 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "remark3", label: "Remark-3", type: "textarea" },
       { key: "remark4", label: "Remark-4", type: "textarea" },
       { key: "remark5", label: "Remark-5", type: "textarea" },
+      { key: "remark6", label: "Remark-6", type: "textarea" },
       { key: "remark7", label: "Remark-7", type: "textarea" },
       { key: "remark8", label: "Remark-8", type: "textarea" },
+      { key: "remark9", label: "Remark-9", type: "textarea" },
     ],
   },
 ];
@@ -146,6 +170,7 @@ const statusDateFields: { key: FileKey; label: string }[] = [
 function SearchPage() {
   const files = useFiles();
   const divisions = useDivisions();
+  const navigate = useNavigate();
   const divisionOptions = divisions.map((division) => division.name);
   const years = useMemo(
     () => Array.from(new Set(files.map((file) => file.year).filter(Boolean))).sort() as string[],
@@ -178,7 +203,9 @@ function SearchPage() {
   const [dpExtension, setDpExtension] = useState(false);
   const [freeText, setFreeText] = useState("");
   const [freeDate, setFreeDate] = useState("");
-  const [editing, setEditing] = useState<FileRecord | null>(null);
+  const openFile = (file: FileRecord) => {
+    navigate({ to: "/add", search: { fileId: file.id } });
+  };
 
   const hasFilters =
     yearText ||
@@ -224,7 +251,7 @@ function SearchPage() {
       if (highValue && !isYes(file.highValue)) return false;
       if (ad && !isYes(file.ad)) return false;
       if (rqa && !isYes(file.rqa)) return false;
-      if (refloat && !hasAny(file, ["refloatBiddingDate", "refloatBidOpeningDate", "refloatPostTcecDate", "refloatPostTcecCommitteeNo"])) return false;
+      if (refloat && !isYes(file.refloat) && !hasAny(file, ["refloatBiddingDate", "refloatBidOpeningDate", "refloatPostTcecDate", "refloatPostTcecCommitteeNo"])) return false;
       if (cnc && !hasAny(file, ["cncDate", "cncApprovalDate"])) return false;
       if (tcec && !isTcecFile(file)) return false;
       if (tenderLive && !isYes(file.tenderLive)) return false;
@@ -414,7 +441,7 @@ function SearchPage() {
                 Total value: <span className="font-medium text-foreground">{formatCurrency(valueTotals.total)}</span>
               </span>
             </div>
-            <span>Click any row to open and edit the file</span>
+            <span>Click any row to open the file in Add File</span>
           </div>
 
           <div className="bg-card border border-border rounded-xl shadow-[var(--shadow-card)] overflow-hidden">
@@ -447,7 +474,7 @@ function SearchPage() {
                     return (
                       <tr
                         key={file.id}
-                        onClick={() => setEditing(file)}
+                        onClick={() => openFile(file)}
                         className="border-t border-border hover:bg-secondary/40 cursor-pointer"
                       >
                         <td className="px-4 py-3 font-medium">{file.imms || missing}</td>
@@ -465,7 +492,7 @@ function SearchPage() {
                           <button
                             onClick={(event) => {
                               event.stopPropagation();
-                              setEditing(file);
+                              openFile(file);
                             }}
                             className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/15"
                           >
@@ -482,7 +509,6 @@ function SearchPage() {
         </section>
       </div>
 
-      {editing && <EditModal file={editing} onClose={() => setEditing(null)} divisions={divisionOptions} />}
     </div>
   );
 }
@@ -578,19 +604,31 @@ function EditModal({
   onClose: () => void;
   divisions: string[];
 }) {
+  const settings = useSettings();
   const [form, setForm] = useState<Record<FileKey, string>>(() => {
     const entries = editableFields.map((field) => [field.key, String(file[field.key] ?? "")]);
-    return Object.fromEntries(entries) as Record<FileKey, string>;
+    return applyConditionalRules({
+      ...(Object.fromEntries(entries) as Record<FileKey, string>),
+      year: settings.financialYear,
+    });
   });
 
-  const update = (key: FileKey, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const formWithLockedYear = { ...form, year: settings.financialYear };
+  const tcecIsNo = isNo(formWithLockedYear.tcec);
+  const ifaDisabled = shouldDisableIfa(formWithLockedYear);
+  const update = (key: FileKey, value: string) => {
+    if (key === "year") return;
+    setForm((current) => applyConditionalRules({ ...current, [key]: value }));
+  };
 
   const save = () => {
-    store.updateFile(file.id, toFilePatch(form));
+    store.updateFile(file.id, toFilePatch(applyConditionalRules(formWithLockedYear)));
     onClose();
   };
 
   const del = () => {
+    const label = file.uniqueCode || file.imms || file.demandDescription || "this file";
+    if (!requestDeletionPassword(`delete ${label}`)) return;
     store.deleteFile(file.id);
     onClose();
   };
@@ -609,7 +647,12 @@ function EditModal({
                   <EditField
                     key={field.key}
                     field={renderedField}
-                    value={form[field.key]}
+                    value={formWithLockedYear[field.key]}
+                    disabled={
+                      field.key === "year" ||
+                      (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
+                      (ifaDisabled && ifaDisabledKeys.includes(field.key))
+                    }
                     onChange={(value) => update(field.key, value)}
                   />
                 );
@@ -651,17 +694,50 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
 function EditField({
   field,
   value,
+  disabled = false,
   onChange,
 }: {
   field: FieldDef;
   value: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  if (field.options && isYesNoOptions(field.options)) {
+    return (
+      <div className="block">
+        <div className="text-xs font-medium mb-1.5">{field.label}</div>
+        <div className={`grid grid-cols-2 gap-2 ${disabledCls(disabled)}`}>
+          {field.options.map((option) => (
+            <label
+              key={option}
+              className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <input
+                type="radio"
+                name={field.key}
+                checked={value === option}
+                disabled={disabled}
+                onChange={() => onChange(option)}
+                className="size-4 border-input"
+              />
+              {option}
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (field.options) {
     return (
       <label className="block">
         <div className="text-xs font-medium mb-1.5">{field.label}</div>
-        <select value={value} onChange={(event) => onChange(event.target.value)} className={editInputCls}>
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          className={editInputCls + disabledCls(disabled)}
+        >
           <option value="">—</option>
           {field.options.map((option) => (
             <option key={option} value={option}>
@@ -680,7 +756,11 @@ function EditField({
         <textarea
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="w-full min-h-20 px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 resize-y"
+          disabled={disabled}
+          className={
+            "w-full min-h-20 px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 resize-y" +
+            disabledCls(disabled)
+          }
         />
       </label>
     );
@@ -693,7 +773,8 @@ function EditField({
         type={field.type ?? "text"}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={editInputCls}
+        disabled={disabled}
+        className={editInputCls + disabledCls(disabled)}
       />
     </label>
   );
@@ -706,6 +787,59 @@ function toFilePatch(form: Record<FileKey, string>) {
   return Object.fromEntries(
     editableFields.map((field) => [field.key, form[field.key] || undefined]),
   ) as Partial<FileRecord>;
+}
+
+function applyConditionalRules(form: Record<FileKey, string>) {
+  let next = form;
+  if (isNo(next.tcec)) {
+    next = {
+      ...next,
+      highValue: "No",
+      highValueMeetingDate: "",
+      highValueMinutesDate: "",
+      preTcecDate: "",
+      preTcecMinutesDate: "",
+      preTcecCommitteeNo: "",
+      ad: "No",
+      adVettingDate: "",
+      postTcecDate: "",
+      postTcecMinutesDate: "",
+      postTcecCommitteeNumber: "",
+      refloatPostTcecDate: "",
+      refloatPostTcecCommitteeNo: "",
+      cncDate: "",
+      cncApprovalDate: "",
+    };
+  }
+  if (shouldDisableIfa(next)) {
+    next = {
+      ...next,
+      ifa: "",
+      ifaSentDate: "",
+      ifaFinalDate: "",
+    };
+  }
+  return next;
+}
+
+function isNo(value: string | undefined) {
+  return (value ?? "").trim().toLowerCase() === "no";
+}
+
+function shouldDisableIfa(form: Record<FileKey, string>) {
+  return isNo(form.tcec) && form.mode !== "PBM";
+}
+
+function disabledCls(disabled: boolean) {
+  return disabled ? " opacity-60 cursor-not-allowed" : "";
+}
+
+function isYesNoOptions(options: string[]) {
+  return (
+    options.length === 2 &&
+    options[0].toLowerCase() === "yes" &&
+    options[1].toLowerCase() === "no"
+  );
 }
 
 function includesText(value: string | undefined, query: string) {

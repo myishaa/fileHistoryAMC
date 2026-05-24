@@ -42,6 +42,7 @@ export type FileRecord = {
   bidDate?: string;
   bidOpeningDate?: string;
   bidOpened?: string;
+  refloat?: string;
   postTcecDate?: string;
   postTcecMinutesDate?: string;
   postTcecCommitteeNumber?: string;
@@ -73,22 +74,50 @@ export type FileRecord = {
   remark3?: string;
   remark4?: string;
   remark5?: string;
+  remark6?: string;
   remark7?: string;
   remark8?: string;
+  remark9?: string;
   createdAt: string;
 };
 
-export type Division = { id: string; name: string; code?: string };
+export type Division = {
+  id: string;
+  name: string;
+  code?: string;
+  allocatedCapital?: string;
+  allocatedRevenue?: string;
+};
+export type AppTheme = "light" | "dark";
+export type AppThemeTint = "plain" | "yellow" | "green" | "blue" | "pink" | "lavender";
+export type AppSettings = {
+  financialYear: string;
+  theme: AppTheme;
+  themeTint: AppThemeTint;
+  deletionPassword: string;
+};
 
 const FILES_KEY = "ofms.files.v1";
 const DIVS_KEY = "ofms.divisions.v1";
+const SETTINGS_KEY = "ofms.settings.v1";
+
+function currentYear() {
+  return String(new Date().getFullYear());
+}
+
+const defaultSettings: AppSettings = {
+  financialYear: currentYear(),
+  theme: "light",
+  themeTint: "plain",
+  deletionPassword: "",
+};
 
 const defaultDivisions: Division[] = [
-  { id: "d1", name: "Mechanical", code: "MECH" },
-  { id: "d2", name: "Electrical", code: "ELEC" },
-  { id: "d3", name: "Electronics", code: "ELX" },
-  { id: "d4", name: "Administration", code: "ADMIN" },
-  { id: "d5", name: "Procurement", code: "PROC" },
+  { id: "d1", name: "Mechanical", code: "MECH", allocatedCapital: "", allocatedRevenue: "" },
+  { id: "d2", name: "Electrical", code: "ELEC", allocatedCapital: "", allocatedRevenue: "" },
+  { id: "d3", name: "Electronics", code: "ELX", allocatedCapital: "", allocatedRevenue: "" },
+  { id: "d4", name: "Administration", code: "ADMIN", allocatedCapital: "", allocatedRevenue: "" },
+  { id: "d5", name: "Procurement", code: "PROC", allocatedCapital: "", allocatedRevenue: "" },
 ];
 
 const sampleOfficers = ["Rajesh Kumar", "Anita Sharma", "Vikram Singh", "Priya Nair", "S. Iyer"];
@@ -148,6 +177,7 @@ function ensureInit() {
   initialized = true;
   if (!localStorage.getItem(DIVS_KEY)) write(DIVS_KEY, defaultDivisions);
   if (!localStorage.getItem(FILES_KEY)) write(FILES_KEY, seedFiles());
+  if (!localStorage.getItem(SETTINGS_KEY)) write(SETTINGS_KEY, defaultSettings);
 }
 
 export const store = {
@@ -158,6 +188,14 @@ export const store = {
   getDivisions(): Division[] {
     ensureInit();
     return read<Division[]>(DIVS_KEY, defaultDivisions);
+  },
+  getSettings(): AppSettings {
+    ensureInit();
+    return { ...defaultSettings, ...read<Partial<AppSettings>>(SETTINGS_KEY, defaultSettings) };
+  },
+  updateSettings(patch: Partial<AppSettings>) {
+    write(SETTINGS_KEY, { ...store.getSettings(), ...patch });
+    emit();
   },
   addFile(f: Omit<FileRecord, "id" | "createdAt">) {
     const files = store.getFiles();
@@ -174,9 +212,9 @@ export const store = {
     write(FILES_KEY, store.getFiles().filter((f) => f.id !== id));
     emit();
   },
-  addDivision(name: string, code?: string) {
+  addDivision(name: string, code?: string, allocatedCapital?: string, allocatedRevenue?: string) {
     const divs = store.getDivisions();
-    divs.push({ id: crypto.randomUUID(), name, code });
+    divs.push({ id: crypto.randomUUID(), name, code, allocatedCapital, allocatedRevenue });
     write(DIVS_KEY, divs);
     emit();
   },
@@ -204,6 +242,12 @@ export function useDivisions() {
   const [, setTick] = React.useState(0);
   React.useEffect(() => { const u = store.subscribe(() => setTick((t) => t + 1)); return () => { u; }; }, []);
   return store.getDivisions();
+}
+
+export function useSettings() {
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => { const u = store.subscribe(() => setTick((t) => t + 1)); return () => { u; }; }, []);
+  return store.getSettings();
 }
 
 export function isIncomplete(f: FileRecord) {

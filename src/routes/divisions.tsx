@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { store, useDivisions, useFiles } from "@/lib/files-store";
 import { Building2, Pencil, Trash2, Plus, X, Check } from "lucide-react";
+import { requestDeletionPassword } from "@/lib/delete-password";
 
 export const Route = createFileRoute("/divisions")({
   component: DivisionsPage,
@@ -104,7 +105,9 @@ function DivisionsPage() {
                       </button>
                       <button
                         onClick={() => {
-                          if (confirm(`Delete division "${d.name}"?`)) store.deleteDivision(d.id);
+                          if (requestDeletionPassword(`delete division "${d.name}"`)) {
+                            store.deleteDivision(d.id);
+                          }
                         }}
                         className="size-8 grid place-items-center rounded-md text-destructive hover:bg-destructive/10"
                       >
