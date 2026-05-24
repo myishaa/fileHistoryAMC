@@ -103,7 +103,9 @@ const formKeys = Object.keys(empty) as FieldKey[];
 function createFormFromFile(file: FileRecord, financialYear: string): FormState {
   return {
     ...createEmptyForm(financialYear),
-    ...Object.fromEntries(formKeys.map((key) => [key, String((file as Record<string, unknown>)[key] ?? "")])),
+    ...Object.fromEntries(
+      formKeys.map((key) => [key, String((file as Record<string, unknown>)[key] ?? "")]),
+    ),
     valueCapitalSelected: file.valueCapital ? "Yes" : "",
     valueRevenueSelected: file.valueRevenue ? "Yes" : "",
     year: financialYear,
@@ -275,12 +277,18 @@ function AddFilePage() {
         : createEmptyForm(settings.financialYear),
     );
     setUnlockedSections(new Set());
+    // The file object is re-read from localStorage on each render; reset only when the edited id changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingFile?.id, settings.financialYear]);
 
   const generatedUniqueCode = isEditing
     ? form.uniqueCode
     : generateUniqueCode(settings.financialYear, form.division, divisions, files);
-  const formWithLockedYear = { ...form, year: settings.financialYear, uniqueCode: generatedUniqueCode };
+  const formWithLockedYear = {
+    ...form,
+    year: settings.financialYear,
+    uniqueCode: generatedUniqueCode,
+  };
   const tcecIsNo = isNo(formWithLockedYear.tcec);
   const ifaDisabled = shouldDisableIfa(formWithLockedYear);
   const update = (k: keyof typeof form, v: string) => {
@@ -314,7 +322,8 @@ function AddFilePage() {
 
   const deleteFile = () => {
     if (!editingFile) return;
-    const label = editingFile.uniqueCode || editingFile.imms || editingFile.demandDescription || "this file";
+    const label =
+      editingFile.uniqueCode || editingFile.imms || editingFile.demandDescription || "this file";
     if (!requestDeletionPassword(`delete ${label}`)) return;
     store.deleteFile(editingFile.id);
     navigate({ to: "/search" });
@@ -324,7 +333,9 @@ function AddFilePage() {
     <div className="max-w-6xl">
       <div className="bg-card border border-border rounded-xl shadow-[var(--shadow-card)] overflow-hidden">
         <div className="p-6 border-b border-border">
-          <h2 className="text-base font-semibold">{isEditing ? "Edit file details" : "Add a new file"}</h2>
+          <h2 className="text-base font-semibold">
+            {isEditing ? "Edit file details" : "Add a new file"}
+          </h2>
           <p className="text-xs text-muted-foreground mt-1">
             {isEditing
               ? "Update the filled and unfilled details for this file."
@@ -334,10 +345,7 @@ function AddFilePage() {
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
           {extraSections.map((section, index) => (
-            <section
-              key={section.title}
-              className={sectionBlockCls(index)}
-            >
+            <section key={section.title} className={sectionBlockCls(index)}>
               <h3 className="text-sm font-semibold border-b border-current/15 pb-2 mb-4 flex items-center gap-2">
                 <span className={sectionStripeCls(index)} />
                 <span className="min-w-0 flex-1">{section.title}</span>
@@ -377,7 +385,7 @@ function AddFilePage() {
                       ? Boolean(editingFile?.valueCapital || editingFile?.valueRevenue)
                       : field.key === "soValueCapital"
                         ? Boolean(editingFile?.soValueCapital || editingFile?.soValueRevenue)
-                      : Boolean(editingFile?.[field.key]));
+                        : Boolean(getSavedFileValue(editingFile, field.key)));
 
                   if (field.key === "valueCapital") {
                     return (
@@ -434,8 +442,8 @@ function AddFilePage() {
           <div className="md:col-span-2 flex items-start gap-2 text-xs text-muted-foreground bg-accent/40 border border-border rounded-md p-3">
             <Info className="size-4 mt-0.5 text-primary" />
             <p>
-              Tip: incomplete entries are flagged with a status badge so you can find and update them
-              from <span className="font-medium text-foreground">Search Files</span>.
+              Tip: incomplete entries are flagged with a status badge so you can find and update
+              them from <span className="font-medium text-foreground">Search Files</span>.
             </p>
           </div>
         </div>
@@ -453,26 +461,26 @@ function AddFilePage() {
             )}
           </div>
           <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              setForm(
-                editingFile
-                  ? createFormFromFile(editingFile, settings.financialYear)
-                  : createEmptyForm(settings.financialYear),
-              )
-            }
-            className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md border border-border bg-card text-sm hover:bg-accent"
-          >
-            <Eraser className="size-4" /> {isEditing ? "Reset" : "Clear"}
-          </button>
-          <button
-            type="button"
-            onClick={save}
-            className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
-          >
-            <Save className="size-4" /> {saved ? "Saved" : isEditing ? "Update" : "Save"}
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                setForm(
+                  editingFile
+                    ? createFormFromFile(editingFile, settings.financialYear)
+                    : createEmptyForm(settings.financialYear),
+                )
+              }
+              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md border border-border bg-card text-sm hover:bg-accent"
+            >
+              <Eraser className="size-4" /> {isEditing ? "Reset" : "Clear"}
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+            >
+              <Save className="size-4" /> {saved ? "Saved" : isEditing ? "Update" : "Save"}
+            </button>
           </div>
         </div>
       </div>
@@ -575,6 +583,11 @@ function shouldDisableIfa(form: FormState) {
   return isNo(form.tcec) && form.mode !== "PBM";
 }
 
+function getSavedFileValue(file: FileRecord | undefined, key: FieldKey) {
+  if (!file) return undefined;
+  return (file as Record<string, unknown>)[key];
+}
+
 function generateUniqueCode(
   financialYear: string,
   divisionName: string,
@@ -612,7 +625,12 @@ function ValueField({
   capitalSelected: boolean;
   revenueSelected: boolean;
   disabled: boolean;
-  onChange: (patch: Pick<FormState, "valueCapital" | "valueRevenue" | "valueCapitalSelected" | "valueRevenueSelected">) => void;
+  onChange: (
+    patch: Pick<
+      FormState,
+      "valueCapital" | "valueRevenue" | "valueCapitalSelected" | "valueRevenueSelected"
+    >,
+  ) => void;
 }) {
   const value = capitalValue || revenueValue;
 
@@ -739,7 +757,11 @@ function SoValueField({
           onChange={(event) => updateValue(event.target.value)}
           inputMode="decimal"
           disabled={fieldDisabled}
-          placeholder={selectedType ? `Enter S.O. ${selectedType.toLowerCase()} value` : "Select Capital or Revenue above"}
+          placeholder={
+            selectedType
+              ? `Enter S.O. ${selectedType.toLowerCase()} value`
+              : "Select Capital or Revenue above"
+          }
           className={inputCls + disabledCls(fieldDisabled)}
         />
       </div>
@@ -853,9 +875,7 @@ function cleanDecimalInput(value: string) {
 
 function isYesNoOptions(options: string[]) {
   return (
-    options.length === 2 &&
-    options[0].toLowerCase() === "yes" &&
-    options[1].toLowerCase() === "no"
+    options.length === 2 && options[0].toLowerCase() === "yes" && options[1].toLowerCase() === "no"
   );
 }
 
@@ -894,11 +914,21 @@ function RadioGroup({
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="block">
       <div className="text-xs font-medium mb-1.5 flex items-center justify-between">
-        <span>{label} <span className="text-muted-foreground font-normal">(optional)</span></span>
+        <span>
+          {label} <span className="text-muted-foreground font-normal">(optional)</span>
+        </span>
         {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
       </div>
       {children}
