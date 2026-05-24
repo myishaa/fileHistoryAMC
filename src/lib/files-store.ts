@@ -8,20 +8,84 @@ export type FileRecord = {
   officer?: string;
   imms?: string;
   date?: string; // ISO yyyy-mm-dd
+  uniqueCode?: string;
+  receivedDate?: string;
+  scrutinyDate?: string;
+  scrutinyResponseDate?: string;
+  scrutinyCompletionDate?: string;
+  immsDate?: string;
+  fileNo?: string;
+  indentor?: string;
+  demandDescription?: string;
+  valueCapital?: string;
+  valueRevenue?: string;
+  tcec?: string;
+  mode?: string;
+  gem?: string;
+  highValue?: string;
+  ad?: string;
+  rqa?: string;
+  ifa?: string;
+  highValueMeetingDate?: string;
+  highValueMinutesDate?: string;
+  preTcecDate?: string;
+  preTcecMinutesDate?: string;
+  preTcecCommitteeNo?: string;
+  adVettingDate?: string;
+  rqaApprovalDate?: string;
+  ifaSentDate?: string;
+  ifaFinalDate?: string;
+  cfaDate?: string;
+  gemUndertakingDate?: string;
+  tenderLive?: string;
+  bidDate?: string;
+  bidOpeningDate?: string;
+  bidOpened?: string;
+  postTcecDate?: string;
+  postTcecMinutesDate?: string;
+  postTcecCommitteeNumber?: string;
+  refloatBiddingDate?: string;
+  refloatBidOpeningDate?: string;
+  refloatPostTcecDate?: string;
+  refloatPostTcecCommitteeNo?: string;
+  rst?: string;
+  cncDate?: string;
+  cncApprovalDate?: string;
+  soNo?: string;
+  gemSoNo?: string;
+  soDate?: string;
+  soValueCapital?: string;
+  soValueRevenue?: string;
+  dpDate?: string;
+  firm?: string;
+  bgValidityDate?: string;
+  paymentDate?: string;
+  paymentMode?: string;
+  bgReturnDate?: string;
+  demandCancelled?: string;
+  soCancelled?: string;
+  dpExtension?: string;
+  remark1?: string;
+  remark2?: string;
+  remark3?: string;
+  remark4?: string;
+  remark5?: string;
+  remark7?: string;
+  remark8?: string;
   createdAt: string;
 };
 
-export type Division = { id: string; name: string; description?: string };
+export type Division = { id: string; name: string; code?: string };
 
 const FILES_KEY = "ofms.files.v1";
 const DIVS_KEY = "ofms.divisions.v1";
 
 const defaultDivisions: Division[] = [
-  { id: "d1", name: "Mechanical", description: "Mechanical engineering division" },
-  { id: "d2", name: "Electrical", description: "Electrical systems division" },
-  { id: "d3", name: "Electronics", description: "Electronics & instrumentation" },
-  { id: "d4", name: "Administration", description: "Admin & HR" },
-  { id: "d5", name: "Procurement", description: "Stores & procurement" },
+  { id: "d1", name: "Mechanical", code: "MECH" },
+  { id: "d2", name: "Electrical", code: "ELEC" },
+  { id: "d3", name: "Electronics", code: "ELX" },
+  { id: "d4", name: "Administration", code: "ADMIN" },
+  { id: "d5", name: "Procurement", code: "PROC" },
 ];
 
 const sampleOfficers = ["Rajesh Kumar", "Anita Sharma", "Vikram Singh", "Priya Nair", "S. Iyer"];
@@ -107,9 +171,9 @@ export const store = {
     write(FILES_KEY, store.getFiles().filter((f) => f.id !== id));
     emit();
   },
-  addDivision(name: string, description?: string) {
+  addDivision(name: string, code?: string) {
     const divs = store.getDivisions();
-    divs.push({ id: crypto.randomUUID(), name, description });
+    divs.push({ id: crypto.randomUUID(), name, code });
     write(DIVS_KEY, divs);
     emit();
   },

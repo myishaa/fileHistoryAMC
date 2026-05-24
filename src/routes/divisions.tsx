@@ -11,16 +11,16 @@ function DivisionsPage() {
   const divisions = useDivisions();
   const files = useFiles();
   const [name, setName] = useState("");
-  const [desc, setDesc] = useState("");
+  const [code, setCode] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [editDesc, setEditDesc] = useState("");
+  const [editCode, setEditCode] = useState("");
 
   const add = () => {
     if (!name.trim()) return;
-    store.addDivision(name.trim(), desc.trim() || undefined);
+    store.addDivision(name.trim(), code.trim() || undefined);
     setName("");
-    setDesc("");
+    setCode("");
   };
 
   return (
@@ -36,9 +36,9 @@ function DivisionsPage() {
             className="h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
           />
           <input
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            placeholder="Short description (optional)"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="Division code"
             className="h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
           />
           <button
@@ -79,7 +79,7 @@ function DivisionsPage() {
                     <>
                       <button
                         onClick={() => {
-                          store.updateDivision(d.id, { name: editName, description: editDesc || undefined });
+                          store.updateDivision(d.id, { name: editName, code: editCode || undefined });
                           setEditingId(null);
                         }}
                         className="size-8 grid place-items-center rounded-md text-success hover:bg-success/10"
@@ -96,7 +96,7 @@ function DivisionsPage() {
                         onClick={() => {
                           setEditingId(d.id);
                           setEditName(d.name);
-                          setEditDesc(d.description ?? "");
+                          setEditCode(d.code ?? "");
                         }}
                         className="size-8 grid place-items-center rounded-md hover:bg-accent"
                       >
@@ -117,14 +117,14 @@ function DivisionsPage() {
               <div className="mt-4">
                 {isEditing ? (
                   <input
-                    value={editDesc}
-                    onChange={(e) => setEditDesc(e.target.value)}
-                    placeholder="Description"
+                    value={editCode}
+                    onChange={(e) => setEditCode(e.target.value)}
+                    placeholder="Division code"
                     className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                   />
                 ) : (
                   <p className="text-xs text-muted-foreground line-clamp-2 min-h-[2rem]">
-                    {d.description ?? "No description"}
+                    {d.code ?? "No code"}
                   </p>
                 )}
               </div>
