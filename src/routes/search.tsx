@@ -160,6 +160,8 @@ function SearchPage() {
   const [divisionSelect, setDivisionSelect] = useState("");
   const [valueFrom, setValueFrom] = useState("");
   const [valueTo, setValueTo] = useState("");
+  const [capitalOnly, setCapitalOnly] = useState(false);
+  const [revenueOnly, setRevenueOnly] = useState(false);
   const [description, setDescription] = useState("");
   const [firm, setFirm] = useState("");
   const [highValue, setHighValue] = useState(false);
@@ -187,6 +189,8 @@ function SearchPage() {
     divisionSelect ||
     valueFrom ||
     valueTo ||
+    capitalOnly ||
+    revenueOnly ||
     description ||
     firm ||
     highValue ||
@@ -227,6 +231,7 @@ function SearchPage() {
       if (soNo && !includesText(file.soNo, soNo)) return false;
       if (gemSoNo && !includesText(file.gemSoNo, gemSoNo)) return false;
       if (dpExtension && !isYes(file.dpExtension)) return false;
+      if (!matchesValueType(file, capitalOnly, revenueOnly)) return false;
       if (!matchesValueRange(file, minValue, maxValue)) return false;
       if (!matchesDateRange(file.dpDate, dpFrom, dpTo)) return false;
       if (freeText && !allSearchText(file).includes(freeText.trim().toLowerCase())) return false;
@@ -243,6 +248,8 @@ function SearchPage() {
     divisionSelect,
     valueFrom,
     valueTo,
+    capitalOnly,
+    revenueOnly,
     description,
     firm,
     highValue,
@@ -261,6 +268,8 @@ function SearchPage() {
     freeDate,
   ]);
 
+  const valueTotals = useMemo(() => getValueTotals(results), [results]);
+
   const clearAll = () => {
     setYearText("");
     setYearSelect("");
@@ -270,6 +279,8 @@ function SearchPage() {
     setDivisionSelect("");
     setValueFrom("");
     setValueTo("");
+    setCapitalOnly(false);
+    setRevenueOnly(false);
     setDescription("");
     setFirm("");
     setHighValue(false);
@@ -337,9 +348,13 @@ function SearchPage() {
           </FilterGroup>
 
           <FilterGroup label="Value">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 mb-2">
               <FilterInput value={valueFrom} onChange={setValueFrom} placeholder="From" />
               <FilterInput value={valueTo} onChange={setValueTo} placeholder="To" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <CheckFilter label="Capital" checked={capitalOnly} onChange={setCapitalOnly} />
+              <CheckFilter label="Revenue" checked={revenueOnly} onChange={setRevenueOnly} />
             </div>
           </FilterGroup>
 
@@ -384,10 +399,21 @@ function SearchPage() {
 
         <section className="space-y-3">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <Filter className="size-3.5" />
-              <span className="font-medium text-foreground">{results.length}</span> result{results.length !== 1 && "s"}
-            </span>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="inline-flex items-center gap-1.5">
+                <Filter className="size-3.5" />
+                <span className="font-medium text-foreground">{results.length}</span> result{results.length !== 1 && "s"}
+              </span>
+              <span>
+                Capital: <span className="font-medium text-foreground">{formatCurrency(valueTotals.capital)}</span>
+              </span>
+              <span>
+                Revenue: <span className="font-medium text-foreground">{formatCurrency(valueTotals.revenue)}</span>
+              </span>
+              <span>
+                Total value: <span className="font-medium text-foreground">{formatCurrency(valueTotals.total)}</span>
+              </span>
+            </div>
             <span>Click any row to open and edit the file</span>
           </div>
 
@@ -717,6 +743,15 @@ function matchesValueRange(file: FileRecord, minValue: number | undefined, maxVa
   return true;
 }
 
+function matchesValueType(file: FileRecord, capitalOnly: boolean, revenueOnly: boolean) {
+  if (!capitalOnly && !revenueOnly) return true;
+  const hasCapital = parseAmount(file.valueCapital) !== undefined;
+  const hasRevenue = parseAmount(file.valueRevenue) !== undefined;
+  if (capitalOnly && revenueOnly) return hasCapital || hasRevenue;
+  if (capitalOnly) return hasCapital;
+  return hasRevenue;
+}
+
 function matchesDateRange(date: string | undefined, from: string, to: string) {
   if (!from && !to) return true;
   if (!date) return false;
@@ -748,4 +783,22 @@ function formatValue(file: FileRecord) {
     file.valueRevenue ? `Revenue: ${file.valueRevenue}` : "",
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" / ") : missing;
+}
+
+function getValueTotals(files: FileRecord[]) {
+  const totals = files.reduce(
+    (current, file) => {
+      current.capital += parseAmount(file.valueCapital) ?? 0;
+      current.revenue += parseAmount(file.valueRevenue) ?? 0;
+      return current;
+    },
+    { capital: 0, revenue: 0 },
+  );
+  return { ...totals, total: totals.capital + totals.revenue };
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 2,
+  }).format(value);
 }
