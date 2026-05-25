@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Moon,
   Plus,
+  Search,
   Settings,
   Sun,
 } from "lucide-react";
