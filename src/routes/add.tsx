@@ -330,7 +330,7 @@ function AddFilePage() {
   };
 
   return (
-    <div className="max-w-6xl">
+    <div className="w-full">
       <div className="bg-card border border-border rounded-xl shadow-[var(--shadow-card)] overflow-hidden">
         <div className="p-6 border-b border-border">
           <h2 className="text-base font-semibold">

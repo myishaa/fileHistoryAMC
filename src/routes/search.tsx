@@ -177,12 +177,10 @@ function SearchPage() {
     [files],
   );
 
-  const [yearText, setYearText] = useState("");
-  const [yearSelect, setYearSelect] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
   const [imms, setImms] = useState("");
   const [indentor, setIndentor] = useState("");
-  const [divisionText, setDivisionText] = useState("");
-  const [divisionSelect, setDivisionSelect] = useState("");
+  const [divisionFilter, setDivisionFilter] = useState("");
   const [valueFrom, setValueFrom] = useState("");
   const [valueTo, setValueTo] = useState("");
   const [capitalOnly, setCapitalOnly] = useState(false);
@@ -208,12 +206,10 @@ function SearchPage() {
   };
 
   const hasFilters =
-    yearText ||
-    yearSelect ||
+    yearFilter ||
     imms ||
     indentor ||
-    divisionText ||
-    divisionSelect ||
+    divisionFilter ||
     valueFrom ||
     valueTo ||
     capitalOnly ||
@@ -240,18 +236,26 @@ function SearchPage() {
     const maxValue = parseAmount(valueTo);
 
     return files.filter((file) => {
-      if (yearText && !includesText(file.year, yearText)) return false;
-      if (yearSelect && file.year !== yearSelect) return false;
+      if (yearFilter && !includesText(file.year, yearFilter)) return false;
       if (imms && !includesText(file.imms, imms)) return false;
       if (indentor && !includesText(file.indentor, indentor)) return false;
-      if (divisionText && !includesText(file.division, divisionText)) return false;
-      if (divisionSelect && file.division !== divisionSelect) return false;
+      if (divisionFilter && !includesText(file.division, divisionFilter)) return false;
       if (description && !includesText(file.demandDescription, description)) return false;
       if (firm && !includesText(file.firm, firm)) return false;
       if (highValue && !isYes(file.highValue)) return false;
       if (ad && !isYes(file.ad)) return false;
       if (rqa && !isYes(file.rqa)) return false;
-      if (refloat && !isYes(file.refloat) && !hasAny(file, ["refloatBiddingDate", "refloatBidOpeningDate", "refloatPostTcecDate", "refloatPostTcecCommitteeNo"])) return false;
+      if (
+        refloat &&
+        !isYes(file.refloat) &&
+        !hasAny(file, [
+          "refloatBiddingDate",
+          "refloatBidOpeningDate",
+          "refloatPostTcecDate",
+          "refloatPostTcecCommitteeNo",
+        ])
+      )
+        return false;
       if (cnc && !hasAny(file, ["cncDate", "cncApprovalDate"])) return false;
       if (tcec && !isTcecFile(file)) return false;
       if (tenderLive && !isYes(file.tenderLive)) return false;
@@ -262,17 +266,19 @@ function SearchPage() {
       if (!matchesValueRange(file, minValue, maxValue)) return false;
       if (!matchesDateRange(file.dpDate, dpFrom, dpTo)) return false;
       if (freeText && !allSearchText(file).includes(freeText.trim().toLowerCase())) return false;
-      if (freeDate && !editableFields.some((field) => field.type === "date" && file[field.key] === freeDate)) return false;
+      if (
+        freeDate &&
+        !editableFields.some((field) => field.type === "date" && file[field.key] === freeDate)
+      )
+        return false;
       return true;
     });
   }, [
     files,
-    yearText,
-    yearSelect,
+    yearFilter,
     imms,
     indentor,
-    divisionText,
-    divisionSelect,
+    divisionFilter,
     valueFrom,
     valueTo,
     capitalOnly,
@@ -298,12 +304,10 @@ function SearchPage() {
   const valueTotals = useMemo(() => getValueTotals(results), [results]);
 
   const clearAll = () => {
-    setYearText("");
-    setYearSelect("");
+    setYearFilter("");
     setImms("");
     setIndentor("");
-    setDivisionText("");
-    setDivisionSelect("");
+    setDivisionFilter("");
     setValueFrom("");
     setValueTo("");
     setCapitalOnly(false);
@@ -327,8 +331,8 @@ function SearchPage() {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="bg-card border border-border rounded-xl p-3 shadow-[var(--shadow-card)] flex items-center gap-2">
+    <div className="w-full min-w-0 space-y-5">
+      <div className="bg-card border border-border rounded-xl p-3 shadow-[var(--shadow-card)] flex min-w-0 items-center gap-2">
         <Search className="size-4 text-muted-foreground ml-2" />
         <input
           value={freeText}
@@ -346,17 +350,24 @@ function SearchPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-5">
-        <aside className="bg-card border border-border rounded-xl p-5 shadow-[var(--shadow-card)] h-fit space-y-5">
+      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]">
+        <aside className="bg-card border border-border rounded-xl p-5 shadow-[var(--shadow-card)] h-fit min-w-0 space-y-5">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <SlidersHorizontal className="size-4" /> Filters
           </div>
 
           <FilterGroup label="Year">
-            <div className="grid grid-cols-2 gap-2">
-              <FilterInput value={yearText} onChange={setYearText} placeholder="Type year" />
-              <FilterSelect value={yearSelect} onChange={setYearSelect} options={years} placeholder="All years" />
-            </div>
+            <FilterInput
+              value={yearFilter}
+              onChange={setYearFilter}
+              placeholder="All years"
+              listId="year-filter-options"
+            />
+            <datalist id="year-filter-options">
+              {years.map((year) => (
+                <option key={year} value={year} />
+              ))}
+            </datalist>
           </FilterGroup>
 
           <FilterGroup label="IMMS">
@@ -368,16 +379,28 @@ function SearchPage() {
           </FilterGroup>
 
           <FilterGroup label="Division">
-            <div className="grid grid-cols-2 gap-2">
-              <FilterInput value={divisionText} onChange={setDivisionText} placeholder="Type division" />
-              <FilterSelect value={divisionSelect} onChange={setDivisionSelect} options={divisionOptions} placeholder="All divisions" />
-            </div>
+            <FilterInput
+              value={divisionFilter}
+              onChange={setDivisionFilter}
+              placeholder="All divisions"
+              listId="division-filter-options"
+            />
+            <datalist id="division-filter-options">
+              {divisionOptions.map((division) => (
+                <option key={division} value={division} />
+              ))}
+            </datalist>
           </FilterGroup>
 
           <FilterGroup label="Value">
             <div className="grid grid-cols-2 gap-2 mb-2">
-              <FilterInput value={valueFrom} onChange={setValueFrom} placeholder="From" />
-              <FilterInput value={valueTo} onChange={setValueTo} placeholder="To" />
+              <FilterInput
+                value={valueFrom}
+                onChange={setValueFrom}
+                placeholder="From"
+                decimalOnly
+              />
+              <FilterInput value={valueTo} onChange={setValueTo} placeholder="To" decimalOnly />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <CheckFilter label="Capital" checked={capitalOnly} onChange={setCapitalOnly} />
@@ -386,7 +409,11 @@ function SearchPage() {
           </FilterGroup>
 
           <FilterGroup label="Description">
-            <FilterInput value={description} onChange={setDescription} placeholder="Demand description" />
+            <FilterInput
+              value={description}
+              onChange={setDescription}
+              placeholder="Demand description"
+            />
           </FilterGroup>
 
           <FilterGroup label="Firm">
@@ -424,34 +451,45 @@ function SearchPage() {
           </FilterGroup>
         </aside>
 
-        <section className="space-y-3">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <section className="min-w-0 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <span className="inline-flex items-center gap-1.5">
                 <Filter className="size-3.5" />
-                <span className="font-medium text-foreground">{results.length}</span> result{results.length !== 1 && "s"}
+                <span className="font-medium text-foreground">{results.length}</span> result
+                {results.length !== 1 && "s"}
               </span>
               <span>
-                Capital: <span className="font-medium text-foreground">{formatCurrency(valueTotals.capital)}</span>
+                Capital:{" "}
+                <span className="font-medium text-foreground">
+                  {formatCurrency(valueTotals.capital)}
+                </span>
               </span>
               <span>
-                Revenue: <span className="font-medium text-foreground">{formatCurrency(valueTotals.revenue)}</span>
+                Revenue:{" "}
+                <span className="font-medium text-foreground">
+                  {formatCurrency(valueTotals.revenue)}
+                </span>
               </span>
               <span>
-                Total value: <span className="font-medium text-foreground">{formatCurrency(valueTotals.total)}</span>
+                Total value:{" "}
+                <span className="font-medium text-foreground">
+                  {formatCurrency(valueTotals.total)}
+                </span>
               </span>
             </div>
             <span>Click any row to open the file in Add File</span>
           </div>
 
-          <div className="bg-card border border-border rounded-xl shadow-[var(--shadow-card)] overflow-hidden">
+          <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] text-sm">
+              <table className="w-full min-w-[1320px] text-sm">
                 <thead className="bg-secondary/60 text-xs text-muted-foreground">
                   <tr>
                     <th className="text-left font-medium px-4 py-2.5">IMMS</th>
                     <th className="text-left font-medium px-4 py-2.5">Division</th>
                     <th className="text-left font-medium px-4 py-2.5">Indentor</th>
+                    <th className="text-left font-medium px-4 py-2.5">Description</th>
                     <th className="text-left font-medium px-4 py-2.5">Value (Rs.)</th>
                     <th className="text-left font-medium px-4 py-2.5">Current status</th>
                     <th className="text-left font-medium px-4 py-2.5">S.O. Date</th>
@@ -464,7 +502,7 @@ function SearchPage() {
                 <tbody>
                   {results.length === 0 && (
                     <tr>
-                      <td colSpan={10} className="text-center text-sm text-muted-foreground py-10">
+                      <td colSpan={11} className="text-center text-sm text-muted-foreground py-10">
                         No files match your filters.
                       </td>
                     </tr>
@@ -478,16 +516,31 @@ function SearchPage() {
                         className="border-t border-border hover:bg-secondary/40 cursor-pointer"
                       >
                         <td className="px-4 py-3 font-medium">{file.imms || missing}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{file.division || missing}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{file.indentor || missing}</td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {file.division || missing}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {file.indentor || missing}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground max-w-[220px] truncate">
+                          {file.demandDescription || missing}
+                        </td>
                         <td className="px-4 py-3 text-muted-foreground">{formatValue(file)}</td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {status ? `${status.label}: ${status.date}` : missing}
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground">{file.soDate || missing}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{file.dpDate || missing}</td>
-                        <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate">{file.remark1 || missing}</td>
-                        <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate">{file.remark2 || missing}</td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {file.soDate || missing}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {file.dpDate || missing}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate">
+                          {file.remark1 || missing}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate">
+                          {file.remark2 || missing}
+                        </td>
                         <td className="px-4 py-3 text-right">
                           <button
                             onClick={(event) => {
@@ -508,7 +561,6 @@ function SearchPage() {
           </div>
         </section>
       </div>
-
     </div>
   );
 }
@@ -529,21 +581,35 @@ function FilterInput({
   onChange,
   placeholder,
   type = "text",
+  decimalOnly = false,
+  listId,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   type?: string;
+  decimalOnly?: boolean;
+  listId?: string;
 }) {
   return (
     <input
       type={type}
+      inputMode={decimalOnly ? "decimal" : undefined}
+      list={listId}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) =>
+        onChange(decimalOnly ? cleanDecimalInput(event.target.value) : event.target.value)
+      }
       placeholder={placeholder}
       className="w-full h-9 px-2.5 rounded-md border border-input bg-background text-sm"
     />
   );
+}
+
+function cleanDecimalInput(value: string) {
+  const digitsAndDots = value.replace(/[^\d.]/g, "");
+  const [first, ...rest] = digitsAndDots.split(".");
+  return rest.length > 0 ? `${first}.${rest.join("")}` : first;
 }
 
 function FilterSelect({
@@ -638,7 +704,9 @@ function EditModal({
       <div className="space-y-6">
         {fieldSections.map((section) => (
           <section key={section.title}>
-            <h4 className="text-sm font-semibold border-b border-border pb-2 mb-4">{section.title}</h4>
+            <h4 className="text-sm font-semibold border-b border-border pb-2 mb-4">
+              {section.title}
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {section.fields.map((field) => {
                 const renderedField =
@@ -662,26 +730,52 @@ function EditModal({
         ))}
       </div>
       <div className="mt-6 flex justify-between">
-        <button onClick={del} className="text-xs text-destructive hover:underline">Delete file</button>
+        <button onClick={del} className="text-xs text-destructive hover:underline">
+          Delete file
+        </button>
         <div className="flex gap-2">
-          <button onClick={onClose} className="h-9 px-4 rounded-md border border-border bg-card text-sm hover:bg-accent">Cancel</button>
-          <button onClick={save} className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium">Save</button>
+          <button
+            onClick={onClose}
+            className="h-9 px-4 rounded-md border border-border bg-card text-sm hover:bg-accent"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+          >
+            Save
+          </button>
         </div>
       </div>
     </ModalShell>
   );
 }
 
-function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 backdrop-blur-sm p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
       <div
         className="bg-card border border-border rounded-xl shadow-[var(--shadow-elevated)] w-full max-w-6xl max-h-[90vh] overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h3 className="text-sm font-semibold">{title}</h3>
-          <button onClick={onClose} className="size-7 grid place-items-center rounded-md hover:bg-accent">
+          <button
+            onClick={onClose}
+            className="size-7 grid place-items-center rounded-md hover:bg-accent"
+          >
             <X className="size-4" />
           </button>
         </div>
@@ -836,9 +930,7 @@ function disabledCls(disabled: boolean) {
 
 function isYesNoOptions(options: string[]) {
   return (
-    options.length === 2 &&
-    options[0].toLowerCase() === "yes" &&
-    options[1].toLowerCase() === "no"
+    options.length === 2 && options[0].toLowerCase() === "yes" && options[1].toLowerCase() === "no"
   );
 }
 
@@ -855,7 +947,10 @@ function hasAny(file: FileRecord, keys: FileKey[]) {
 }
 
 function isTcecFile(file: FileRecord) {
-  return isYes(file.tcec) || hasAny(file, ["preTcecDate", "preTcecMinutesDate", "postTcecDate", "postTcecMinutesDate"]);
+  return (
+    isYes(file.tcec) ||
+    hasAny(file, ["preTcecDate", "preTcecMinutesDate", "postTcecDate", "postTcecMinutesDate"])
+  );
 }
 
 function parseAmount(value: string | undefined) {
@@ -865,7 +960,11 @@ function parseAmount(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function matchesValueRange(file: FileRecord, minValue: number | undefined, maxValue: number | undefined) {
+function matchesValueRange(
+  file: FileRecord,
+  minValue: number | undefined,
+  maxValue: number | undefined,
+) {
   if (minValue === undefined && maxValue === undefined) return true;
   const amounts = [parseAmount(file.valueCapital), parseAmount(file.valueRevenue)].filter(
     (amount): amount is number => amount !== undefined,
