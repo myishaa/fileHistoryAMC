@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { store, type FileRecord, useDivisions, useFiles, useSettings } from "@/lib/files-store";
-import { Save, Eraser, Info, Lock, Trash2, Unlock } from "lucide-react";
+import { Save, Eraser, Lock, Trash2, Unlock } from "lucide-react";
 import { requestDeletionPassword } from "@/lib/delete-password";
 
 export const Route = createFileRoute("/add")({
@@ -80,6 +80,18 @@ const empty = {
   bgReturnDate: "",
   demandCancelled: "",
   soCancelled: "",
+  fileDetailsRemark1: "",
+  fileDetailsRemark2: "",
+  scrutinyRemark1: "",
+  scrutinyRemark2: "",
+  tcecRemark1: "",
+  tcecRemark2: "",
+  approvalRemark1: "",
+  approvalRemark2: "",
+  biddingRemark1: "",
+  biddingRemark2: "",
+  supplyOrderRemark1: "",
+  supplyOrderRemark2: "",
   remark1: "",
   remark2: "",
   remark3: "",
@@ -164,6 +176,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "ad", label: "AD vetting (Yes/No)", options: yesNo },
       { key: "rqa", label: "R&QA (Yes/No)", options: yesNo },
       { key: "ifa", label: "IFA (Yes/No)", options: yesNo },
+      { key: "fileDetailsRemark1", label: "Remark-1", type: "textarea" },
+      { key: "fileDetailsRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -175,6 +189,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "imms", label: "IMMS Number" },
       { key: "immsDate", label: "IMMS Date", type: "date" },
       { key: "fileNo", label: "File Number" },
+      { key: "scrutinyRemark1", label: "Remark-1", type: "textarea" },
+      { key: "scrutinyRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -188,6 +204,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "postTcecMinutesDate", label: "Post TCEC minutes date", type: "date" },
       { key: "refloatPostTcecCommitteeNo", label: "Refloat post TCEC committee number" },
       { key: "refloatPostTcecDate", label: "Refloat post TCEC date", type: "date" },
+      { key: "tcecRemark1", label: "Remark-1", type: "textarea" },
+      { key: "tcecRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -200,6 +218,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "ifaSentDate", label: "IFA sent date", type: "date" },
       { key: "ifaFinalDate", label: "IFA final date", type: "date" },
       { key: "cfaDate", label: "CFA date", type: "date" },
+      { key: "approvalRemark1", label: "Remark-1", type: "textarea" },
+      { key: "approvalRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -216,6 +236,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "rst", label: "RST (Yes/No)", options: yesNo },
       { key: "cncDate", label: "CNC date", type: "date" },
       { key: "cncApprovalDate", label: "CNC approval date", type: "date" },
+      { key: "biddingRemark1", label: "Remark-1", type: "textarea" },
+      { key: "biddingRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -236,20 +258,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "bgReturnDate", label: "BG return date", type: "date" },
       { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
       { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
-    ],
-  },
-  {
-    title: "Remarks",
-    fields: [
-      { key: "remark1", label: "Remark-1", type: "textarea" },
-      { key: "remark2", label: "Remark-2", type: "textarea" },
-      { key: "remark3", label: "Remark-3", type: "textarea" },
-      { key: "remark4", label: "Remark-4", type: "textarea" },
-      { key: "remark5", label: "Remark-5", type: "textarea" },
-      { key: "remark6", label: "Remark-6", type: "textarea" },
-      { key: "remark7", label: "Remark-7", type: "textarea" },
-      { key: "remark8", label: "Remark-8", type: "textarea" },
-      { key: "remark9", label: "Remark-9", type: "textarea" },
+      { key: "supplyOrderRemark1", label: "Remark-1", type: "textarea" },
+      { key: "supplyOrderRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
 ];
@@ -274,6 +284,7 @@ function AddFilePage() {
   );
   const [saved, setSaved] = useState(false);
   const [unlockedSections, setUnlockedSections] = useState<Set<string>>(() => new Set());
+  const [activeBoardSection, setActiveBoardSection] = useState("File details");
 
   useEffect(() => {
     setForm(
@@ -296,6 +307,10 @@ function AddFilePage() {
   };
   const tcecIsNo = isNo(formWithLockedYear.tcec);
   const ifaDisabled = shouldDisableIfa(formWithLockedYear);
+  const activeSection = extraSections.find((section) => section.title === activeBoardSection);
+  const activeSectionIndex = extraSections.findIndex(
+    (section) => section.title === activeBoardSection,
+  );
   const update = (k: keyof typeof form, v: string) => {
     if (k === "year") return;
     setForm((f) => applyConditionalRules({ ...f, [k]: v }));
@@ -311,6 +326,98 @@ function AddFilePage() {
       return next;
     });
   };
+  const renderSectionUnlockButton = (sectionTitle: string) => {
+    if (!isEditing) return null;
+
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSectionLock(sectionTitle)}
+        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-background text-xs font-medium text-foreground border border-border hover:bg-accent"
+      >
+        {unlockedSections.has(sectionTitle) ? (
+          <>
+            <Unlock className="size-3.5" /> Unlocked
+          </>
+        ) : (
+          <>
+            <Lock className="size-3.5" /> Edit block
+          </>
+        )}
+      </button>
+    );
+  };
+  const renderSectionFields = (section: (typeof extraSections)[number]) => (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {section.fields.map((field) => {
+        const renderedField =
+          field.key === "division"
+            ? {
+                ...field,
+                options: divisions.map((division) => division.name),
+                placeholder: "Type or select division",
+                typeahead: true,
+              }
+            : field;
+        const existingValueLocked =
+          isEditing &&
+          !unlockedSections.has(section.title) &&
+          (field.key === "valueCapital"
+            ? Boolean(editingFile?.valueCapital || editingFile?.valueRevenue)
+            : field.key === "soValueCapital"
+              ? Boolean(editingFile?.soValueCapital || editingFile?.soValueRevenue)
+              : Boolean(getSavedFileValue(editingFile, field.key)));
+
+        if (field.key === "valueCapital") {
+          return (
+            <ValueField
+              key={field.key}
+              capitalValue={formWithLockedYear.valueCapital}
+              revenueValue={formWithLockedYear.valueRevenue}
+              capitalSelected={formWithLockedYear.valueCapitalSelected === "Yes"}
+              revenueSelected={formWithLockedYear.valueRevenueSelected === "Yes"}
+              disabled={existingValueLocked}
+              onChange={(patch) =>
+                setForm((current) => applyConditionalRules({ ...current, ...patch }))
+              }
+            />
+          );
+        }
+
+        if (field.key === "soValueCapital") {
+          return (
+            <SoValueField
+              key={field.key}
+              capitalSelected={formWithLockedYear.valueCapitalSelected === "Yes"}
+              revenueSelected={formWithLockedYear.valueRevenueSelected === "Yes"}
+              capitalValue={formWithLockedYear.soValueCapital}
+              revenueValue={formWithLockedYear.soValueRevenue}
+              disabled={existingValueLocked}
+              onChange={(patch) =>
+                setForm((current) => applyConditionalRules({ ...current, ...patch }))
+              }
+            />
+          );
+        }
+
+        return (
+          <DynamicField
+            key={field.key}
+            field={renderedField}
+            value={formWithLockedYear[field.key]}
+            disabled={
+              field.key === "year" ||
+              field.key === "uniqueCode" ||
+              existingValueLocked ||
+              (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
+              (ifaDisabled && ifaDisabledKeys.includes(field.key))
+            }
+            onChange={(value) => update(field.key, value)}
+          />
+        );
+      })}
+    </div>
+  );
 
   const save = () => {
     const payload = toFilePayload(applyConditionalRules(formWithLockedYear));
@@ -348,111 +455,25 @@ function AddFilePage() {
           </p>
         </div>
 
+        <SectionBoard active={activeBoardSection} onOpen={setActiveBoardSection} />
+
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <TimelineBlock form={formWithLockedYear} />
+          {activeBoardSection === "Timeline" && <TimelineBlock form={formWithLockedYear} />}
 
-          {extraSections.map((section, index) => (
-            <section key={section.title} className={sectionBlockCls(index)}>
+          {activeSection && (
+            <section
+              key={activeSection.title}
+              id={sectionId(activeSection.title)}
+              className={sectionBlockCls(activeSectionIndex)}
+            >
               <h3 className="text-sm font-semibold border-b border-border pb-2 mb-4 flex items-center gap-2">
-                <span className={sectionStripeCls(index)} />
-                <span className="min-w-0 flex-1">{section.title}</span>
-                {isEditing && (
-                  <button
-                    type="button"
-                    onClick={() => toggleSectionLock(section.title)}
-                    className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-background text-xs font-medium text-foreground border border-border hover:bg-accent"
-                  >
-                    {unlockedSections.has(section.title) ? (
-                      <>
-                        <Unlock className="size-3.5" /> Unlocked
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="size-3.5" /> Edit block
-                      </>
-                    )}
-                  </button>
-                )}
+                <span className={sectionStripeCls(activeSectionIndex)} />
+                <span className="min-w-0 flex-1">{activeSection.title}</span>
+                {renderSectionUnlockButton(activeSection.title)}
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {section.fields.map((field) => {
-                  const renderedField =
-                    field.key === "division"
-                      ? {
-                          ...field,
-                          options: divisions.map((division) => division.name),
-                          placeholder: "Type or select division",
-                          typeahead: true,
-                        }
-                      : field;
-                  const existingValueLocked =
-                    isEditing &&
-                    !unlockedSections.has(section.title) &&
-                    (field.key === "valueCapital"
-                      ? Boolean(editingFile?.valueCapital || editingFile?.valueRevenue)
-                      : field.key === "soValueCapital"
-                        ? Boolean(editingFile?.soValueCapital || editingFile?.soValueRevenue)
-                        : Boolean(getSavedFileValue(editingFile, field.key)));
-
-                  if (field.key === "valueCapital") {
-                    return (
-                      <ValueField
-                        key={field.key}
-                        capitalValue={formWithLockedYear.valueCapital}
-                        revenueValue={formWithLockedYear.valueRevenue}
-                        capitalSelected={formWithLockedYear.valueCapitalSelected === "Yes"}
-                        revenueSelected={formWithLockedYear.valueRevenueSelected === "Yes"}
-                        disabled={existingValueLocked}
-                        onChange={(patch) =>
-                          setForm((current) => applyConditionalRules({ ...current, ...patch }))
-                        }
-                      />
-                    );
-                  }
-
-                  if (field.key === "soValueCapital") {
-                    return (
-                      <SoValueField
-                        key={field.key}
-                        capitalSelected={formWithLockedYear.valueCapitalSelected === "Yes"}
-                        revenueSelected={formWithLockedYear.valueRevenueSelected === "Yes"}
-                        capitalValue={formWithLockedYear.soValueCapital}
-                        revenueValue={formWithLockedYear.soValueRevenue}
-                        disabled={existingValueLocked}
-                        onChange={(patch) =>
-                          setForm((current) => applyConditionalRules({ ...current, ...patch }))
-                        }
-                      />
-                    );
-                  }
-
-                  return (
-                    <DynamicField
-                      key={field.key}
-                      field={renderedField}
-                      value={formWithLockedYear[field.key]}
-                      disabled={
-                        field.key === "year" ||
-                        field.key === "uniqueCode" ||
-                        existingValueLocked ||
-                        (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
-                        (ifaDisabled && ifaDisabledKeys.includes(field.key))
-                      }
-                      onChange={(value) => update(field.key, value)}
-                    />
-                  );
-                })}
-              </div>
+              {renderSectionFields(activeSection)}
             </section>
-          ))}
-
-          <div className="md:col-span-2 flex items-start gap-2 text-xs text-muted-foreground bg-secondary/50 border border-border rounded-md p-3">
-            <Info className="size-4 mt-0.5 text-primary" />
-            <p>
-              Tip: incomplete entries are flagged with a status badge so you can find and update
-              them from <span className="font-medium text-foreground">Search Files</span>.
-            </p>
-          </div>
+          )}
         </div>
 
         <div className="px-5 py-4 border-t border-border bg-secondary/40 flex flex-wrap items-center justify-between gap-2">
@@ -468,19 +489,15 @@ function AddFilePage() {
             )}
           </div>
           <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                setForm(
-                  editingFile
-                    ? createFormFromFile(editingFile, settings.financialYear)
-                    : createEmptyForm(settings.financialYear),
-                )
-              }
-              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md border border-border bg-card text-sm hover:bg-accent"
-            >
-              <Eraser className="size-4" /> {isEditing ? "Reset" : "Clear"}
-            </button>
+            {!isEditing && (
+              <button
+                type="button"
+                onClick={() => setForm(createEmptyForm(settings.financialYear))}
+                className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md border border-border bg-card text-sm hover:bg-accent"
+              >
+                <Eraser className="size-4" /> Clear
+              </button>
+            )}
             <button
               type="button"
               onClick={save}
@@ -490,6 +507,39 @@ function AddFilePage() {
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionBoard({
+  active,
+  onOpen,
+}: {
+  active: string;
+  onOpen: (sectionTitle: string) => void;
+}) {
+  const links = ["Timeline", ...extraSections.map((section) => section.title)];
+
+  return (
+    <div className="border-b border-border bg-card px-5 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-xs font-medium text-muted-foreground">Show section</span>
+        {links.map((label) => (
+          <button
+            type="button"
+            key={label}
+            onClick={() => onOpen(label)}
+            className={
+              "inline-flex h-7 items-center rounded-md border px-2.5 text-xs font-medium hover:bg-accent " +
+              (active === label
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-border bg-secondary/50 text-foreground")
+            }
+          >
+            {label}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -505,7 +555,10 @@ function TimelineBlock({ form }: { form: FormState }) {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   return (
-    <section className="md:col-span-2 rounded-md border border-border bg-secondary/25 p-4">
+    <section
+      id={sectionId("Timeline")}
+      className="md:col-span-2 scroll-mt-24 rounded-md border border-border bg-secondary/25 p-4"
+    >
       <div className="mb-4 flex items-center justify-between border-b border-border pb-2">
         <h3 className="text-sm font-semibold">Timeline</h3>
         <span className="text-xs text-muted-foreground">{items.length} date fields filled</span>
@@ -516,20 +569,14 @@ function TimelineBlock({ form }: { form: FormState }) {
           Timeline will appear here as date fields are filled.
         </p>
       ) : (
-        <ol className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <ol className="relative space-y-0 pl-6">
+          <span className="absolute left-[10px] top-2 bottom-2 w-px bg-success/60" />
           {items.map((item) => (
-            <li
-              key={`${item.label}-${item.date}`}
-              className="relative rounded-md border border-border bg-card px-3 py-2.5"
-            >
-              <div className="flex items-start gap-2">
-                <span className="mt-1.5 size-2 rounded-full bg-primary" />
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{item.label}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatTimelineDate(item.date)}
-                  </div>
-                </div>
+            <li key={`${item.label}-${item.date}`} className="relative pb-4 last:pb-0">
+              <span className="absolute -left-[21px] top-1.5 size-3 rounded-full border-2 border-card bg-success shadow-[0_0_0_3px_var(--color-success)]/10" />
+              <div className="rounded-md border border-border bg-card px-3 py-2.5">
+                <div className="text-sm font-medium">{item.label}</div>
+                <div className="text-xs text-muted-foreground">{formatTimelineDate(item.date)}</div>
               </div>
             </li>
           ))}
@@ -549,6 +596,13 @@ function formatTimelineDate(date: string) {
   });
 }
 
+function sectionId(title: string) {
+  return `add-section-${title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")}`;
+}
+
 const inputCls =
   "w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition";
 
@@ -564,7 +618,7 @@ function sectionBlockCls(index: number) {
     "border-l-destructive",
     "border-l-chart-2",
   ];
-  return `md:col-span-2 rounded-md border border-l-2 border-border bg-card p-4 shadow-sm ${accents[index % accents.length]}`;
+  return `md:col-span-2 scroll-mt-24 rounded-md border border-l-2 border-border bg-card p-4 shadow-sm ${accents[index % accents.length]}`;
 }
 
 function sectionStripeCls(index: number) {

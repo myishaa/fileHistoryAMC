@@ -60,6 +60,15 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "demandDescription", label: "Demand description", type: "textarea" },
       { key: "valueCapital", label: "Value (Capital)" },
       { key: "valueRevenue", label: "Value (Revenue)" },
+      { key: "fileDetailsRemark1", label: "File details Remark-1", type: "textarea" },
+      { key: "fileDetailsRemark2", label: "File details Remark-2", type: "textarea" },
+    ],
+  },
+  {
+    title: "Scrutiny and IMMS",
+    fields: [
+      { key: "scrutinyRemark1", label: "Scrutiny Remark-1", type: "textarea" },
+      { key: "scrutinyRemark2", label: "Scrutiny Remark-2", type: "textarea" },
     ],
   },
   {
@@ -77,11 +86,15 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "preTcecDate", label: "Pre-TCEC Date", type: "date" },
       { key: "preTcecMinutesDate", label: "Pre-TCEC minutes date", type: "date" },
       { key: "preTcecCommitteeNo", label: "Pre-TCEC Committee no." },
+      { key: "tcecRemark1", label: "TCEC Remark-1", type: "textarea" },
+      { key: "tcecRemark2", label: "TCEC Remark-2", type: "textarea" },
       { key: "adVettingDate", label: "AD Vetting date", type: "date" },
       { key: "rqaApprovalDate", label: "R&QA approval date", type: "date" },
       { key: "ifaSentDate", label: "IFA sent date", type: "date" },
       { key: "ifaFinalDate", label: "IFA final date", type: "date" },
       { key: "cfaDate", label: "CFA date", type: "date" },
+      { key: "approvalRemark1", label: "Approval Remark-1", type: "textarea" },
+      { key: "approvalRemark2", label: "Approval Remark-2", type: "textarea" },
       { key: "gemUndertakingDate", label: "GeM undertaking date", type: "date" },
       { key: "tenderLive", label: "Tender Live (Yes/No)", options: yesNo },
       { key: "bidDate", label: "Bid date", type: "date" },
@@ -98,6 +111,8 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "rst", label: "RST (Yes/No)", options: yesNo },
       { key: "cncDate", label: "CNC date", type: "date" },
       { key: "cncApprovalDate", label: "CNC approval date", type: "date" },
+      { key: "biddingRemark1", label: "Bidding Remark-1", type: "textarea" },
+      { key: "biddingRemark2", label: "Bidding Remark-2", type: "textarea" },
     ],
   },
   {
@@ -119,25 +134,37 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "bgReturnDate", label: "BG return date", type: "date" },
       { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
       { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
-    ],
-  },
-  {
-    title: "Remarks",
-    fields: [
-      { key: "remark1", label: "Remark-1", type: "textarea" },
-      { key: "remark2", label: "Remark-2", type: "textarea" },
-      { key: "remark3", label: "Remark-3", type: "textarea" },
-      { key: "remark4", label: "Remark-4", type: "textarea" },
-      { key: "remark5", label: "Remark-5", type: "textarea" },
-      { key: "remark6", label: "Remark-6", type: "textarea" },
-      { key: "remark7", label: "Remark-7", type: "textarea" },
-      { key: "remark8", label: "Remark-8", type: "textarea" },
-      { key: "remark9", label: "Remark-9", type: "textarea" },
+      { key: "supplyOrderRemark1", label: "Supply order Remark-1", type: "textarea" },
+      { key: "supplyOrderRemark2", label: "Supply order Remark-2", type: "textarea" },
     ],
   },
 ];
 
 const editableFields = fieldSections.flatMap((section) => section.fields);
+
+const remarkFields: { key: FileKey; label: string }[] = [
+  { key: "remark1", label: "Old Remark-1" },
+  { key: "remark2", label: "Old Remark-2" },
+  { key: "remark3", label: "Old Remark-3" },
+  { key: "remark4", label: "Old Remark-4" },
+  { key: "remark5", label: "Old Remark-5" },
+  { key: "remark6", label: "Old Remark-6" },
+  { key: "remark7", label: "Old Remark-7" },
+  { key: "remark8", label: "Old Remark-8" },
+  { key: "remark9", label: "Old Remark-9" },
+  { key: "fileDetailsRemark1", label: "File details Remark-1" },
+  { key: "fileDetailsRemark2", label: "File details Remark-2" },
+  { key: "scrutinyRemark1", label: "Scrutiny Remark-1" },
+  { key: "scrutinyRemark2", label: "Scrutiny Remark-2" },
+  { key: "tcecRemark1", label: "TCEC Remark-1" },
+  { key: "tcecRemark2", label: "TCEC Remark-2" },
+  { key: "approvalRemark1", label: "Approval Remark-1" },
+  { key: "approvalRemark2", label: "Approval Remark-2" },
+  { key: "biddingRemark1", label: "Bidding Remark-1" },
+  { key: "biddingRemark2", label: "Bidding Remark-2" },
+  { key: "supplyOrderRemark1", label: "Supply order Remark-1" },
+  { key: "supplyOrderRemark2", label: "Supply order Remark-2" },
+];
 
 const statusDateFields: { key: FileKey; label: string }[] = [
   { key: "receivedDate", label: "Received date" },
@@ -511,6 +538,7 @@ function SearchPage() {
                   )}
                   {results.map((file) => {
                     const status = getCurrentStatus(file);
+                    const recentRemarks = getRecentRemarks(file);
                     return (
                       <tr
                         key={file.id}
@@ -538,10 +566,10 @@ function SearchPage() {
                           {file.dpDate || missing}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate">
-                          {file.remark1 || missing}
+                          {recentRemarks[0]?.value || missing}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate">
-                          {file.remark2 || missing}
+                          {recentRemarks[1]?.value || missing}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1.5">
@@ -1021,6 +1049,17 @@ function getCurrentStatus(file: FileRecord) {
     if (!latest || date > latest.date) return { label: field.label, date };
     return latest;
   }, null);
+}
+
+function getRecentRemarks(file: FileRecord) {
+  return remarkFields
+    .map((field) => ({
+      label: field.label,
+      value: file[field.key],
+    }))
+    .filter((remark): remark is { label: string; value: string } => Boolean(remark.value?.trim()))
+    .slice(-2)
+    .reverse();
 }
 
 function printFile(file: FileRecord) {

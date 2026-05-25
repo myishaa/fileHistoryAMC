@@ -91,6 +91,7 @@ export function TopBar() {
           </button>
           <Link
             to="/add"
+            search={{ fileId: undefined }}
             className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
           >
             <Plus className="size-4" />

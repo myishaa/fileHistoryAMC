@@ -132,11 +132,13 @@ function DivisionSettings() {
   const [code, setCode] = useState("");
   const [allocatedCapital, setAllocatedCapital] = useState("");
   const [allocatedRevenue, setAllocatedRevenue] = useState("");
+  const [ad, setAd] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editCode, setEditCode] = useState("");
   const [editCapital, setEditCapital] = useState("");
   const [editRevenue, setEditRevenue] = useState("");
+  const [editAd, setEditAd] = useState("");
 
   const add = () => {
     if (!name.trim()) return;
@@ -145,11 +147,13 @@ function DivisionSettings() {
       code.trim() || undefined,
       allocatedCapital.trim() || undefined,
       allocatedRevenue.trim() || undefined,
+      ad,
     );
     setName("");
     setCode("");
     setAllocatedCapital("");
     setAllocatedRevenue("");
+    setAd("");
   };
 
   const startEdit = (division: (typeof divisions)[number]) => {
@@ -158,6 +162,7 @@ function DivisionSettings() {
     setEditCode(division.code ?? "");
     setEditCapital(division.allocatedCapital ?? "");
     setEditRevenue(division.allocatedRevenue ?? "");
+    setEditAd(division.ad ?? "");
   };
 
   const saveEdit = (id: string) => {
@@ -167,6 +172,7 @@ function DivisionSettings() {
       code: editCode.trim() || undefined,
       allocatedCapital: editCapital.trim() || undefined,
       allocatedRevenue: editRevenue.trim() || undefined,
+      ad: editAd,
     });
     setEditingId(null);
   };
@@ -178,7 +184,7 @@ function DivisionSettings() {
         Add and manage division details from Settings.
       </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr_1fr_1fr_auto] gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr_1fr_1fr_0.7fr_auto] gap-3">
         <DivisionInput value={name} onChange={setName} placeholder="Division name" />
         <DivisionInput value={code} onChange={setCode} placeholder="Division code" />
         <DivisionInput
@@ -191,6 +197,7 @@ function DivisionSettings() {
           onChange={setAllocatedRevenue}
           placeholder="Allocated revenue"
         />
+        <DivisionAdSelect value={ad} onChange={setAd} />
         <button
           type="button"
           onClick={add}
@@ -201,13 +208,23 @@ function DivisionSettings() {
       </div>
 
       <div className="mt-5 overflow-x-auto rounded-md border border-border">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[900px] table-fixed text-sm">
+          <colgroup>
+            <col className="w-[22%]" />
+            <col className="w-[14%]" />
+            <col className="w-[18%]" />
+            <col className="w-[18%]" />
+            <col className="w-[8%]" />
+            <col className="w-[8%]" />
+            <col className="w-[12%]" />
+          </colgroup>
           <thead className="bg-secondary text-xs text-muted-foreground">
             <tr>
               <th className="text-left font-medium px-4 py-2.5">Division name</th>
               <th className="text-left font-medium px-4 py-2.5">Division code</th>
               <th className="text-left font-medium px-4 py-2.5">Allocated capital</th>
               <th className="text-left font-medium px-4 py-2.5">Allocated revenue</th>
+              <th className="text-left font-medium px-4 py-2.5">AD</th>
               <th className="text-left font-medium px-4 py-2.5">Files</th>
               <th className="text-right font-medium px-4 py-2.5">Action</th>
             </tr>
@@ -260,6 +277,13 @@ function DivisionSettings() {
                       />
                     ) : (
                       division.allocatedRevenue || "Not set"
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {isEditing ? (
+                      <DivisionAdSelect value={editAd} onChange={setEditAd} />
+                    ) : (
+                      division.ad || "No"
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{count}</td>
@@ -377,6 +401,29 @@ function DivisionInput({
       placeholder={placeholder}
       className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
     />
+  );
+}
+
+function DivisionAdSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label="AD"
+      className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+    >
+      <option value="" disabled>
+        AD
+      </option>
+      <option value="Yes">Yes</option>
+      <option value="No">No</option>
+    </select>
   );
 }
 

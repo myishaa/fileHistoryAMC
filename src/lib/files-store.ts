@@ -69,6 +69,18 @@ export type FileRecord = {
   bgReturnDate?: string;
   demandCancelled?: string;
   soCancelled?: string;
+  fileDetailsRemark1?: string;
+  fileDetailsRemark2?: string;
+  scrutinyRemark1?: string;
+  scrutinyRemark2?: string;
+  tcecRemark1?: string;
+  tcecRemark2?: string;
+  approvalRemark1?: string;
+  approvalRemark2?: string;
+  biddingRemark1?: string;
+  biddingRemark2?: string;
+  supplyOrderRemark1?: string;
+  supplyOrderRemark2?: string;
   remark1?: string;
   remark2?: string;
   remark3?: string;
@@ -87,6 +99,7 @@ export type Division = {
   code?: string;
   allocatedCapital?: string;
   allocatedRevenue?: string;
+  ad?: string;
 };
 export type AppTheme = "light" | "dark";
 export type AppThemeTint = "plain" | "yellow" | "green" | "blue" | "pink" | "lavender";
@@ -113,11 +126,46 @@ const defaultSettings: AppSettings = {
 };
 
 const defaultDivisions: Division[] = [
-  { id: "d1", name: "Mechanical", code: "MECH", allocatedCapital: "", allocatedRevenue: "" },
-  { id: "d2", name: "Electrical", code: "ELEC", allocatedCapital: "", allocatedRevenue: "" },
-  { id: "d3", name: "Electronics", code: "ELX", allocatedCapital: "", allocatedRevenue: "" },
-  { id: "d4", name: "Administration", code: "ADMIN", allocatedCapital: "", allocatedRevenue: "" },
-  { id: "d5", name: "Procurement", code: "PROC", allocatedCapital: "", allocatedRevenue: "" },
+  {
+    id: "d1",
+    name: "Mechanical",
+    code: "MECH",
+    allocatedCapital: "",
+    allocatedRevenue: "",
+    ad: "No",
+  },
+  {
+    id: "d2",
+    name: "Electrical",
+    code: "ELEC",
+    allocatedCapital: "",
+    allocatedRevenue: "",
+    ad: "No",
+  },
+  {
+    id: "d3",
+    name: "Electronics",
+    code: "ELX",
+    allocatedCapital: "",
+    allocatedRevenue: "",
+    ad: "No",
+  },
+  {
+    id: "d4",
+    name: "Administration",
+    code: "ADMIN",
+    allocatedCapital: "",
+    allocatedRevenue: "",
+    ad: "No",
+  },
+  {
+    id: "d5",
+    name: "Procurement",
+    code: "PROC",
+    allocatedCapital: "",
+    allocatedRevenue: "",
+    ad: "No",
+  },
 ];
 
 const sampleOfficers = ["Rajesh Kumar", "Anita Sharma", "Vikram Singh", "Priya Nair", "S. Iyer"];
@@ -209,21 +257,36 @@ export const store = {
     emit();
   },
   deleteFile(id: string) {
-    write(FILES_KEY, store.getFiles().filter((f) => f.id !== id));
+    write(
+      FILES_KEY,
+      store.getFiles().filter((f) => f.id !== id),
+    );
     emit();
   },
-  addDivision(name: string, code?: string, allocatedCapital?: string, allocatedRevenue?: string) {
+  addDivision(
+    name: string,
+    code?: string,
+    allocatedCapital?: string,
+    allocatedRevenue?: string,
+    ad?: string,
+  ) {
     const divs = store.getDivisions();
-    divs.push({ id: crypto.randomUUID(), name, code, allocatedCapital, allocatedRevenue });
+    divs.push({ id: crypto.randomUUID(), name, code, allocatedCapital, allocatedRevenue, ad });
     write(DIVS_KEY, divs);
     emit();
   },
   updateDivision(id: string, patch: Partial<Division>) {
-    write(DIVS_KEY, store.getDivisions().map((d) => (d.id === id ? { ...d, ...patch } : d)));
+    write(
+      DIVS_KEY,
+      store.getDivisions().map((d) => (d.id === id ? { ...d, ...patch } : d)),
+    );
     emit();
   },
   deleteDivision(id: string) {
-    write(DIVS_KEY, store.getDivisions().filter((d) => d.id !== id));
+    write(
+      DIVS_KEY,
+      store.getDivisions().filter((d) => d.id !== id),
+    );
     emit();
   },
   subscribe(fn: () => void) {
@@ -234,19 +297,34 @@ export const store = {
 
 export function useFiles() {
   const [, setTick] = React.useState(0);
-  React.useEffect(() => { const u = store.subscribe(() => setTick((t) => t + 1)); return () => { u; }; }, []);
+  React.useEffect(() => {
+    const u = store.subscribe(() => setTick((t) => t + 1));
+    return () => {
+      u();
+    };
+  }, []);
   return store.getFiles();
 }
 
 export function useDivisions() {
   const [, setTick] = React.useState(0);
-  React.useEffect(() => { const u = store.subscribe(() => setTick((t) => t + 1)); return () => { u; }; }, []);
+  React.useEffect(() => {
+    const u = store.subscribe(() => setTick((t) => t + 1));
+    return () => {
+      u();
+    };
+  }, []);
   return store.getDivisions();
 }
 
 export function useSettings() {
   const [, setTick] = React.useState(0);
-  React.useEffect(() => { const u = store.subscribe(() => setTick((t) => t + 1)); return () => { u; }; }, []);
+  React.useEffect(() => {
+    const u = store.subscribe(() => setTick((t) => t + 1));
+    return () => {
+      u();
+    };
+  }, []);
   return store.getSettings();
 }
 
