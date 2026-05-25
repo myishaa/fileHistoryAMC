@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useFiles, useDivisions, isIncomplete } from "@/lib/files-store";
+import { useAccessibleFiles, useAccessibleDivisions, isIncomplete } from "@/lib/files-store";
 import { Download, PieChart, BarChart3 } from "lucide-react";
 
 export const Route = createFileRoute("/reports")({
@@ -7,8 +7,8 @@ export const Route = createFileRoute("/reports")({
 });
 
 function ReportsPage() {
-  const files = useFiles();
-  const divisions = useDivisions();
+  const files = useAccessibleFiles();
+  const divisions = useAccessibleDivisions();
 
   const total = files.length;
   const incomplete = files.filter(isIncomplete).length;
@@ -63,7 +63,10 @@ function ReportsPage() {
                   <span className="text-muted-foreground">{d.count}</span>
                 </div>
                 <div className="h-2.5 rounded-full bg-secondary overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-primary to-primary/70" style={{ width: `${(d.count / maxDiv) * 100}%` }} />
+                  <div
+                    className="h-full bg-gradient-to-r from-primary to-primary/70"
+                    style={{ width: `${(d.count / maxDiv) * 100}%` }}
+                  />
                 </div>
               </div>
             ))}
@@ -84,7 +87,10 @@ function ReportsPage() {
                   <span className="text-muted-foreground">{o.count}</span>
                 </div>
                 <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                  <div className="h-full bg-chart-2" style={{ width: `${(o.count / maxOff) * 100}%` }} />
+                  <div
+                    className="h-full bg-chart-2"
+                    style={{ width: `${(o.count / maxOff) * 100}%` }}
+                  />
                 </div>
               </div>
             ))}
@@ -101,10 +107,21 @@ function DonutChart({ percent }: { percent: number }) {
   return (
     <div className="relative size-32 shrink-0">
       <svg viewBox="0 0 100 100" className="size-full -rotate-90">
-        <circle cx="50" cy="50" r={r} stroke="var(--color-secondary)" strokeWidth="12" fill="none" />
         <circle
-          cx="50" cy="50" r={r}
-          stroke="var(--color-success)" strokeWidth="12" fill="none"
+          cx="50"
+          cy="50"
+          r={r}
+          stroke="var(--color-secondary)"
+          strokeWidth="12"
+          fill="none"
+        />
+        <circle
+          cx="50"
+          cy="50"
+          r={r}
+          stroke="var(--color-success)"
+          strokeWidth="12"
+          fill="none"
           strokeDasharray={c}
           strokeDashoffset={c - (c * percent) / 100}
           strokeLinecap="round"

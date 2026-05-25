@@ -13,6 +13,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as DivisionsRouteImport } from './routes/divisions'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AddRouteImport } from './routes/add'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -36,6 +37,11 @@ const DivisionsRoute = DivisionsRouteImport.update({
   path: '/divisions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AddRoute = AddRouteImport.update({
   id: '/add',
   path: '/add',
@@ -50,6 +56,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/add': typeof AddRoute
+  '/dashboard': typeof DashboardRoute
   '/divisions': typeof DivisionsRoute
   '/reports': typeof ReportsRoute
   '/search': typeof SearchRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/add': typeof AddRoute
+  '/dashboard': typeof DashboardRoute
   '/divisions': typeof DivisionsRoute
   '/reports': typeof ReportsRoute
   '/search': typeof SearchRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/add': typeof AddRoute
+  '/dashboard': typeof DashboardRoute
   '/divisions': typeof DivisionsRoute
   '/reports': typeof ReportsRoute
   '/search': typeof SearchRoute
@@ -74,13 +83,28 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/add' | '/divisions' | '/reports' | '/search' | '/settings'
+  fullPaths:
+    | '/'
+    | '/add'
+    | '/dashboard'
+    | '/divisions'
+    | '/reports'
+    | '/search'
+    | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/add' | '/divisions' | '/reports' | '/search' | '/settings'
+  to:
+    | '/'
+    | '/add'
+    | '/dashboard'
+    | '/divisions'
+    | '/reports'
+    | '/search'
+    | '/settings'
   id:
     | '__root__'
     | '/'
     | '/add'
+    | '/dashboard'
     | '/divisions'
     | '/reports'
     | '/search'
@@ -90,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AddRoute: typeof AddRoute
+  DashboardRoute: typeof DashboardRoute
   DivisionsRoute: typeof DivisionsRoute
   ReportsRoute: typeof ReportsRoute
   SearchRoute: typeof SearchRoute
@@ -126,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DivisionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/add': {
       id: '/add'
       path: '/add'
@@ -146,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AddRoute: AddRoute,
+  DashboardRoute: DashboardRoute,
   DivisionsRoute: DivisionsRoute,
   ReportsRoute: ReportsRoute,
   SearchRoute: SearchRoute,

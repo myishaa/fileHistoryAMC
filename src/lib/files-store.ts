@@ -101,6 +101,14 @@ export type Division = {
   allocatedRevenue?: string;
   ad?: string;
 };
+export type AppUserRole = "admin" | "division_user";
+export type AppUser = {
+  id: string;
+  name: string;
+  username: string;
+  role: AppUserRole;
+  divisionIds: string[];
+};
 export type AppTheme = "light" | "dark";
 export type AppThemeTint = "plain" | "yellow" | "green" | "blue" | "pink" | "lavender";
 export type AppSettings = {
@@ -108,11 +116,13 @@ export type AppSettings = {
   theme: AppTheme;
   themeTint: AppThemeTint;
   deletionPassword: string;
+  activeUserId?: string;
 };
 
 const FILES_KEY = "ofms.files.v1";
 const DIVS_KEY = "ofms.divisions.v1";
 const SETTINGS_KEY = "ofms.settings.v1";
+const USERS_KEY = "ofms.users.v1";
 
 function currentYear() {
   return String(new Date().getFullYear());
@@ -167,6 +177,8 @@ const defaultDivisions: Division[] = [
     ad: "No",
   },
 ];
+
+const defaultUsers: AppUser[] = [];
 
 const sampleOfficers = ["Rajesh Kumar", "Anita Sharma", "Vikram Singh", "Priya Nair", "S. Iyer"];
 const sampleTitles = [
@@ -226,6 +238,7 @@ function ensureInit() {
   if (!localStorage.getItem(DIVS_KEY)) write(DIVS_KEY, defaultDivisions);
   if (!localStorage.getItem(FILES_KEY)) write(FILES_KEY, seedFiles());
   if (!localStorage.getItem(SETTINGS_KEY)) write(SETTINGS_KEY, defaultSettings);
+  if (!localStorage.getItem(USERS_KEY)) write(USERS_KEY, defaultUsers);
 }
 
 export const store = {
@@ -240,6 +253,10 @@ export const store = {
   getSettings(): AppSettings {
     ensureInit();
     return { ...defaultSettings, ...read<Partial<AppSettings>>(SETTINGS_KEY, defaultSettings) };
+  },
+  getUsers(): AppUser[] {
+    ensureInit();
+    return read<AppUser[]>(USERS_KEY, defaultUsers);
   },
   updateSettings(patch: Partial<AppSettings>) {
     write(SETTINGS_KEY, { ...store.getSettings(), ...patch });
@@ -287,6 +304,33 @@ export const store = {
       DIVS_KEY,
       store.getDivisions().filter((d) => d.id !== id),
     );
+    write(
+      USERS_KEY,
+      store.getUsers().map((user) => ({
+        ...user,
+        divisionIds: user.divisionIds.filter((divId) => divId !== id),
+      })),
+    );
+    emit();
+  },
+  addUser(user: Omit<AppUser, "id">) {
+    const users = store.getUsers();
+    users.push({ ...user, id: crypto.randomUUID() });
+    write(USERS_KEY, users);
+    emit();
+  },
+  updateUser(id: string, patch: Partial<AppUser>) {
+    write(
+      USERS_KEY,
+      store.getUsers().map((user) => (user.id === id ? { ...user, ...patch } : user)),
+    );
+    emit();
+  },
+  deleteUser(id: string) {
+    write(
+      USERS_KEY,
+      store.getUsers().filter((user) => user.id !== id),
+    );
     emit();
   },
   subscribe(fn: () => void) {
@@ -326,6 +370,39 @@ export function useSettings() {
     };
   }, []);
   return store.getSettings();
+}
+
+export function useUsers() {
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const u = store.subscribe(() => setTick((t) => t + 1));
+    return () => {
+      u();
+    };
+  }, []);
+  return store.getUsers();
+}
+
+export function useActiveUser() {
+  const users = useUsers();
+  const settings = useSettings();
+  return users.find((user) => user.id === settings.activeUserId);
+}
+
+export function useAccessibleDivisions() {
+  const divisions = useDivisions();
+  const activeUser = useActiveUser();
+  if (!activeUser || activeUser.role === "admin") return divisions;
+  return divisions.filter((division) => activeUser.divisionIds.includes(division.id));
+}
+
+export function useAccessibleFiles() {
+  const files = useFiles();
+  const accessibleDivisions = useAccessibleDivisions();
+  const activeUser = useActiveUser();
+  if (!activeUser || activeUser.role === "admin") return files;
+  const allowedDivisionNames = new Set(accessibleDivisions.map((division) => division.name));
+  return files.filter((file) => file.division && allowedDivisionNames.has(file.division));
 }
 
 export function isIncomplete(f: FileRecord) {

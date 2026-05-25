@@ -15,18 +15,19 @@ import { Link } from "@tanstack/react-router";
 import { store, useSettings } from "@/lib/files-store";
 
 const titles: Record<string, string> = {
-  "/": "Dashboard",
+  "/": "Search Files",
   "/add": "Add File",
   "/search": "Search Files",
   "/reports": "Reports",
+  "/dashboard": "Dashboard",
   "/settings": "Settings",
 };
 
 const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/add", label: "Add File", icon: FilePlus2 },
   { to: "/search", label: "Search Files", icon: Search },
   { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
@@ -51,7 +52,7 @@ export function TopBar() {
 
         <nav className="flex flex-wrap items-center gap-1">
           {nav.map((item) => {
-            const active = item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
+            const active = pathname.startsWith(item.to);
             const Icon = item.icon;
             return (
               <Link
@@ -91,7 +92,7 @@ export function TopBar() {
           </button>
           <Link
             to="/add"
-            search={{ fileId: undefined }}
+            search={{ fileId: undefined, section: undefined }}
             className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
           >
             <Plus className="size-4" />

@@ -1,6 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { store, type FileRecord, useDivisions, useFiles, useSettings } from "@/lib/files-store";
+import {
+  store,
+  type FileRecord,
+  useAccessibleDivisions,
+  useAccessibleFiles,
+  useSettings,
+} from "@/lib/files-store";
 import { Filter, Pencil, Printer, Search, SlidersHorizontal, X } from "lucide-react";
 import { requestDeletionPassword } from "@/lib/delete-password";
 
@@ -195,8 +201,8 @@ const statusDateFields: { key: FileKey; label: string }[] = [
 ];
 
 function SearchPage() {
-  const files = useFiles();
-  const divisions = useDivisions();
+  const files = useAccessibleFiles();
+  const divisions = useAccessibleDivisions();
   const navigate = useNavigate();
   const divisionOptions = divisions.map((division) => division.name);
   const years = useMemo(
@@ -229,7 +235,10 @@ function SearchPage() {
   const [freeText, setFreeText] = useState("");
   const [freeDate, setFreeDate] = useState("");
   const openFile = (file: FileRecord) => {
-    navigate({ to: "/add", search: { fileId: file.id } });
+    navigate({ to: "/add", search: { fileId: file.id, section: undefined } });
+  };
+  const openTimeline = (file: FileRecord) => {
+    navigate({ to: "/add", search: { fileId: file.id, section: "Timeline" } });
   };
 
   const hasFilters =
@@ -329,6 +338,7 @@ function SearchPage() {
   ]);
 
   const valueTotals = useMemo(() => getValueTotals(results), [results]);
+  const allValueTotals = useMemo(() => getValueTotals(files), [files]);
 
   const clearAll = () => {
     setYearFilter("");
@@ -359,6 +369,28 @@ function SearchPage() {
 
   return (
     <div className="w-full min-w-0 space-y-4">
+      <div className="rounded-md border border-border bg-card p-4 shadow-[var(--shadow-card)]">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Search Files</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Find records, open timelines, print file sheets, or edit file details.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="rounded-md border border-border bg-secondary/50 px-3 py-2">
+              <span className="font-medium text-foreground">{files.length}</span> records
+            </span>
+            <span className="rounded-md border border-border bg-secondary/50 px-3 py-2">
+              Total value:{" "}
+              <span className="font-medium text-foreground">
+                {formatCurrency(allValueTotals.total)}
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-card border border-border rounded-md p-2.5 shadow-[var(--shadow-card)] flex min-w-0 items-center gap-2">
         <Search className="size-4 text-muted-foreground ml-2" />
         <input
@@ -375,14 +407,14 @@ function SearchPage() {
             <div className="flex items-center gap-2 text-sm font-semibold">
               <SlidersHorizontal className="size-4 text-muted-foreground" /> Filters
             </div>
-            {hasFilters && (
-              <button
-                onClick={clearAll}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-accent"
-              >
-                <X className="size-3.5" /> Clear
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={!hasFilters}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground px-2 py-1 rounded-md hover:bg-accent disabled:hover:bg-transparent"
+            >
+              <X className="size-3.5" /> Reset filters
+            </button>
           </div>
 
           <FilterGroup label="Year">
@@ -507,12 +539,12 @@ function SearchPage() {
                 </span>
               </span>
             </div>
-            <span>Click any row to open the file in Add File</span>
+            <span>Click any row to view timeline. Use Edit to change details.</span>
           </div>
 
           <div className="min-w-0 overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-card)]">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1320px] text-sm">
+              <table className="w-full min-w-[1080px] text-sm">
                 <thead className="bg-secondary text-xs text-muted-foreground">
                   <tr>
                     <th className="text-left font-medium px-4 py-2.5">IMMS</th>
@@ -523,26 +555,23 @@ function SearchPage() {
                     <th className="text-left font-medium px-4 py-2.5">Current status</th>
                     <th className="text-left font-medium px-4 py-2.5">S.O. Date</th>
                     <th className="text-left font-medium px-4 py-2.5">D.P Date</th>
-                    <th className="text-left font-medium px-4 py-2.5">Remark-1</th>
-                    <th className="text-left font-medium px-4 py-2.5">Remark-2</th>
                     <th className="text-right font-medium px-4 py-2.5">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {results.length === 0 && (
                     <tr>
-                      <td colSpan={11} className="text-center text-sm text-muted-foreground py-10">
+                      <td colSpan={9} className="text-center text-sm text-muted-foreground py-10">
                         No files match your filters.
                       </td>
                     </tr>
                   )}
                   {results.map((file) => {
                     const status = getCurrentStatus(file);
-                    const recentRemarks = getRecentRemarks(file);
                     return (
                       <tr
                         key={file.id}
-                        onClick={() => openFile(file)}
+                        onClick={() => openTimeline(file)}
                         className="border-t border-border hover:bg-secondary/50 cursor-pointer"
                       >
                         <td className="px-4 py-3 font-medium">{file.imms || missing}</td>
@@ -564,12 +593,6 @@ function SearchPage() {
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {file.dpDate || missing}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate">
-                          {recentRemarks[0]?.value || missing}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate">
-                          {recentRemarks[1]?.value || missing}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1.5">

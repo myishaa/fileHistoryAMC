@@ -1,12 +1,21 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { store, type FileRecord, useDivisions, useFiles, useSettings } from "@/lib/files-store";
+import {
+  store,
+  type FileRecord,
+  useAccessibleDivisions,
+  useAccessibleFiles,
+  useDivisions,
+  useFiles,
+  useSettings,
+} from "@/lib/files-store";
 import { Save, Eraser, Lock, Trash2, Unlock } from "lucide-react";
 import { requestDeletionPassword } from "@/lib/delete-password";
 
 export const Route = createFileRoute("/add")({
   validateSearch: (search: Record<string, unknown>) => ({
     fileId: typeof search.fileId === "string" ? search.fileId : undefined,
+    section: typeof search.section === "string" ? search.section : undefined,
   }),
   component: AddFilePage,
 });
@@ -163,7 +172,6 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
     title: "File details",
     fields: [
       { key: "uniqueCode", label: "Unique code" },
-      { key: "year", label: "Year" },
       { key: "division", label: "Division" },
       { key: "indentor", label: "Indentor" },
       { key: "demandDescription", label: "Description", type: "textarea" },
@@ -173,7 +181,6 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "tcec", label: "TCEC (YES/NO)", options: yesNoCaps },
       { key: "gem", label: "GeM (yes/no)", options: yesNo },
       { key: "highValue", label: "High value (Yes/No)", options: yesNo },
-      { key: "ad", label: "AD vetting (Yes/No)", options: yesNo },
       { key: "rqa", label: "R&QA (Yes/No)", options: yesNo },
       { key: "ifa", label: "IFA (Yes/No)", options: yesNo },
       { key: "fileDetailsRemark1", label: "Remark-1", type: "textarea" },
@@ -270,10 +277,12 @@ const timelineFields = extraSections
   .map((field) => ({ key: field.key, label: field.label }));
 
 function AddFilePage() {
-  const divisions = useDivisions();
-  const files = useFiles();
+  const allDivisions = useDivisions();
+  const divisions = useAccessibleDivisions();
+  const files = useAccessibleFiles();
+  const allFiles = useFiles();
   const settings = useSettings();
-  const { fileId } = Route.useSearch();
+  const { fileId, section } = Route.useSearch();
   const navigate = useNavigate();
   const editingFile = files.find((file) => file.id === fileId);
   const isEditing = Boolean(fileId && editingFile);
@@ -284,7 +293,7 @@ function AddFilePage() {
   );
   const [saved, setSaved] = useState(false);
   const [unlockedSections, setUnlockedSections] = useState<Set<string>>(() => new Set());
-  const [activeBoardSection, setActiveBoardSection] = useState("File details");
+  const [activeBoardSection, setActiveBoardSection] = useState(section ?? "File details");
 
   useEffect(() => {
     setForm(
@@ -297,9 +306,13 @@ function AddFilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingFile?.id, settings.financialYear]);
 
+  useEffect(() => {
+    setActiveBoardSection(section ?? "File details");
+  }, [section, editingFile?.id]);
+
   const generatedUniqueCode = isEditing
     ? form.uniqueCode
-    : generateUniqueCode(settings.financialYear, form.division, divisions, files);
+    : generateUniqueCode(settings.financialYear, form.division, allDivisions, allFiles);
   const formWithLockedYear = {
     ...form,
     year: settings.financialYear,
@@ -307,13 +320,17 @@ function AddFilePage() {
   };
   const tcecIsNo = isNo(formWithLockedYear.tcec);
   const ifaDisabled = shouldDisableIfa(formWithLockedYear);
+  const adVettingDisabled = isDivisionAdNo(formWithLockedYear.division, divisions);
   const activeSection = extraSections.find((section) => section.title === activeBoardSection);
   const activeSectionIndex = extraSections.findIndex(
     (section) => section.title === activeBoardSection,
   );
   const update = (k: keyof typeof form, v: string) => {
     if (k === "year") return;
-    setForm((f) => applyConditionalRules({ ...f, [k]: v }));
+    setForm((f) => {
+      const next = applyConditionalRules({ ...f, [k]: v });
+      return isDivisionAdNo(next.division, divisions) ? { ...next, adVettingDate: "" } : next;
+    });
   };
   const toggleSectionLock = (sectionTitle: string) => {
     setUnlockedSections((current) => {
@@ -348,7 +365,7 @@ function AddFilePage() {
     );
   };
   const renderSectionFields = (section: (typeof extraSections)[number]) => (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4">
       {section.fields.map((field) => {
         const renderedField =
           field.key === "division"
@@ -409,6 +426,7 @@ function AddFilePage() {
               field.key === "year" ||
               field.key === "uniqueCode" ||
               existingValueLocked ||
+              (field.key === "adVettingDate" && adVettingDisabled) ||
               (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
               (ifaDisabled && ifaDisabledKeys.includes(field.key))
             }
@@ -420,7 +438,9 @@ function AddFilePage() {
   );
 
   const save = () => {
-    const payload = toFilePayload(applyConditionalRules(formWithLockedYear));
+    const payload = toFilePayload(
+      clearDivisionDisabledFields(applyConditionalRules(formWithLockedYear), divisions),
+    );
     if (editingFile) {
       store.updateFile(editingFile.id, payload);
     } else {
@@ -440,6 +460,26 @@ function AddFilePage() {
     store.deleteFile(editingFile.id);
     navigate({ to: "/search" });
   };
+
+  if (fileId && !editingFile) {
+    return (
+      <div className="w-full">
+        <div className="bg-card border border-border rounded-md p-6 shadow-[var(--shadow-card)]">
+          <h2 className="text-base font-semibold">File not available</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            This file is either missing or not assigned to the active user's divisions.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/search" })}
+            className="mt-4 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+          >
+            Back to search
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">
@@ -546,25 +586,57 @@ function SectionBoard({
 }
 
 function TimelineBlock({ form }: { form: FormState }) {
-  const items = timelineFields
+  const [showAllDates, setShowAllDates] = useState(false);
+  const filledItems = timelineFields
     .map((field) => ({
       label: field.label,
       date: form[field.key],
     }))
     .filter((item) => item.date)
     .sort((a, b) => a.date.localeCompare(b.date));
+  const allItems = timelineFields.map((field) => ({
+    label: field.label,
+    date: form[field.key],
+  }));
+  const items = showAllDates ? allItems : filledItems;
 
   return (
     <section
       id={sectionId("Timeline")}
       className="md:col-span-2 scroll-mt-24 rounded-md border border-border bg-secondary/25 p-4"
     >
-      <div className="mb-4 flex items-center justify-between border-b border-border pb-2">
-        <h3 className="text-sm font-semibold">Timeline</h3>
-        <span className="text-xs text-muted-foreground">{items.length} date fields filled</span>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+        <div>
+          <h3 className="text-sm font-semibold">Timeline</h3>
+          <span className="text-xs text-muted-foreground">
+            {filledItems.length} of {timelineFields.length} date fields filled
+          </span>
+        </div>
+        <div className="inline-flex rounded-md border border-border bg-background p-0.5">
+          <button
+            type="button"
+            onClick={() => setShowAllDates(false)}
+            className={
+              "h-7 rounded px-2.5 text-xs font-medium " +
+              (!showAllDates ? "bg-primary text-primary-foreground" : "text-muted-foreground")
+            }
+          >
+            Filled only
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAllDates(true)}
+            className={
+              "h-7 rounded px-2.5 text-xs font-medium " +
+              (showAllDates ? "bg-primary text-primary-foreground" : "text-muted-foreground")
+            }
+          >
+            All dates
+          </button>
+        </div>
       </div>
 
-      {items.length === 0 ? (
+      {filledItems.length === 0 && !showAllDates ? (
         <p className="text-sm text-muted-foreground">
           Timeline will appear here as date fields are filled.
         </p>
@@ -572,11 +644,24 @@ function TimelineBlock({ form }: { form: FormState }) {
         <ol className="relative space-y-0 pl-6">
           <span className="absolute left-[10px] top-2 bottom-2 w-px bg-success/60" />
           {items.map((item) => (
-            <li key={`${item.label}-${item.date}`} className="relative pb-4 last:pb-0">
-              <span className="absolute -left-[21px] top-1.5 size-3 rounded-full border-2 border-card bg-success shadow-[0_0_0_3px_var(--color-success)]/10" />
+            <li key={`${item.label}-${item.date || "empty"}`} className="relative pb-4 last:pb-0">
+              <span
+                className={
+                  "absolute -left-[21px] top-1.5 size-3 rounded-full border-2 border-card " +
+                  (item.date
+                    ? "bg-success shadow-[0_0_0_3px_var(--color-success)]/10"
+                    : "bg-muted-foreground/35")
+                }
+              />
               <div className="rounded-md border border-border bg-card px-3 py-2.5">
-                <div className="text-sm font-medium">{item.label}</div>
-                <div className="text-xs text-muted-foreground">{formatTimelineDate(item.date)}</div>
+                <div
+                  className={item.date ? "text-sm font-medium" : "text-sm text-muted-foreground"}
+                >
+                  {item.label}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {item.date ? formatTimelineDate(item.date) : "Not filled"}
+                </div>
               </div>
             </li>
           ))}
@@ -604,10 +689,10 @@ function sectionId(title: string) {
 }
 
 const inputCls =
-  "w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition";
+  "w-full max-w-md h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition";
 
 const textareaCls =
-  "w-full min-h-20 px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition resize-y";
+  "w-full max-w-2xl min-h-20 px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition resize-y";
 
 function sectionBlockCls(index: number) {
   const accents = [
@@ -698,6 +783,17 @@ function shouldDisableIfa(form: FormState) {
   return isNo(form.tcec) && form.mode !== "PBM";
 }
 
+function isDivisionAdNo(divisionName: string, divisions: ReturnType<typeof useDivisions>) {
+  const division = divisions.find(
+    (item) => item.name.trim().toLowerCase() === divisionName.trim().toLowerCase(),
+  );
+  return isNo(division?.ad ?? "");
+}
+
+function clearDivisionDisabledFields(form: FormState, divisions: ReturnType<typeof useDivisions>) {
+  return isDivisionAdNo(form.division, divisions) ? { ...form, adVettingDate: "" } : form;
+}
+
 function getSavedFileValue(file: FileRecord | undefined, key: FieldKey) {
   if (!file) return undefined;
   return (file as Record<string, unknown>)[key];
@@ -780,7 +876,7 @@ function ValueField({
   return (
     <Field label="Value">
       <div className={`space-y-2 ${disabledCls(disabled)}`}>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid max-w-md grid-cols-2 gap-2">
           <label className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm">
             <input
               type="checkbox"
@@ -845,7 +941,7 @@ function SoValueField({
   return (
     <Field label="S.O. value">
       <div className={`space-y-2 ${disabledCls(fieldDisabled)}`}>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid max-w-md grid-cols-2 gap-2">
           <label className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm">
             <input
               type="checkbox"
@@ -1008,7 +1104,7 @@ function RadioGroup({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className={`grid grid-cols-2 gap-2 ${disabledCls(disabled)}`}>
+    <div className={`grid max-w-md grid-cols-2 gap-2 ${disabledCls(disabled)}`}>
       {options.map((option) => (
         <label
           key={option}
@@ -1039,14 +1135,12 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="block">
-      <div className="text-xs font-medium mb-1.5 flex items-center justify-between">
-        <span>
-          {label} <span className="text-muted-foreground font-normal">(optional)</span>
-        </span>
+    <div className="grid grid-cols-1 gap-2 md:grid-cols-[240px_minmax(0,1fr)] md:items-start">
+      <div className="flex min-h-10 items-center justify-between md:justify-start md:pt-0">
+        <span className="text-sm font-semibold">{label}</span>
         {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
       </div>
-      {children}
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

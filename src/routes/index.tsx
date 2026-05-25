@@ -1,14 +1,16 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useFiles, useDivisions, isIncomplete } from "@/lib/files-store";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { useAccessibleDivisions, useAccessibleFiles, isIncomplete } from "@/lib/files-store";
 import { FileText, AlertTriangle, Building2, Clock, ArrowUpRight, TrendingUp } from "lucide-react";
 
 export const Route = createFileRoute("/")({
-  component: Dashboard,
+  beforeLoad: () => {
+    throw redirect({ to: "/search" });
+  },
 });
 
-function Dashboard() {
-  const files = useFiles();
-  const divisions = useDivisions();
+export function Dashboard() {
+  const files = useAccessibleFiles();
+  const divisions = useAccessibleDivisions();
 
   const total = files.length;
   const incomplete = files.filter(isIncomplete).length;
@@ -38,9 +40,27 @@ function Dashboard() {
 
   const stats = [
     { label: "Total Files", value: total, icon: FileText, hint: "All records", tone: "primary" },
-    { label: "Pending / Incomplete", value: incomplete, icon: AlertTriangle, hint: "Need updates", tone: "warning" },
-    { label: "Divisions", value: divisions.length, icon: Building2, hint: "Active", tone: "default" },
-    { label: "Added this week", value: last7.reduce((s, d) => s + d.count, 0), icon: TrendingUp, hint: "Last 7 days", tone: "success" },
+    {
+      label: "Pending / Incomplete",
+      value: incomplete,
+      icon: AlertTriangle,
+      hint: "Need updates",
+      tone: "warning",
+    },
+    {
+      label: "Divisions",
+      value: divisions.length,
+      icon: Building2,
+      hint: "Active",
+      tone: "default",
+    },
+    {
+      label: "Added this week",
+      value: last7.reduce((s, d) => s + d.count, 0),
+      icon: TrendingUp,
+      hint: "Last 7 days",
+      tone: "success",
+    },
   ];
 
   return (
@@ -61,10 +81,10 @@ function Dashboard() {
                     (s.tone === "warning"
                       ? "bg-warning/15 text-warning"
                       : s.tone === "success"
-                      ? "bg-success/15 text-success"
-                      : s.tone === "primary"
-                      ? "bg-primary/10 text-primary"
-                      : "bg-accent text-accent-foreground")
+                        ? "bg-success/15 text-success"
+                        : s.tone === "primary"
+                          ? "bg-primary/10 text-primary"
+                          : "bg-accent text-accent-foreground")
                   }
                 >
                   <Icon className="size-4" />
@@ -129,7 +149,10 @@ function Dashboard() {
             <h2 className="text-sm font-semibold">Recently added files</h2>
             <p className="text-xs text-muted-foreground">Latest 5 entries</p>
           </div>
-          <Link to="/search" className="text-xs text-primary inline-flex items-center gap-1 hover:underline">
+          <Link
+            to="/search"
+            className="text-xs text-primary inline-flex items-center gap-1 hover:underline"
+          >
             View all <ArrowUpRight className="size-3.5" />
           </Link>
         </div>
@@ -148,7 +171,9 @@ function Dashboard() {
             <tbody>
               {recent.map((f) => (
                 <tr key={f.id} className="border-t border-border hover:bg-secondary/40">
-                  <td className="px-5 py-3 font-medium">{f.title ?? <em className="text-muted-foreground">Untitled</em>}</td>
+                  <td className="px-5 py-3 font-medium">
+                    {f.title ?? <em className="text-muted-foreground">Untitled</em>}
+                  </td>
                   <td className="px-5 py-3 text-muted-foreground">{f.division ?? "—"}</td>
                   <td className="px-5 py-3 text-muted-foreground">{f.officer ?? "—"}</td>
                   <td className="px-5 py-3 text-muted-foreground">{f.imms ?? "—"}</td>
