@@ -237,6 +237,7 @@ function SearchPage() {
 
   const [yearFilter, setYearFilter] = useState("");
   const [imms, setImms] = useState("");
+  const [immsFilled, setImmsFilled] = useState(false);
   const [indentor, setIndentor] = useState("");
   const [divisionFilter, setDivisionFilter] = useState("");
   const [valueFrom, setValueFrom] = useState("");
@@ -290,6 +291,7 @@ function SearchPage() {
   const hasFilters =
     yearFilter ||
     imms ||
+    immsFilled ||
     indentor ||
     divisionFilter ||
     valueFrom ||
@@ -322,6 +324,7 @@ function SearchPage() {
     const filtered = files.filter((file) => {
       if (yearFilter && !includesText(file.year, yearFilter)) return false;
       if (imms && !includesText(file.imms, imms)) return false;
+      if (immsFilled && !hasAny(file, ["imms"])) return false;
       if (indentor && !includesText(file.indentor, indentor)) return false;
       if (divisionFilter && !includesText(file.division, divisionFilter)) return false;
       if (description && !includesText(file.demandDescription, description)) return false;
@@ -367,6 +370,7 @@ function SearchPage() {
     files,
     yearFilter,
     imms,
+    immsFilled,
     indentor,
     divisionFilter,
     valueFrom,
@@ -427,6 +431,7 @@ function SearchPage() {
   const clearAll = () => {
     setYearFilter("");
     setImms("");
+    setImmsFilled(false);
     setIndentor("");
     setDivisionFilter("");
     setValueFrom("");
@@ -521,6 +526,9 @@ function SearchPage() {
 
           <FilterGroup label="IMMS">
             <FilterInput value={imms} onChange={setImms} placeholder="IMMS no." />
+            <div className="mt-2">
+              <CheckFilter label="IMMS" checked={immsFilled} onChange={setImmsFilled} />
+            </div>
           </FilterGroup>
 
           <FilterGroup label="Indentor">
