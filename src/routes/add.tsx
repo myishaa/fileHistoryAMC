@@ -9,7 +9,7 @@ import {
   useFiles,
   useSettings,
 } from "@/lib/files-store";
-import { Save, Eraser, Lock, Trash2, Unlock } from "lucide-react";
+import { Save, Eraser, Lock, Printer, Trash2, Unlock } from "lucide-react";
 import { requestDeletionPassword } from "@/lib/delete-password";
 
 export const Route = createFileRoute("/add")({
@@ -612,27 +612,36 @@ function TimelineBlock({ form }: { form: FormState }) {
             {filledItems.length} of {timelineFields.length} date fields filled
           </span>
         </div>
-        <div className="inline-flex rounded-md border border-border bg-background p-0.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setShowAllDates(false)}
-            className={
-              "h-7 rounded px-2.5 text-xs font-medium " +
-              (!showAllDates ? "bg-primary text-primary-foreground" : "text-muted-foreground")
-            }
+            onClick={() => printTimelineReport(form, filledItems)}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground hover:bg-accent"
           >
-            Filled only
+            <Printer className="size-3.5" /> Print
           </button>
-          <button
-            type="button"
-            onClick={() => setShowAllDates(true)}
-            className={
-              "h-7 rounded px-2.5 text-xs font-medium " +
-              (showAllDates ? "bg-primary text-primary-foreground" : "text-muted-foreground")
-            }
-          >
-            All dates
-          </button>
+          <div className="inline-flex rounded-md border border-border bg-background p-0.5">
+            <button
+              type="button"
+              onClick={() => setShowAllDates(false)}
+              className={
+                "h-7 rounded px-2.5 text-xs font-medium " +
+                (!showAllDates ? "bg-primary text-primary-foreground" : "text-muted-foreground")
+              }
+            >
+              Filled only
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAllDates(true)}
+              className={
+                "h-7 rounded px-2.5 text-xs font-medium " +
+                (showAllDates ? "bg-primary text-primary-foreground" : "text-muted-foreground")
+              }
+            >
+              All dates
+            </button>
+          </div>
         </div>
       </div>
 
@@ -679,6 +688,134 @@ function formatTimelineDate(date: string) {
     month: "short",
     year: "numeric",
   });
+}
+
+function printTimelineReport(form: FormState, filledItems: Array<{ label: string; date: string }>) {
+  const printWindow = window.open("", "_blank", "width=900,height=720");
+  if (!printWindow) {
+    alert("Allow pop-ups to print this timeline.");
+    return;
+  }
+
+  const details = [
+    { label: "IMMS number", value: form.imms },
+    { label: "Division", value: form.division },
+    { label: "Description", value: form.demandDescription },
+    { label: "Indentor", value: form.indentor },
+  ];
+  const detailRows = details
+    .map(
+      (detail) => `
+        <tr>
+          <th>${escapeHtml(detail.label)}</th>
+          <td>${escapeHtml(detail.value || "Not set")}</td>
+        </tr>
+      `,
+    )
+    .join("");
+  const timelineRows = filledItems
+    .map(
+      (item) => `
+        <tr>
+          <td>${escapeHtml(item.label)}</td>
+          <td>${escapeHtml(formatTimelineDate(item.date))}</td>
+        </tr>
+      `,
+    )
+    .join("");
+
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <title>${escapeHtml(form.imms || form.uniqueCode || "Timeline")}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            font-family: Arial, sans-serif;
+            color: #111;
+            margin: 22px;
+          }
+          header {
+            border-bottom: 2px solid #111;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+          }
+          h1 {
+            font-size: 18px;
+            margin: 0 0 5px;
+          }
+          h2 {
+            font-size: 14px;
+            margin: 18px 0 8px;
+          }
+          .subtle {
+            color: #555;
+            font-size: 12px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+          }
+          th, td {
+            border: 1px solid #bbb;
+            padding: 7px 8px;
+            text-align: left;
+            vertical-align: top;
+          }
+          th {
+            width: 28%;
+            background: #f3f3f3;
+            font-weight: 600;
+          }
+          @media print {
+            body { margin: 10mm; }
+            tr { break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <header>
+          <h1>File Timeline</h1>
+          <div class="subtle">Printed: ${escapeHtml(new Date().toLocaleString())}</div>
+        </header>
+        <h2>File details</h2>
+        <table>
+          <tbody>${detailRows}</tbody>
+        </table>
+        <h2>Timeline</h2>
+        ${
+          filledItems.length
+            ? `<table>
+                <thead>
+                  <tr>
+                    <th>Field</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody>${timelineRows}</tbody>
+              </table>`
+            : `<p class="subtle">No timeline fields are filled.</p>`
+        }
+        <script>
+          window.onload = () => {
+            window.print();
+          };
+        </script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function sectionId(title: string) {

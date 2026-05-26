@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { type FileRecord, useAccessibleDivisions, useAccessibleFiles } from "@/lib/files-store";
 import { BadgeIndianRupee, CheckCircle2, ClipboardList, FileText, Layers3 } from "lucide-react";
@@ -12,6 +12,7 @@ export const Route = createFileRoute("/")({
 export function Dashboard() {
   const files = useAccessibleFiles();
   const divisions = useAccessibleDivisions();
+  const navigate = useNavigate();
   const [selectedDivision, setSelectedDivision] = useState("all");
   const selectedDivisionIsAccessible =
     selectedDivision === "all" || divisions.some((division) => division.name === selectedDivision);
@@ -30,7 +31,6 @@ export function Dashboard() {
   );
 
   const modeCounts = getModeCounts(dashboardFiles);
-  const maxModeCount = Math.max(1, ...modeCounts.map((mode) => mode.count));
   const workflowStatusGroups = getWorkflowStatusGroups(dashboardFiles);
   const financeTotals = {
     allocatedCapital: dashboardDivisions.reduce(
@@ -52,6 +52,14 @@ export function Dashboard() {
       0,
     ),
   };
+  const capitalBookedPercent = getPercent(
+    financeTotals.bookedCapital,
+    financeTotals.allocatedCapital,
+  );
+  const revenueBookedPercent = getPercent(
+    financeTotals.bookedRevenue,
+    financeTotals.allocatedRevenue,
+  );
 
   const summaryStats = [
     {
@@ -60,6 +68,7 @@ export function Dashboard() {
       icon: FileText,
       hint: "All files added",
       tone: "primary",
+      searchFilter: "totalFiles",
     },
     {
       label: "Demands controlled",
@@ -67,6 +76,7 @@ export function Dashboard() {
       icon: ClipboardList,
       hint: "IMMS number filled",
       tone: "accent",
+      searchFilter: "demandsControlled",
     },
     {
       label: "TCEC files",
@@ -74,6 +84,7 @@ export function Dashboard() {
       icon: CheckCircle2,
       hint: "TCEC marked Yes",
       tone: "success",
+      searchFilter: "tcecFiles",
     },
     {
       label: "Non TCEC files",
@@ -81,6 +92,7 @@ export function Dashboard() {
       icon: ClipboardList,
       hint: "TCEC marked No",
       tone: "accent",
+      searchFilter: "nonTcecFiles",
     },
     {
       label: "High value files",
@@ -88,6 +100,7 @@ export function Dashboard() {
       icon: ClipboardList,
       hint: "High value marked Yes",
       tone: "accent",
+      searchFilter: "highValueFiles",
     },
     {
       label: "R&QA vetting",
@@ -95,6 +108,7 @@ export function Dashboard() {
       icon: CheckCircle2,
       hint: "R&QA marked Yes",
       tone: "success",
+      searchFilter: "rqaVetting",
     },
     {
       label: "IFA concurrence",
@@ -102,6 +116,17 @@ export function Dashboard() {
       icon: ClipboardList,
       hint: "IFA marked Yes",
       tone: "accent",
+      searchFilter: "ifaConcurrence",
+    },
+    {
+      label: "Booked percentage",
+      value: {
+        capital: formatPercent(capitalBookedPercent),
+        revenue: formatPercent(revenueBookedPercent),
+      },
+      icon: BadgeIndianRupee,
+      hint: "Capital / Revenue booked",
+      tone: "success",
     },
   ];
 
@@ -111,6 +136,15 @@ export function Dashboard() {
     { label: "Capital booked", value: financeTotals.bookedCapital },
     { label: "Revenue booked", value: financeTotals.bookedRevenue },
   ];
+  const openSearchFilter = (dashboardFilter: string) => {
+    navigate({
+      to: "/search",
+      search: {
+        dashboardFilter,
+        division: activeDivision === "all" ? undefined : activeDivision,
+      },
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -139,7 +173,11 @@ export function Dashboard() {
         <div className="bg-card border border-border rounded-xl p-5 shadow-[var(--shadow-card)]">
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {summaryStats.map((stat) => (
-              <SummaryMetric key={stat.label} {...stat} />
+              <SummaryMetric
+                key={stat.label}
+                {...stat}
+                onClick={stat.searchFilter ? () => openSearchFilter(stat.searchFilter) : undefined}
+              />
             ))}
           </div>
         </div>
@@ -164,13 +202,15 @@ export function Dashboard() {
                 </h3>
                 <div className="mt-3 space-y-2">
                   {group.statuses.map((status) => (
-                    <div
+                    <button
+                      type="button"
                       key={status.label}
-                      className="flex items-center justify-between gap-3 rounded-md bg-card px-3 py-2"
+                      onClick={() => openSearchFilter(status.searchFilter)}
+                      className="flex w-full items-center justify-between gap-3 rounded-md bg-card px-3 py-2 text-left hover:bg-accent"
                     >
                       <span className="text-sm font-medium">{status.label}</span>
                       <span className="text-base font-semibold tabular-nums">{status.count}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -183,30 +223,27 @@ export function Dashboard() {
         <div className="bg-card border border-border rounded-xl p-5 shadow-[var(--shadow-card)]">
           <div className="flex items-center justify-between mb-5">
             <div>
-              <h2 className="text-sm font-semibold">Mode</h2>
-              <p className="text-xs text-muted-foreground">Files grouped by mode</p>
+              <h2 className="text-sm font-semibold">Bidding mode</h2>
+              <p className="text-xs text-muted-foreground">Files grouped by bidding mode</p>
             </div>
             <div className="size-8 grid place-items-center rounded-md bg-accent text-accent-foreground">
               <Layers3 className="size-4" />
             </div>
           </div>
           {modeCounts.length ? (
-            <ul className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {modeCounts.map((mode) => (
-                <li key={mode.name}>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="font-medium">{mode.name}</span>
-                    <span className="text-muted-foreground">{mode.count}</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full"
-                      style={{ width: `${(mode.count / maxModeCount) * 100}%` }}
-                    />
-                  </div>
-                </li>
+                <button
+                  type="button"
+                  key={mode.name}
+                  onClick={() => openSearchFilter(`mode:${mode.name}`)}
+                  className="rounded-lg border border-border bg-secondary/35 p-4 text-left hover:bg-accent"
+                >
+                  <div className="text-xs text-muted-foreground">{mode.name}</div>
+                  <div className="mt-2 text-2xl font-semibold tracking-tight">{mode.count}</div>
+                </button>
               ))}
-            </ul>
+            </div>
           ) : (
             <div className="text-sm text-muted-foreground">No modes recorded yet.</div>
           )}
@@ -242,17 +279,17 @@ function SummaryMetric({
   label,
   value,
   icon: Icon,
-  hint,
   tone,
+  onClick,
 }: {
   label: string;
-  value: number;
+  value: number | string | { capital: string; revenue: string };
   icon: typeof FileText;
-  hint: string;
   tone: "primary" | "success" | "accent";
+  onClick?: () => void;
 }) {
-  return (
-    <div className="rounded-lg border border-border bg-secondary/35 p-4">
+  const content = (
+    <>
       <div className="flex items-center justify-between">
         <div className="text-xs text-muted-foreground">{label}</div>
         <div
@@ -268,23 +305,48 @@ function SummaryMetric({
           <Icon className="size-4" />
         </div>
       </div>
-      <div className="mt-3 text-3xl font-semibold tracking-tight">{value}</div>
-      <div className="text-xs text-muted-foreground mt-1">{hint}</div>
-    </div>
+      {typeof value === "object" ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-md border border-border bg-card px-2 py-2">
+            <div className="text-[11px] text-muted-foreground">Capital</div>
+            <div className="text-lg font-semibold tracking-tight">{value.capital}</div>
+          </div>
+          <div className="rounded-md border border-border bg-card px-2 py-2">
+            <div className="text-[11px] text-muted-foreground">Revenue</div>
+            <div className="text-lg font-semibold tracking-tight">{value.revenue}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 text-2xl font-semibold tracking-tight">{value}</div>
+      )}
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded-lg border border-border bg-secondary/35 p-4 text-left hover:bg-accent"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className="rounded-lg border border-border bg-secondary/35 p-4">{content}</div>;
 }
 
 function getModeCounts(files: ReturnType<typeof useAccessibleFiles>) {
+  const modes = ["OBM", "PBM", "SBM", "LBM", "LPC"];
   const counts = files.reduce<Record<string, number>>((current, file) => {
-    const mode = file.mode?.trim();
-    if (!mode) return current;
+    const mode = file.mode?.trim().toUpperCase();
+    if (!mode || !modes.includes(mode)) return current;
     current[mode] = (current[mode] ?? 0) + 1;
     return current;
   }, {});
 
-  return Object.entries(counts)
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  return modes.map((name) => ({ name, count: counts[name] ?? 0 }));
 }
 
 const workflowStatusGroups = [
@@ -293,10 +355,12 @@ const workflowStatusGroups = [
     statuses: [
       {
         label: "Scrutiny completed",
+        searchFilter: "scrutinyCompleted",
         matches: (file) => hasFilledField(file, "scrutinyCompletionDate"),
       },
       {
         label: "Scrutiny under progress",
+        searchFilter: "scrutinyUnderProgress",
         matches: (file) => !hasFilledField(file, "scrutinyDate"),
       },
     ],
@@ -304,20 +368,29 @@ const workflowStatusGroups = [
   {
     title: "Pre-TCEC",
     statuses: [
-      { label: "Completed", matches: (file) => hasFilledField(file, "preTcecMinutesDate") },
+      {
+        label: "Completed",
+        searchFilter: "preTcecCompleted",
+        matches: (file) => isYes(file.tcec) && hasFilledField(file, "preTcecMinutesDate"),
+      },
       {
         label: "Remaining",
-        matches: (file) =>
-          hasFilledField(file, "scrutinyCompletionDate") && !hasFilledField(file, "preTcecDate"),
+        searchFilter: "preTcecRemaining",
+        matches: (file) => isYes(file.tcec) && !hasFilledField(file, "preTcecMinutesDate"),
       },
     ],
   },
   {
     title: "High value committee",
     statuses: [
-      { label: "Completed", matches: (file) => hasFilledField(file, "highValueMinutesDate") },
+      {
+        label: "Completed",
+        searchFilter: "highValueCompleted",
+        matches: (file) => hasFilledField(file, "highValueMinutesDate"),
+      },
       {
         label: "Remaining",
+        searchFilter: "highValueRemaining",
         matches: (file) => hasFilledField(file, "highValueMeetingDate"),
       },
     ],
@@ -325,9 +398,14 @@ const workflowStatusGroups = [
   {
     title: "AD vetting",
     statuses: [
-      { label: "Completed", matches: (file) => hasFilledField(file, "adVettingDate") },
+      {
+        label: "Completed",
+        searchFilter: "adCompleted",
+        matches: (file) => hasFilledField(file, "adVettingDate"),
+      },
       {
         label: "Remaining",
+        searchFilter: "adRemaining",
         matches: (file) =>
           hasFilledField(file, "preTcecDate") && !hasFilledField(file, "adVettingDate"),
       },
@@ -335,25 +413,66 @@ const workflowStatusGroups = [
   },
   {
     title: "R&QA approval",
-    statuses: [{ label: "Completed", matches: (file) => hasFilledField(file, "rqaApprovalDate") }],
+    statuses: [
+      {
+        label: "Completed",
+        searchFilter: "rqaCompleted",
+        matches: (file) => hasFilledField(file, "rqaApprovalDate"),
+      },
+      {
+        label: "Remaining",
+        searchFilter: "rqaRemaining",
+        matches: (file) => isYes(file.rqa) && !hasFilledField(file, "rqaApprovalDate"),
+      },
+    ],
   },
   {
     title: "IFA concurrence",
     statuses: [
-      { label: "Completed", matches: (file) => hasFilledField(file, "ifaFinalDate") },
+      {
+        label: "Completed",
+        searchFilter: "ifaCompleted",
+        matches: (file) => hasFilledField(file, "ifaFinalDate"),
+      },
       {
         label: "Remaining",
+        searchFilter: "ifaRemaining",
         matches: (file) => hasFilledField(file, "ifaSentDate"),
       },
     ],
   },
   {
     title: "CFA approval",
-    statuses: [{ label: "Completed", matches: (file) => hasFilledField(file, "cfaDate") }],
+    statuses: [
+      {
+        label: "Completed",
+        searchFilter: "cfaCompleted",
+        matches: (file) => hasFilledField(file, "cfaDate"),
+      },
+    ],
+  },
+  {
+    title: "Supply order",
+    statuses: [
+      {
+        label: "Completed",
+        searchFilter: "soCompleted",
+        matches: (file) => hasFilledField(file, "soNo"),
+      },
+      {
+        label: "Remaining",
+        searchFilter: "soRemaining",
+        matches: (file) => !hasFilledField(file, "soNo"),
+      },
+    ],
   },
 ] satisfies Array<{
   title: string;
-  statuses: Array<{ label: string; matches: (file: FileRecord) => boolean }>;
+  statuses: Array<{
+    label: string;
+    searchFilter: string;
+    matches: (file: FileRecord) => boolean;
+  }>;
 }>;
 
 function getWorkflowStatusGroups(files: ReturnType<typeof useAccessibleFiles>) {
@@ -361,6 +480,7 @@ function getWorkflowStatusGroups(files: ReturnType<typeof useAccessibleFiles>) {
     title: group.title,
     statuses: group.statuses.map((status) => ({
       label: status.label,
+      searchFilter: status.searchFilter,
       count: files.filter(status.matches).length,
     })),
   }));
@@ -384,6 +504,18 @@ function parseAmount(value: string | undefined) {
   if (!cleaned) return undefined;
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function getPercent(value: number, total: number) {
+  if (total <= 0) return undefined;
+  return (value / total) * 100;
+}
+
+function formatPercent(value: number | undefined) {
+  if (value === undefined) return "0%";
+  return `${new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 1,
+  }).format(value)}%`;
 }
 
 function formatCurrency(value: number) {

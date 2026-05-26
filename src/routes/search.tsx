@@ -11,6 +11,11 @@ import { FileSpreadsheet, Filter, Printer, Search, SlidersHorizontal, X } from "
 import { requestDeletionPassword } from "@/lib/delete-password";
 
 export const Route = createFileRoute("/search")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    dashboardFilter:
+      typeof search.dashboardFilter === "string" ? search.dashboardFilter : undefined,
+    division: typeof search.division === "string" ? search.division : undefined,
+  }),
   component: SearchPage,
 });
 
@@ -229,6 +234,7 @@ function SearchPage() {
   const divisions = useAccessibleDivisions();
   const settings = useSettings();
   const navigate = useNavigate();
+  const search = Route.useSearch();
   const divisionOptions = divisions.map((division) => division.name);
   const years = useMemo(
     () => Array.from(new Set(files.map((file) => file.year).filter(Boolean))).sort() as string[],
@@ -239,7 +245,7 @@ function SearchPage() {
   const [imms, setImms] = useState("");
   const [immsFilled, setImmsFilled] = useState(false);
   const [indentor, setIndentor] = useState("");
-  const [divisionFilter, setDivisionFilter] = useState("");
+  const [divisionFilter, setDivisionFilter] = useState(search.division ?? "");
   const [valueFrom, setValueFrom] = useState("");
   const [valueTo, setValueTo] = useState("");
   const [capitalOnly, setCapitalOnly] = useState(false);
@@ -288,6 +294,10 @@ function SearchPage() {
     setSelectedTableColumnKeys(userDefault ?? allTableColumnKeys);
   }, [settings.activeUserId]);
 
+  useEffect(() => {
+    if (search.division) setDivisionFilter(search.division);
+  }, [search.division]);
+
   const hasFilters =
     yearFilter ||
     imms ||
@@ -315,7 +325,8 @@ function SearchPage() {
     demandCancelledFilter ||
     soCancelledFilter ||
     freeText ||
-    freeDate;
+    freeDate ||
+    search.dashboardFilter;
 
   const results = useMemo(() => {
     const minValue = parseAmount(valueFrom);
@@ -323,6 +334,8 @@ function SearchPage() {
 
     const filtered = files.filter((file) => {
       if (yearFilter && !includesText(file.year, yearFilter)) return false;
+      if (search.dashboardFilter && !matchesDashboardFilter(file, search.dashboardFilter))
+        return false;
       if (imms && !includesText(file.imms, imms)) return false;
       if (immsFilled && !hasAny(file, ["imms"])) return false;
       if (indentor && !includesText(file.indentor, indentor)) return false;
@@ -369,6 +382,7 @@ function SearchPage() {
     divisionWiseSort,
     files,
     yearFilter,
+    search.dashboardFilter,
     imms,
     immsFilled,
     indentor,
@@ -458,6 +472,9 @@ function SearchPage() {
     setFreeDate("");
     setSortColumnKey("none");
     setDivisionWiseSort(false);
+    if (search.dashboardFilter || search.division) {
+      navigate({ to: "/search", search: {} });
+    }
   };
 
   return (
@@ -1234,6 +1251,36 @@ function isYes(value: string | undefined) {
 
 function hasAny(file: FileRecord, keys: FileKey[]) {
   return keys.some((key) => Boolean(file[key]));
+}
+
+function matchesDashboardFilter(file: FileRecord, filter: string) {
+  if (filter.startsWith("mode:")) return (file.mode ?? "").trim().toUpperCase() === filter.slice(5);
+  if (filter === "totalFiles") return true;
+  if (filter === "demandsControlled") return hasAny(file, ["imms"]);
+  if (filter === "tcecFiles") return isYes(file.tcec);
+  if (filter === "nonTcecFiles") return isNo(file.tcec);
+  if (filter === "highValueFiles") return isYes(file.highValue);
+  if (filter === "rqaVetting") return isYes(file.rqa);
+  if (filter === "ifaConcurrence") return isYes(file.ifa);
+  if (filter === "scrutinyCompleted") return hasAny(file, ["scrutinyCompletionDate"]);
+  if (filter === "scrutinyUnderProgress") return !hasAny(file, ["scrutinyDate"]);
+  if (filter === "preTcecCompleted")
+    return isYes(file.tcec) && hasAny(file, ["preTcecMinutesDate"]);
+  if (filter === "preTcecRemaining")
+    return isYes(file.tcec) && !hasAny(file, ["preTcecMinutesDate"]);
+  if (filter === "highValueCompleted") return hasAny(file, ["highValueMinutesDate"]);
+  if (filter === "highValueRemaining") return hasAny(file, ["highValueMeetingDate"]);
+  if (filter === "adCompleted") return hasAny(file, ["adVettingDate"]);
+  if (filter === "adRemaining")
+    return hasAny(file, ["preTcecDate"]) && !hasAny(file, ["adVettingDate"]);
+  if (filter === "rqaCompleted") return hasAny(file, ["rqaApprovalDate"]);
+  if (filter === "rqaRemaining") return isYes(file.rqa) && !hasAny(file, ["rqaApprovalDate"]);
+  if (filter === "ifaCompleted") return hasAny(file, ["ifaFinalDate"]);
+  if (filter === "ifaRemaining") return hasAny(file, ["ifaSentDate"]);
+  if (filter === "cfaCompleted") return hasAny(file, ["cfaDate"]);
+  if (filter === "soCompleted") return hasAny(file, ["soNo"]);
+  if (filter === "soRemaining") return !hasAny(file, ["soNo"]);
+  return true;
 }
 
 function isTcecFile(file: FileRecord) {
