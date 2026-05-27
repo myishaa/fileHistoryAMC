@@ -38,6 +38,8 @@ const empty = {
   demandDescription: "",
   valueCapital: "",
   valueRevenue: "",
+  currency: "INR",
+  gte: "No",
   valueCapitalSelected: "",
   valueRevenueSelected: "",
   tcec: "",
@@ -185,6 +187,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "indentor", label: "Indentor" },
       { key: "demandDescription", label: "Description", type: "textarea" },
       { key: "valueCapital", label: "Value" },
+      { key: "currency", label: "Currency" },
+      { key: "gte", label: "GTE", options: yesNo },
       { key: "receivedDate", label: "Received date", type: "date" },
       { key: "mode", label: "Mode (OBM/PBM/SBM/LBM/LPC)", options: modeOptions },
       { key: "tcec", label: "TCEC (YES/NO)", options: yesNoCaps },
@@ -1259,7 +1263,7 @@ function ValueField({
   };
 
   const updateValue = (nextValue: string) => {
-    const cleanedValue = cleanDecimalInput(nextValue);
+    const cleanedValue = formatDecimalInput(nextValue);
     onChange({
       valueCapital: capitalSelected ? cleanedValue : "",
       valueRevenue: !capitalSelected && revenueSelected ? cleanedValue : "",
@@ -1326,7 +1330,7 @@ function SoValueField({
   const fieldDisabled = disabled || !selectedType;
 
   const updateValue = (nextValue: string) => {
-    const cleanedValue = cleanDecimalInput(nextValue);
+    const cleanedValue = formatDecimalInput(nextValue);
     onChange({
       soValueCapital: capitalSelected ? cleanedValue : "",
       soValueRevenue: revenueSelected ? cleanedValue : "",
@@ -1475,10 +1479,23 @@ function disabledCls(disabled: boolean) {
   return disabled ? " opacity-60 cursor-not-allowed" : "";
 }
 
-function cleanDecimalInput(value: string) {
+function formatDecimalInput(value: string) {
   const digitsAndDots = value.replace(/[^\d.]/g, "");
   const [first, ...rest] = digitsAndDots.split(".");
-  return rest.length > 0 ? `${first}.${rest.join("")}` : first;
+  const decimalPart = rest.join("");
+  const formattedInteger = formatThousandsAndLakhs(first);
+  return rest.length > 0 ? `${formattedInteger}.${decimalPart}` : formattedInteger;
+}
+
+function formatThousandsAndLakhs(integerPart: string) {
+  const lastThree = integerPart.slice(-3);
+  const beforeThousands = integerPart.slice(0, -3);
+
+  if (!beforeThousands) return integerPart;
+
+  const lastTwoBeforeThousands = beforeThousands.slice(-2);
+  const lakhPart = beforeThousands.slice(0, -2);
+  return [lakhPart, lastTwoBeforeThousands, lastThree].filter(Boolean).join(",");
 }
 
 function isYesNoOptions(options: string[]) {

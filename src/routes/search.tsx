@@ -64,7 +64,7 @@ const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
 const modeOptions = ["OBM", "PBM", "SBM", "LBM", "LPC"];
 const paymentModeOptions = ["Online", "Offline"];
-const defaultNoKeys: FileKey[] = ["dpExtension", "ld", "tenderLive", "refloat", "rst"];
+const defaultNoKeys: FileKey[] = ["dpExtension", "gte", "ld", "tenderLive", "refloat", "rst"];
 type SortDirection = "asc" | "desc";
 
 const fieldSections: { title: string; fields: FieldDef[] }[] = [
@@ -85,6 +85,8 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "demandDescription", label: "Demand description", type: "textarea" },
       { key: "valueCapital", label: "Value (Capital)" },
       { key: "valueRevenue", label: "Value (Revenue)" },
+      { key: "currency", label: "Currency" },
+      { key: "gte", label: "GTE", options: yesNo },
       { key: "fileDetailsRemark1", label: "File details Remark-1", type: "textarea" },
       { key: "fileDetailsRemark2", label: "File details Remark-2", type: "textarea" },
     ],
@@ -210,7 +212,10 @@ const printColumns: PrintColumn[] = [
     key: field.key,
     label: field.label,
     getValue: (file: FileRecord) =>
-      field.key === "valueCapital" || field.key === "valueRevenue"
+      field.key === "valueCapital" ||
+      field.key === "valueRevenue" ||
+      field.key === "soValueCapital" ||
+      field.key === "soValueRevenue"
         ? formatAmountValue(file[field.key])
         : String(file[field.key] ?? ""),
   })),
@@ -295,6 +300,7 @@ function SearchPage() {
   const [defaultTableColumnKeys, setDefaultTableColumnKeys] = useState<string[] | null>(() =>
     readDefaultTableColumnKeys(settings.activeUserId),
   );
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const [selectedTableColumnKeys, setSelectedTableColumnKeys] = useState<string[]>(
     () => defaultTableColumnKeys ?? allTableColumnKeys,
   );
@@ -435,6 +441,24 @@ function SearchPage() {
 
   const valueTotals = useMemo(() => getValueTotals(results), [results]);
   const allValueTotals = useMemo(() => getValueTotals(files), [files]);
+  const selectedResultFiles = results.filter((file) => selectedFileIds.includes(file.id));
+  const allVisibleRowsSelected =
+    results.length > 0 && results.every((file) => selectedFileIds.includes(file.id));
+  const toggleFileSelection = (fileId: string) => {
+    setSelectedFileIds((current) =>
+      current.includes(fileId) ? current.filter((id) => id !== fileId) : [...current, fileId],
+    );
+  };
+  const toggleVisibleRowsSelection = () => {
+    setSelectedFileIds((current) => {
+      const visibleIds = results.map((file) => file.id);
+      if (visibleIds.length === 0) return current;
+      if (visibleIds.every((id) => current.includes(id))) {
+        return current.filter((id) => !visibleIds.includes(id));
+      }
+      return Array.from(new Set([...current, ...visibleIds]));
+    });
+  };
   const toggleTableColumn = (key: string) => {
     setSelectedTableColumnKeys((current) =>
       current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
@@ -735,10 +759,16 @@ function SearchPage() {
               </button>
               <button
                 type="button"
-                onClick={() => printSearchList(results, selectedTableColumns)}
+                onClick={() =>
+                  printSearchList(
+                    selectedResultFiles.length ? selectedResultFiles : results,
+                    selectedTableColumns,
+                  )
+                }
                 className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground hover:bg-accent"
               >
-                <Printer className="size-3.5" /> Print list
+                <Printer className="size-3.5" />{" "}
+                {selectedResultFiles.length ? "Print selected" : "Print list"}
               </button>
               <button
                 type="button"
@@ -842,10 +872,19 @@ function SearchPage() {
             <div className="overflow-x-auto">
               <table
                 className="w-full text-sm"
-                style={{ minWidth: Math.max(820, selectedTableColumns.length * 150 + 240) }}
+                style={{ minWidth: Math.max(880, selectedTableColumns.length * 150 + 280) }}
               >
                 <thead className="bg-secondary text-sm text-muted-foreground">
                   <tr>
+                    <th className="w-12 px-4 py-2.5 text-left">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleRowsSelected}
+                        onChange={toggleVisibleRowsSelection}
+                        aria-label="Select all visible files"
+                        className="size-4 rounded border-input"
+                      />
+                    </th>
                     {selectedTableColumns.map((column) => (
                       <th key={column.key} className="text-left font-bold px-4 py-2.5">
                         {column.label}
@@ -858,7 +897,7 @@ function SearchPage() {
                   {results.length === 0 && (
                     <tr>
                       <td
-                        colSpan={selectedTableColumns.length + 1}
+                        colSpan={selectedTableColumns.length + 2}
                         className="text-center text-sm text-muted-foreground py-10"
                       >
                         No files match your filters.
@@ -866,11 +905,21 @@ function SearchPage() {
                     </tr>
                   )}
                   {results.map((file) => (
-                    <tr
-                      key={file.id}
-                      onClick={() => openTimeline(file)}
+	                    <tr
+	                      key={file.id}
+	                      onClick={() => openTimeline(file)}
                       className="border-t border-border hover:bg-secondary/50 cursor-pointer"
                     >
+                      <td className="w-12 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedFileIds.includes(file.id)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => toggleFileSelection(file.id)}
+                          aria-label={`Select ${file.uniqueCode || file.imms || file.id}`}
+                          className="size-4 rounded border-input"
+                        />
+                      </td>
                       {selectedTableColumns.map((column) => (
                         <td
                           key={column.key}
@@ -950,7 +999,7 @@ function FilterInput({
       list={listId}
       value={value}
       onChange={(event) =>
-        onChange(decimalOnly ? cleanDecimalInput(event.target.value) : event.target.value)
+        onChange(decimalOnly ? formatDecimalInput(event.target.value) : event.target.value)
       }
       placeholder={placeholder}
       className="w-full h-9 px-2.5 rounded-md border border-input bg-background text-sm"
@@ -958,10 +1007,23 @@ function FilterInput({
   );
 }
 
-function cleanDecimalInput(value: string) {
+function formatDecimalInput(value: string) {
   const digitsAndDots = value.replace(/[^\d.]/g, "");
   const [first, ...rest] = digitsAndDots.split(".");
-  return rest.length > 0 ? `${first}.${rest.join("")}` : first;
+  const decimalPart = rest.join("");
+  const formattedInteger = formatInputThousandsAndLakhs(first);
+  return rest.length > 0 ? `${formattedInteger}.${decimalPart}` : formattedInteger;
+}
+
+function formatInputThousandsAndLakhs(integerPart: string) {
+  const lastThree = integerPart.slice(-3);
+  const beforeThousands = integerPart.slice(0, -3);
+
+  if (!beforeThousands) return integerPart;
+
+  const lastTwoBeforeThousands = beforeThousands.slice(-2);
+  const lakhPart = beforeThousands.slice(0, -2);
+  return [lakhPart, lastTwoBeforeThousands, lastThree].filter(Boolean).join(",");
 }
 
 function FilterSelect({
@@ -1026,7 +1088,7 @@ function EditModal({
   const [form, setForm] = useState<Record<FileKey, string>>(() => {
     const entries = editableFields.map((field) => [
       field.key,
-      String(file[field.key] ?? (defaultNoKeys.includes(field.key) ? "No" : "")),
+      String(file[field.key] ?? getDefaultFieldValue(field.key)),
     ]);
     return applyConditionalRules({
       ...(Object.fromEntries(entries) as Record<FileKey, string>),
@@ -1167,6 +1229,8 @@ function EditField({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const amountField = isAmountField(field.key);
+
   if (field.options && isYesNoOptions(field.options)) {
     return (
       <div className="block">
@@ -1235,12 +1299,15 @@ function EditField({
     <label className="block">
       <div className="text-xs font-medium mb-1.5">{field.label}</div>
       <input
-        type={field.type ?? "text"}
+        type={amountField ? "text" : (field.type ?? "text")}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) =>
+          onChange(amountField ? formatDecimalInput(event.target.value) : event.target.value)
+        }
         disabled={disabled}
         min={field.type === "number" ? 0 : undefined}
         step={field.type === "number" ? 1 : undefined}
+        inputMode={amountField ? "decimal" : undefined}
         className={editInputCls + disabledCls(disabled)}
       />
     </label>
@@ -1254,6 +1321,11 @@ function toFilePatch(form: Record<FileKey, string>) {
   return Object.fromEntries(
     editableFields.map((field) => [field.key, form[field.key] || undefined]),
   ) as Partial<FileRecord>;
+}
+
+function getDefaultFieldValue(key: FileKey) {
+  if (key === "currency") return "INR";
+  return defaultNoKeys.includes(key) ? "No" : "";
 }
 
 function applyConditionalRules(form: Record<FileKey, string>) {
@@ -1542,10 +1614,16 @@ function formatAmountValue(value: string | undefined) {
   return formatThousandsAndLakhs(amount);
 }
 
-function formatThousandsAndLakhs(value: number) {
+function isAmountField(key: string) {
+  return ["valueCapital", "valueRevenue", "soValueCapital", "soValueRevenue"].includes(key);
+}
+
+function formatThousandsAndLakhs(value: number, maximumFractionDigits = 2) {
   const sign = value < 0 ? "-" : "";
   const absoluteValue = Math.abs(value);
-  const fixedValue = Number.isInteger(absoluteValue) ? String(absoluteValue) : absoluteValue.toFixed(2);
+  const fixedValue = Number.isInteger(absoluteValue)
+    ? String(absoluteValue)
+    : absoluteValue.toFixed(maximumFractionDigits).replace(/\.?0+$/, "");
   const [integerPart, decimalPart] = fixedValue.split(".");
   const lastThree = integerPart.slice(-3);
   const beforeThousands = integerPart.slice(0, -3);
@@ -2040,7 +2118,5 @@ function getValueTotals(files: FileRecord[]) {
 }
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-IN", {
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatThousandsAndLakhs(value);
 }

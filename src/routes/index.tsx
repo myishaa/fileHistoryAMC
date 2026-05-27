@@ -748,7 +748,28 @@ function formatPercent(value: number | undefined) {
 }
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-IN", {
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatThousandsAndLakhs(value);
+}
+
+function formatThousandsAndLakhs(value: number, maximumFractionDigits = 2) {
+  const sign = value < 0 ? "-" : "";
+  const absoluteValue = Math.abs(value);
+  const fixedValue = Number.isInteger(absoluteValue)
+    ? String(absoluteValue)
+    : absoluteValue.toFixed(maximumFractionDigits).replace(/\.?0+$/, "");
+  const [integerPart, decimalPart] = fixedValue.split(".");
+  const lastThree = integerPart.slice(-3);
+  const beforeThousands = integerPart.slice(0, -3);
+
+  if (!beforeThousands) {
+    return `${sign}${integerPart}${decimalPart ? `.${decimalPart}` : ""}`;
+  }
+
+  const lastTwoBeforeThousands = beforeThousands.slice(-2);
+  const lakhPart = beforeThousands.slice(0, -2);
+  const formattedInteger = [lakhPart, lastTwoBeforeThousands, lastThree]
+    .filter(Boolean)
+    .join(",");
+
+  return `${sign}${formattedInteger}${decimalPart ? `.${decimalPart}` : ""}`;
 }

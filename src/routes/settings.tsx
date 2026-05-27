@@ -216,11 +216,13 @@ function DivisionSettings() {
           value={allocatedCapital}
           onChange={setAllocatedCapital}
           placeholder="Allocated capital"
+          amount
         />
         <DivisionInput
           value={allocatedRevenue}
           onChange={setAllocatedRevenue}
           placeholder="Allocated revenue"
+          amount
         />
         <DivisionAdSelect value={ad} onChange={setAd} />
         <button
@@ -288,9 +290,10 @@ function DivisionSettings() {
                         value={editCapital}
                         onChange={setEditCapital}
                         placeholder="Allocated capital"
+                        amount
                       />
                     ) : (
-                      division.allocatedCapital || "Not set"
+                      formatAmountValue(division.allocatedCapital) || "Not set"
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
@@ -299,9 +302,10 @@ function DivisionSettings() {
                         value={editRevenue}
                         onChange={setEditRevenue}
                         placeholder="Allocated revenue"
+                        amount
                       />
                     ) : (
-                      division.allocatedRevenue || "Not set"
+                      formatAmountValue(division.allocatedRevenue) || "Not set"
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
@@ -709,16 +713,21 @@ function DivisionInput({
   value,
   onChange,
   placeholder,
+  amount = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
+  amount?: boolean;
 }) {
   return (
     <input
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) =>
+        onChange(amount ? formatDecimalInput(event.target.value) : event.target.value)
+      }
       placeholder={placeholder}
+      inputMode={amount ? "decimal" : undefined}
       className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
     />
   );
@@ -813,4 +822,59 @@ function Field({ label, value }: { label: string; value: string }) {
       />
     </label>
   );
+}
+
+function parseAmount(value: string | undefined) {
+  const cleaned = (value ?? "").replace(/,/g, "").trim();
+  if (!cleaned) return undefined;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function formatAmountValue(value: string | undefined) {
+  const amount = parseAmount(value);
+  if (amount === undefined) return value ?? "";
+  return formatThousandsAndLakhs(amount);
+}
+
+function formatDecimalInput(value: string) {
+  const digitsAndDots = value.replace(/[^\d.]/g, "");
+  const [first, ...rest] = digitsAndDots.split(".");
+  const decimalPart = rest.join("");
+  const formattedInteger = formatInputThousandsAndLakhs(first);
+  return rest.length > 0 ? `${formattedInteger}.${decimalPart}` : formattedInteger;
+}
+
+function formatInputThousandsAndLakhs(integerPart: string) {
+  const lastThree = integerPart.slice(-3);
+  const beforeThousands = integerPart.slice(0, -3);
+
+  if (!beforeThousands) return integerPart;
+
+  const lastTwoBeforeThousands = beforeThousands.slice(-2);
+  const lakhPart = beforeThousands.slice(0, -2);
+  return [lakhPart, lastTwoBeforeThousands, lastThree].filter(Boolean).join(",");
+}
+
+function formatThousandsAndLakhs(value: number, maximumFractionDigits = 2) {
+  const sign = value < 0 ? "-" : "";
+  const absoluteValue = Math.abs(value);
+  const fixedValue = Number.isInteger(absoluteValue)
+    ? String(absoluteValue)
+    : absoluteValue.toFixed(maximumFractionDigits).replace(/\.?0+$/, "");
+  const [integerPart, decimalPart] = fixedValue.split(".");
+  const lastThree = integerPart.slice(-3);
+  const beforeThousands = integerPart.slice(0, -3);
+
+  if (!beforeThousands) {
+    return `${sign}${integerPart}${decimalPart ? `.${decimalPart}` : ""}`;
+  }
+
+  const lastTwoBeforeThousands = beforeThousands.slice(-2);
+  const lakhPart = beforeThousands.slice(0, -2);
+  const formattedInteger = [lakhPart, lastTwoBeforeThousands, lastThree]
+    .filter(Boolean)
+    .join(",");
+
+  return `${sign}${formattedInteger}${decimalPart ? `.${decimalPart}` : ""}`;
 }

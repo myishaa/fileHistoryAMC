@@ -20,6 +20,8 @@ export type FileRecord = {
   demandDescription?: string;
   valueCapital?: string;
   valueRevenue?: string;
+  currency?: string;
+  gte?: string;
   tcec?: string;
   mode?: string;
   gem?: string;
