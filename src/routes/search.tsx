@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { requestDeletionPassword } from "@/lib/delete-password";
+import { formatThousandsAndLakhs, getInrAmount, hasAmount, parseAmount } from "@/lib/money";
 
 export const Route = createFileRoute("/search")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -86,6 +87,7 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "valueCapital", label: "Value (Capital)" },
       { key: "valueRevenue", label: "Value (Revenue)" },
       { key: "currency", label: "Currency" },
+      { key: "exchangeRate", label: "Exchange rate", type: "number" },
       { key: "gte", label: "GTE", options: yesNo },
       { key: "fileDetailsRemark1", label: "File details Remark-1", type: "textarea" },
       { key: "fileDetailsRemark2", label: "File details Remark-2", type: "textarea" },
@@ -212,10 +214,9 @@ const printColumns: PrintColumn[] = [
     key: field.key,
     label: field.label,
     getValue: (file: FileRecord) =>
-      field.key === "valueCapital" ||
-      field.key === "valueRevenue" ||
-      field.key === "soValueCapital" ||
-      field.key === "soValueRevenue"
+      field.key === "valueCapital" || field.key === "valueRevenue"
+        ? formatInrAmountValue(file[field.key], file)
+        : field.key === "soValueCapital" || field.key === "soValueRevenue"
         ? formatAmountValue(file[field.key])
         : String(file[field.key] ?? ""),
   })),
@@ -278,6 +279,7 @@ function SearchPage() {
   const [description, setDescription] = useState("");
   const [firm, setFirm] = useState("");
   const [highValue, setHighValue] = useState(false);
+  const [gte, setGte] = useState(false);
   const [ad, setAd] = useState(false);
   const [rqa, setRqa] = useState(false);
   const [refloat, setRefloat] = useState(false);
@@ -338,6 +340,7 @@ function SearchPage() {
     description ||
     firm ||
     highValue ||
+    gte ||
     ad ||
     rqa ||
     refloat ||
@@ -370,6 +373,7 @@ function SearchPage() {
       if (description && !includesText(file.demandDescription, description)) return false;
       if (firm && !includesText(file.firm, firm)) return false;
       if (highValue && !isYes(file.highValue)) return false;
+      if (gte && !isYes(file.gte)) return false;
       if (ad && !isYes(file.ad)) return false;
       if (rqa && !isYes(file.rqa)) return false;
       if (
@@ -422,6 +426,7 @@ function SearchPage() {
     description,
     firm,
     highValue,
+    gte,
     ad,
     rqa,
     refloat,
@@ -501,6 +506,7 @@ function SearchPage() {
     setDescription("");
     setFirm("");
     setHighValue(false);
+    setGte(false);
     setAd(false);
     setRqa(false);
     setRefloat(false);
@@ -539,7 +545,7 @@ function SearchPage() {
               <span className="font-medium text-foreground">{files.length}</span> records
             </span>
             <span className="rounded-md border border-border bg-secondary/50 px-3 py-2">
-              Total value:{" "}
+              Total INR value:{" "}
               <span className="font-medium text-foreground">
                 {formatCurrency(allValueTotals.total)}
               </span>
@@ -643,6 +649,7 @@ function SearchPage() {
 
           <div className="grid grid-cols-2 gap-2 border-t border-border pt-4">
             <CheckFilter label="High Value" checked={highValue} onChange={setHighValue} />
+            <CheckFilter label="GTE" checked={gte} onChange={setGte} />
             <CheckFilter label="AD" checked={ad} onChange={setAd} />
             <CheckFilter label="R&QA" checked={rqa} onChange={setRqa} />
             <CheckFilter label="Refloat" checked={refloat} onChange={setRefloat} />
@@ -694,19 +701,19 @@ function SearchPage() {
                 {results.length !== 1 && "s"}
               </span>
               <span>
-                Capital:{" "}
+                Capital INR:{" "}
                 <span className="font-medium text-foreground">
                   {formatCurrency(valueTotals.capital)}
                 </span>
               </span>
               <span>
-                Revenue:{" "}
+                Revenue INR:{" "}
                 <span className="font-medium text-foreground">
                   {formatCurrency(valueTotals.revenue)}
                 </span>
               </span>
               <span>
-                Total value:{" "}
+                Total INR value:{" "}
                 <span className="font-medium text-foreground">
                   {formatCurrency(valueTotals.total)}
                 </span>
@@ -1601,44 +1608,26 @@ function isTcecFile(file: FileRecord) {
   );
 }
 
-function parseAmount(value: string | undefined) {
-  const cleaned = (value ?? "").replace(/,/g, "").trim();
-  if (!cleaned) return undefined;
-  const parsed = Number(cleaned);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 function formatAmountValue(value: string | undefined) {
   const amount = parseAmount(value);
   if (amount === undefined) return value ?? "";
   return formatThousandsAndLakhs(amount);
 }
 
-function isAmountField(key: string) {
-  return ["valueCapital", "valueRevenue", "soValueCapital", "soValueRevenue"].includes(key);
+function formatInrAmountValue(value: string | undefined, file: FileRecord) {
+  const amount = getInrAmount(value, file);
+  if (amount === undefined) return "";
+  return formatThousandsAndLakhs(amount);
 }
 
-function formatThousandsAndLakhs(value: number, maximumFractionDigits = 2) {
-  const sign = value < 0 ? "-" : "";
-  const absoluteValue = Math.abs(value);
-  const fixedValue = Number.isInteger(absoluteValue)
-    ? String(absoluteValue)
-    : absoluteValue.toFixed(maximumFractionDigits).replace(/\.?0+$/, "");
-  const [integerPart, decimalPart] = fixedValue.split(".");
-  const lastThree = integerPart.slice(-3);
-  const beforeThousands = integerPart.slice(0, -3);
-
-  if (!beforeThousands) {
-    return `${sign}${integerPart}${decimalPart ? `.${decimalPart}` : ""}`;
-  }
-
-  const lastTwoBeforeThousands = beforeThousands.slice(-2);
-  const lakhPart = beforeThousands.slice(0, -2);
-  const formattedInteger = [lakhPart, lastTwoBeforeThousands, lastThree]
-    .filter(Boolean)
-    .join(",");
-
-  return `${sign}${formattedInteger}${decimalPart ? `.${decimalPart}` : ""}`;
+function isAmountField(key: string) {
+  return [
+    "valueCapital",
+    "valueRevenue",
+    "soValueCapital",
+    "soValueRevenue",
+    "exchangeRate",
+  ].includes(key);
 }
 
 function matchesValueRange(
@@ -1647,9 +1636,10 @@ function matchesValueRange(
   maxValue: number | undefined,
 ) {
   if (minValue === undefined && maxValue === undefined) return true;
-  const amounts = [parseAmount(file.valueCapital), parseAmount(file.valueRevenue)].filter(
-    (amount): amount is number => amount !== undefined,
-  );
+  const amounts = [
+    getInrAmount(file.valueCapital, file),
+    getInrAmount(file.valueRevenue, file),
+  ].filter((amount): amount is number => amount !== undefined);
   if (amounts.length === 0) return false;
   const total = amounts.reduce((sum, amount) => sum + amount, 0);
   if (minValue !== undefined && total < minValue) return false;
@@ -1659,8 +1649,8 @@ function matchesValueRange(
 
 function matchesValueType(file: FileRecord, capitalOnly: boolean, revenueOnly: boolean) {
   if (!capitalOnly && !revenueOnly) return true;
-  const hasCapital = parseAmount(file.valueCapital) !== undefined;
-  const hasRevenue = parseAmount(file.valueRevenue) !== undefined;
+  const hasCapital = hasAmount(file.valueCapital);
+  const hasRevenue = hasAmount(file.valueRevenue);
   if (capitalOnly && revenueOnly) return hasCapital || hasRevenue;
   if (capitalOnly) return hasCapital;
   return hasRevenue;
@@ -2108,8 +2098,8 @@ function escapeHtml(value: string) {
 function getValueTotals(files: FileRecord[]) {
   const totals = files.reduce(
     (current, file) => {
-      current.capital += parseAmount(file.valueCapital) ?? 0;
-      current.revenue += parseAmount(file.valueRevenue) ?? 0;
+      current.capital += getInrAmount(file.valueCapital, file) ?? 0;
+      current.revenue += getInrAmount(file.valueRevenue, file) ?? 0;
       return current;
     },
     { capital: 0, revenue: 0 },

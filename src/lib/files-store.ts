@@ -21,6 +21,7 @@ export type FileRecord = {
   valueCapital?: string;
   valueRevenue?: string;
   currency?: string;
+  exchangeRate?: string;
   gte?: string;
   tcec?: string;
   mode?: string;

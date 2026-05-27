@@ -39,6 +39,7 @@ const empty = {
   valueCapital: "",
   valueRevenue: "",
   currency: "INR",
+  exchangeRate: "",
   gte: "No",
   valueCapitalSelected: "",
   valueRevenueSelected: "",
@@ -188,6 +189,7 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "demandDescription", label: "Description", type: "textarea" },
       { key: "valueCapital", label: "Value" },
       { key: "currency", label: "Currency" },
+      { key: "exchangeRate", label: "Exchange rate", type: "number" },
       { key: "gte", label: "GTE", options: yesNo },
       { key: "receivedDate", label: "Received date", type: "date" },
       { key: "mode", label: "Mode (OBM/PBM/SBM/LBM/LPC)", options: modeOptions },
@@ -1462,12 +1464,17 @@ function DynamicField({
   return (
     <Field label={field.label}>
       <input
-        type={field.type ?? "text"}
+        type={field.key === "exchangeRate" ? "text" : (field.type ?? "text")}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) =>
+          onChange(
+            field.key === "exchangeRate" ? formatDecimalInput(e.target.value) : e.target.value,
+          )
+        }
         disabled={disabled}
         min={field.type === "number" ? 0 : undefined}
-        step={field.type === "number" ? 1 : undefined}
+        step={field.key === "exchangeRate" ? "any" : field.type === "number" ? 1 : undefined}
+        inputMode={field.key === "exchangeRate" ? "decimal" : undefined}
         placeholder={field.placeholder}
         className={inputCls + disabledCls(disabled)}
       />

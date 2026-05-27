@@ -1,6 +1,7 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { type FileRecord, useAccessibleDivisions, useAccessibleFiles } from "@/lib/files-store";
+import { formatThousandsAndLakhs, getInrAmount, hasAmount, parseAmount } from "@/lib/money";
 
 export const Route = createFileRoute("/")({
   beforeLoad: () => {
@@ -42,20 +43,20 @@ export function Dashboard() {
     ),
     bookedCapital: dashboardFiles.reduce(
       (sum, file) =>
-        sum + (hasAmount(file.soValueCapital) ? 0 : (parseAmount(file.valueCapital) ?? 0)),
+        sum + (hasAmount(file.soValueCapital) ? 0 : (getInrAmount(file.valueCapital, file) ?? 0)),
       0,
     ),
     bookedRevenue: dashboardFiles.reduce(
       (sum, file) =>
-        sum + (hasAmount(file.soValueRevenue) ? 0 : (parseAmount(file.valueRevenue) ?? 0)),
+        sum + (hasAmount(file.soValueRevenue) ? 0 : (getInrAmount(file.valueRevenue, file) ?? 0)),
       0,
     ),
     spentCapital: dashboardFiles.reduce(
-      (sum, file) => sum + (parseAmount(file.soValueCapital) ?? 0),
+      (sum, file) => sum + (getInrAmount(file.soValueCapital, file) ?? 0),
       0,
     ),
     spentRevenue: dashboardFiles.reduce(
-      (sum, file) => sum + (parseAmount(file.soValueRevenue) ?? 0),
+      (sum, file) => sum + (getInrAmount(file.soValueRevenue, file) ?? 0),
       0,
     ),
   };
@@ -213,7 +214,7 @@ export function Dashboard() {
         capital: formatPercent(capitalBookedPercent),
         revenue: formatPercent(revenueBookedPercent),
       },
-      hint: "Capital / Revenue booked",
+      hint: "Capital / Revenue booked in INR",
     },
     {
       label: "Spent percentage",
@@ -221,15 +222,15 @@ export function Dashboard() {
         capital: formatPercent(capitalSpentPercent),
         revenue: formatPercent(revenueSpentPercent),
       },
-      hint: "Capital / Revenue spent",
+      hint: "Capital / Revenue spent in INR",
     },
   ];
 
   const financeStats = [
     { label: "Capital allocated", value: financeTotals.allocatedCapital },
     { label: "Revenue allocated", value: financeTotals.allocatedRevenue },
-    { label: "Capital booked", value: financeTotals.bookedCapital },
-    { label: "Revenue booked", value: financeTotals.bookedRevenue },
+    { label: "Capital booked (INR)", value: financeTotals.bookedCapital },
+    { label: "Revenue booked (INR)", value: financeTotals.bookedRevenue },
   ];
   const openSearchFilter = (dashboardFilter: string) => {
     navigate({
@@ -724,17 +725,6 @@ function formatLocalDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function parseAmount(value: string | undefined) {
-  const cleaned = (value ?? "").replace(/,/g, "").trim();
-  if (!cleaned) return undefined;
-  const parsed = Number(cleaned);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function hasAmount(value: string | undefined) {
-  return parseAmount(value) !== undefined;
-}
-
 function getPercent(value: number, total: number) {
   if (total <= 0) return undefined;
   return (value / total) * 100;
@@ -749,27 +739,4 @@ function formatPercent(value: number | undefined) {
 
 function formatCurrency(value: number) {
   return formatThousandsAndLakhs(value);
-}
-
-function formatThousandsAndLakhs(value: number, maximumFractionDigits = 2) {
-  const sign = value < 0 ? "-" : "";
-  const absoluteValue = Math.abs(value);
-  const fixedValue = Number.isInteger(absoluteValue)
-    ? String(absoluteValue)
-    : absoluteValue.toFixed(maximumFractionDigits).replace(/\.?0+$/, "");
-  const [integerPart, decimalPart] = fixedValue.split(".");
-  const lastThree = integerPart.slice(-3);
-  const beforeThousands = integerPart.slice(0, -3);
-
-  if (!beforeThousands) {
-    return `${sign}${integerPart}${decimalPart ? `.${decimalPart}` : ""}`;
-  }
-
-  const lastTwoBeforeThousands = beforeThousands.slice(-2);
-  const lakhPart = beforeThousands.slice(0, -2);
-  const formattedInteger = [lakhPart, lastTwoBeforeThousands, lastThree]
-    .filter(Boolean)
-    .join(",");
-
-  return `${sign}${formattedInteger}${decimalPart ? `.${decimalPart}` : ""}`;
 }
