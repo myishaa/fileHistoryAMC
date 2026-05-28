@@ -53,6 +53,7 @@ export type FileRecord = {
   refloatBiddingDate?: string;
   refloatBidOpeningDate?: string;
   refloatPostTcecDate?: string;
+  refloatPostTcecMinutesDate?: string;
   refloatPostTcecCommitteeNo?: string;
   rst?: string;
   cncDate?: string;

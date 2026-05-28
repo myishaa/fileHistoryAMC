@@ -1,7 +1,13 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { type FileRecord, useAccessibleDivisions, useAccessibleFiles } from "@/lib/files-store";
+import {
+  type FileRecord,
+  type SupplyOrderDetail,
+  useAccessibleDivisions,
+  useAccessibleFiles,
+} from "@/lib/files-store";
 import { formatThousandsAndLakhs, getInrAmount, hasAmount, parseAmount } from "@/lib/money";
+import { ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   beforeLoad: () => {
@@ -34,7 +40,7 @@ export function Dashboard() {
   );
 
   const modeCounts = getModeCounts(dashboardFiles);
-  const workflowStatusGroups = getWorkflowStatusGroups(dashboardFiles);
+  const milestoneFlow = getMilestoneFlow(dashboardFiles);
   const financeTotals = {
     allocatedCapital: dashboardDivisions.reduce(
       (sum, division) => sum + (parseAmount(division.allocatedCapital) ?? 0),
@@ -400,29 +406,28 @@ export function Dashboard() {
             <h2 className="text-sm font-bold">Status</h2>
           </div>
           <div className="bg-card border border-border rounded-xl p-5 shadow-[var(--shadow-card)]">
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
-              {workflowStatusGroups.map((group) => (
-                <div
-                  key={group.title}
-                  className="rounded-lg border border-border bg-secondary/35 p-4"
-                >
-                  <h3 className="text-xs font-extrabold uppercase text-foreground">
-                    {group.title}
-                  </h3>
-                  <div className="mt-3 space-y-2">
-                    {group.statuses.map((status) => (
-                      <button
-                        type="button"
-                        key={status.label}
-                        onClick={() => openSearchFilter(status.searchFilter)}
-                        className="flex w-full items-center justify-between gap-3 rounded-md bg-card px-3 py-2 text-left hover:bg-accent"
-                      >
-                        <span className="text-sm font-medium">{status.label}</span>
-                        <span className="text-base font-semibold tabular-nums">{status.count}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold">Milestone flow</h3>
+                <p className="text-xs text-muted-foreground">
+                  Pending files at each clearance stage
+                </p>
+              </div>
+              <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-right">
+                <div className="text-[11px] font-medium text-muted-foreground">Total files</div>
+                <div className="text-lg font-semibold tabular-nums">{dashboardFiles.length}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {milestoneFlow.map((milestone, index) => (
+                <MilestoneFlowNode
+                  key={milestone.key}
+                  milestone={milestone}
+                  index={index}
+                  isLast={index === milestoneFlow.length - 1}
+                  onPendingClick={() => openSearchFilter(`milestone:${milestone.key}`)}
+                  onClearedClick={() => openSearchFilter(`milestoneCleared:${milestone.key}`)}
+                />
               ))}
             </div>
           </div>
@@ -622,6 +627,110 @@ function SummaryMetric({
   );
 }
 
+function MilestoneFlowNode({
+  milestone,
+  index,
+  isLast,
+  onPendingClick,
+  onClearedClick,
+}: {
+  milestone: { key: string; label: string; pending: number; cleared: number; total: number };
+  index: number;
+  isLast: boolean;
+  onPendingClick: () => void;
+  onClearedClick: () => void;
+}) {
+  const tone = getMilestoneTone(milestone.pending);
+  const widthPercent =
+    milestone.total > 0 ? Math.round((milestone.cleared / milestone.total) * 100) : 0;
+
+  return (
+    <div className="relative min-w-0">
+      <div
+        className={
+          "group flex h-full min-h-32 w-full flex-col justify-between rounded-lg border p-3 text-left transition hover:shadow-[var(--shadow-card)] " +
+          tone.card
+        }
+      >
+        <span className="flex items-start justify-between gap-3">
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              className={
+                "grid size-8 shrink-0 place-items-center rounded-md text-xs font-bold " + tone.step
+              }
+            >
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{milestone.label}</span>
+            </span>
+          </span>
+          <span className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={onPendingClick}
+              className={
+                "rounded-md px-2.5 py-1 text-center hover:ring-2 hover:ring-ring/30 " + tone.count
+              }
+            >
+              <span className="block text-[10px] font-medium uppercase text-muted-foreground">
+                Pending
+              </span>
+              <span className="block text-lg font-semibold tabular-nums">{milestone.pending}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClearedClick}
+              className="rounded-md border border-border bg-card px-2.5 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
+            >
+              <span className="block text-[10px] font-medium uppercase text-muted-foreground">
+                Cleared
+              </span>
+              <span className="block text-lg font-semibold tabular-nums">{milestone.cleared}</span>
+            </button>
+          </span>
+        </span>
+        <span className="mt-4 block h-2 overflow-hidden rounded-full bg-background">
+          <span
+            className={"block h-full rounded-full " + tone.bar}
+            style={{ width: `${widthPercent}%` }}
+          />
+        </span>
+      </div>
+      {!isLast ? (
+        <div className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 translate-x-1/2 rounded-full border border-border bg-card p-1 text-muted-foreground xl:block">
+          <ArrowRight className="size-4" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function getMilestoneTone(count: number) {
+  if (count === 0) {
+    return {
+      card: "border-success/30 bg-success/10 hover:bg-success/15",
+      step: "bg-success text-success-foreground",
+      count: "bg-success/15 text-foreground",
+      bar: "bg-success",
+    };
+  }
+  if (count >= 10) {
+    return {
+      card: "border-destructive/30 bg-destructive/10 hover:bg-destructive/15",
+      step: "bg-destructive text-destructive-foreground",
+      count: "bg-destructive/15 text-foreground",
+      bar: "bg-destructive",
+    };
+  }
+  return {
+    card: "border-warning/35 bg-warning/10 hover:bg-warning/15",
+    step: "bg-warning text-warning-foreground",
+    count: "bg-warning/15 text-foreground",
+    bar: "bg-warning",
+  };
+}
+
 function getModeCounts(files: ReturnType<typeof useAccessibleFiles>) {
   const modes = ["OBM", "PBM", "SBM", "LBM", "LPC"];
   const counts = files.reduce<Record<string, number>>((current, file) => {
@@ -634,131 +743,89 @@ function getModeCounts(files: ReturnType<typeof useAccessibleFiles>) {
   return modes.map((name) => ({ name, count: counts[name] ?? 0 }));
 }
 
-const workflowStatusGroups = [
+const milestoneDefinitions = [
   {
-    title: "Scrutiny",
-    statuses: [
-      {
-        label: "Scrutiny completed",
-        searchFilter: "scrutinyCompleted",
-        matches: (file) => hasFilledField(file, "scrutinyCompletionDate"),
-      },
-      {
-        label: "Scrutiny under progress",
-        searchFilter: "scrutinyUnderProgress",
-        matches: (file) => !hasFilledField(file, "scrutinyDate"),
-      },
-    ],
+    key: "scrutiny",
+    label: "Scrutiny",
+    previous: "receivedDate",
+    current: "scrutinyCompletionDate",
   },
   {
-    title: "High value committee",
-    statuses: [
-      {
-        label: "Completed",
-        searchFilter: "highValueCompleted",
-        matches: (file) => hasFilledField(file, "highValueMinutesDate"),
-      },
-      {
-        label: "Remaining",
-        searchFilter: "highValueRemaining",
-        matches: (file) => hasFilledField(file, "highValueMeetingDate"),
-      },
-    ],
+    key: "highValue",
+    label: "High Value",
+    previous: "scrutinyCompletionDate",
+    current: "highValueMinutesDate",
   },
-  {
-    title: "Pre-TCEC",
-    statuses: [
-      {
-        label: "Completed",
-        searchFilter: "preTcecCompleted",
-        matches: (file) => isYes(file.tcec) && hasFilledField(file, "preTcecMinutesDate"),
-      },
-      {
-        label: "Remaining",
-        searchFilter: "preTcecRemaining",
-        matches: (file) => isYes(file.tcec) && !hasFilledField(file, "preTcecMinutesDate"),
-      },
-    ],
-  },
-  {
-    title: "AD vetting",
-    statuses: [
-      {
-        label: "Completed",
-        searchFilter: "adCompleted",
-        matches: (file) => hasFilledField(file, "adVettingDate"),
-      },
-      {
-        label: "Remaining",
-        searchFilter: "adRemaining",
-        matches: (file) =>
-          hasFilledField(file, "preTcecDate") && !hasFilledField(file, "adVettingDate"),
-      },
-    ],
-  },
-  {
-    title: "R&QA approval",
-    statuses: [
-      {
-        label: "Completed",
-        searchFilter: "rqaCompleted",
-        matches: (file) => hasFilledField(file, "rqaApprovalDate"),
-      },
-      {
-        label: "Remaining",
-        searchFilter: "rqaRemaining",
-        matches: (file) => isYes(file.rqa) && !hasFilledField(file, "rqaApprovalDate"),
-      },
-    ],
-  },
-  {
-    title: "IFA concurrence",
-    statuses: [
-      {
-        label: "Completed",
-        searchFilter: "ifaCompleted",
-        matches: (file) => hasFilledField(file, "ifaFinalDate"),
-      },
-      {
-        label: "Remaining",
-        searchFilter: "ifaRemaining",
-        matches: (file) => hasFilledField(file, "ifaSentDate"),
-      },
-    ],
-  },
-  {
-    title: "CFA approval",
-    statuses: [
-      {
-        label: "Completed",
-        searchFilter: "cfaCompleted",
-        matches: (file) => hasFilledField(file, "cfaDate"),
-      },
-    ],
-  },
+  { key: "tcec", label: "Pre-TCEC", previous: "immsDate", current: "preTcecMinutesDate" },
+  { key: "ad", label: "AD", previous: "preTcecMinutesDate", current: "adVettingDate" },
+  { key: "rqa", label: "R&QA", previous: "adVettingDate", current: "rqaApprovalDate" },
+  { key: "control", label: "Control", previous: "scrutinyCompletionDate", current: "immsDate" },
+  { key: "ifa", label: "IFA", previous: "rqaApprovalDate", current: "ifaFinalDate" },
+  { key: "cfa", label: "CFA", previous: "ifaFinalDate", current: "cfaDate" },
+  { key: "bidding", label: "Bidding", previous: "cfaDate", current: "bidDate" },
+  { key: "postTcec", label: "Post-TCEC", previous: "bidDate", current: "postTcecMinutesDate" },
+  { key: "supplyOrder", label: "Supply Order", previous: "postTcecMinutesDate", current: "soDate" },
+  { key: "bankGuarantee", label: "Bank Guarantee", previous: "soDate", current: "bgValidityDate" },
+  { key: "payment", label: "Payment", previous: "bgValidityDate", current: "paymentDate" },
 ] satisfies Array<{
-  title: string;
-  statuses: Array<{
-    label: string;
-    searchFilter: string;
-    matches: (file: FileRecord) => boolean;
-  }>;
+  key: string;
+  label: string;
+  previous: keyof FileRecord | keyof SupplyOrderDetail;
+  current: keyof FileRecord | keyof SupplyOrderDetail;
 }>;
 
-function getWorkflowStatusGroups(files: ReturnType<typeof useAccessibleFiles>) {
-  return workflowStatusGroups.map((group) => ({
-    title: group.title,
-    statuses: group.statuses.map((status) => ({
-      label: status.label,
-      searchFilter: status.searchFilter,
-      count: files.filter(status.matches).length,
-    })),
-  }));
+function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
+  return milestoneDefinitions.map((milestone) => {
+    const eligibleFiles = files.filter((file) => hasMilestoneDate(file, milestone.previous));
+    return {
+      key: milestone.key,
+      label: milestone.label,
+      pending: eligibleFiles.filter((file) => !hasMilestoneDate(file, milestone.current)).length,
+      cleared: eligibleFiles.filter((file) => hasMilestoneDate(file, milestone.current)).length,
+      total: eligibleFiles.length,
+    };
+  });
+}
+
+function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  return hasMilestoneDate(file, milestone.previous) && !hasMilestoneDate(file, milestone.current);
+}
+
+function hasMilestoneDate(file: FileRecord, key: keyof FileRecord | keyof SupplyOrderDetail) {
+  return supplyOrderDateKeys.has(key as keyof SupplyOrderDetail)
+    ? fileSupplyOrders(file).some((order) => hasFilledString(order[key as keyof SupplyOrderDetail]))
+    : hasFilledField(file, key as keyof FileRecord);
+}
+
+const supplyOrderDateKeys = new Set<keyof SupplyOrderDetail>([
+  "soDate",
+  "bgValidityDate",
+  "paymentDate",
+]);
+
+function fileSupplyOrders(file: FileRecord) {
+  const rows =
+    file.supplyOrders
+      ?.map((row) => ({ ...row }))
+      .filter((row) => Object.values(row).some((value) => Boolean(String(value ?? "").trim()))) ??
+    [];
+  if (rows.length) return rows;
+
+  const legacy: SupplyOrderDetail = {
+    soDate: file.soDate,
+    bgValidityDate: file.bgValidityDate,
+    paymentDate: file.paymentDate,
+  };
+  return Object.values(legacy).some((value) => Boolean(String(value ?? "").trim())) ? [legacy] : [];
 }
 
 function hasFilledField(file: FileRecord, key: keyof FileRecord) {
   const value = file[key];
-  return typeof value === "string" ? Boolean(value.trim()) : Boolean(value);
+  return typeof value === "string" ? hasFilledString(value) : Boolean(value);
+}
+
+function hasFilledString(value: string | undefined) {
+  return Boolean(value?.trim());
 }
 
 function isYes(value: string | undefined) {

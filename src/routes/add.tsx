@@ -41,7 +41,7 @@ const empty = {
   valueCapital: "",
   valueRevenue: "",
   currency: "INR",
-  exchangeRate: "",
+  exchangeRate: "1",
   gte: "No",
   valueCapitalSelected: "",
   valueRevenueSelected: "",
@@ -75,6 +75,7 @@ const empty = {
   refloatBiddingDate: "",
   refloatBidOpeningDate: "",
   refloatPostTcecDate: "",
+  refloatPostTcecMinutesDate: "",
   refloatPostTcecCommitteeNo: "",
   rst: "No",
   cncDate: "",
@@ -138,8 +139,8 @@ function createFormFromFile(file: FileRecord, financialYear: string): FormState 
     ...Object.fromEntries(
       formKeys.map((key) => [key, String((file as Record<string, unknown>)[key] ?? empty[key])]),
     ),
-    valueCapitalSelected: file.valueCapital ? "Yes" : "",
-    valueRevenueSelected: file.valueRevenue ? "Yes" : "",
+    valueCapitalSelected: hasNonZeroAmount(file.valueCapital) ? "Yes" : "",
+    valueRevenueSelected: hasNonZeroAmount(file.valueRevenue) ? "Yes" : "",
     noOfSo: file.noOfSo ?? String(supplyOrderCount),
     year: financialYear,
   } as FormState;
@@ -180,7 +181,6 @@ type ExtraField = {
 };
 
 const tcecDisabledKeys: FieldKey[] = [
-  "highValue",
   "highValueMeetingDate",
   "highValueMinutesDate",
   "preTcecDate",
@@ -192,12 +192,12 @@ const tcecDisabledKeys: FieldKey[] = [
   "postTcecMinutesDate",
   "postTcecCommitteeNumber",
   "refloatPostTcecDate",
+  "refloatPostTcecMinutesDate",
   "refloatPostTcecCommitteeNo",
   "cncDate",
   "cncApprovalDate",
 ];
 
-const ifaDisabledKeys: FieldKey[] = ["ifa", "ifaSentDate", "ifaFinalDate"];
 const gemDisabledKeys: FieldKey[] = ["gemUndertakingDate", "gemSoNo"];
 const rqaDisabledKeys: FieldKey[] = ["rqaApprovalDate"];
 const bgDisabledKeys: FieldKey[] = ["bgValidityDate", "bgReturnDate"];
@@ -301,11 +301,16 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "preTcecCommitteeNo", label: "Pre TCEC committee" },
       { key: "preTcecDate", label: "Pre-TCEC Date", type: "date" },
       { key: "preTcecMinutesDate", label: "Pre-TCEC minutes date", type: "date" },
-      { key: "postTcecCommitteeNumber", label: "Post TCEC committee number" },
-      { key: "postTcecDate", label: "Post TCEC date", type: "date" },
-      { key: "postTcecMinutesDate", label: "Post TCEC minutes date", type: "date" },
-      { key: "refloatPostTcecCommitteeNo", label: "Refloat post TCEC committee number" },
-      { key: "refloatPostTcecDate", label: "Refloat post TCEC date", type: "date" },
+      { key: "postTcecCommitteeNumber", label: "Post-TCEC committee number" },
+      { key: "postTcecDate", label: "Post-TCEC date", type: "date" },
+      { key: "postTcecMinutesDate", label: "Post-TCEC minutes date", type: "date" },
+      { key: "refloatPostTcecCommitteeNo", label: "Refloat Post-TCEC committee number" },
+      { key: "refloatPostTcecDate", label: "Refloat Post-TCEC date", type: "date" },
+      {
+        key: "refloatPostTcecMinutesDate",
+        label: "Refloat Post-TCEC minutes date",
+        type: "date",
+      },
       { key: "tcecRemark1", label: "Remark-1", type: "textarea" },
       { key: "tcecRemark2", label: "Remark-2", type: "textarea" },
     ],
@@ -416,7 +421,6 @@ function AddFilePage() {
   const rqaIsNo = isNo(formWithLockedYear.rqa);
   const bgIsNo = isNo(formWithLockedYear.bg);
   const dpExtensionIsNo = isNo(formWithLockedYear.dpExtension);
-  const ifaDisabled = shouldDisableIfa(formWithLockedYear);
   const adVettingDisabled = isDivisionAdNo(formWithLockedYear.division, divisions);
   const activeSection = extraSections.find((section) => section.title === activeBoardSection);
   const activeSectionIndex = extraSections.findIndex(
@@ -446,6 +450,9 @@ function AddFilePage() {
     }
     setForm((f) => {
       const patch: Partial<FormState> = { [k]: v };
+      if (k === "currency" && isInr(v)) {
+        patch.exchangeRate = "1";
+      }
       if (k === "gem" && isYes(v)) {
         patch.paymentMode = "Online";
       }
@@ -457,16 +464,7 @@ function AddFilePage() {
     setSupplyOrders((current) =>
       current.map((order, orderIndex) =>
         orderIndex === index
-          ? applySupplyOrderRules(
-              {
-                ...order,
-                [key]:
-                  key === "soValueCapital" || key === "soValueRevenue"
-                    ? formatDecimalInput(value)
-                    : value,
-              },
-              formWithLockedYear,
-            )
+          ? applySupplyOrderRules(getSupplyOrderPatch(order, key, value), formWithLockedYear)
           : order,
       ),
     );
@@ -606,8 +604,7 @@ function AddFilePage() {
               (gemIsNo && gemDisabledKeys.includes(field.key)) ||
               (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
               (bgIsNo && bgDisabledKeys.includes(field.key)) ||
-              (dpExtensionIsNo && field.key === "ld") ||
-              (ifaDisabled && ifaDisabledKeys.includes(field.key))
+              (dpExtensionIsNo && field.key === "ld")
             }
             onChange={(value) => update(field.key, value)}
           />
@@ -1464,6 +1461,12 @@ function hasSavedFirmDetails(file: FileRecord | undefined) {
 
 function applyConditionalRules(form: FormState) {
   let next = form;
+  if (isInr(next.currency) && !next.exchangeRate) {
+    next = {
+      ...next,
+      exchangeRate: "1",
+    };
+  }
   if (next.valueCapitalSelected === "Yes") {
     next = {
       ...next,
@@ -1483,7 +1486,6 @@ function applyConditionalRules(form: FormState) {
   if (isNo(next.tcec)) {
     next = {
       ...next,
-      highValue: "No",
       highValueMeetingDate: "",
       highValueMinutesDate: "",
       preTcecDate: "",
@@ -1495,6 +1497,7 @@ function applyConditionalRules(form: FormState) {
       postTcecMinutesDate: "",
       postTcecCommitteeNumber: "",
       refloatPostTcecDate: "",
+      refloatPostTcecMinutesDate: "",
       refloatPostTcecCommitteeNo: "",
       cncDate: "",
       cncApprovalDate: "",
@@ -1544,20 +1547,6 @@ function applyConditionalRules(form: FormState) {
     tenderLive: getAutoTenderLive(next),
     bidOpened: getAutoBidOpened(next),
   };
-  if (shouldDisableIfa(next)) {
-    next = {
-      ...next,
-      ifa: "",
-      ifaSentDate: "",
-      ifaFinalDate: "",
-    };
-  }
-  if (next.mode === "PBM" && next.ifa !== "Yes") {
-    next = {
-      ...next,
-      ifa: "Yes",
-    };
-  }
   return next;
 }
 
@@ -1581,12 +1570,42 @@ function applySupplyOrderRules(
   return next;
 }
 
+function getSupplyOrderPatch(
+  order: SupplyOrderDetail,
+  key: SupplyOrderKey,
+  value: string,
+): SupplyOrderDetail {
+  if (key !== "soValueCapital" && key !== "soValueRevenue") {
+    return { ...order, [key]: value };
+  }
+
+  const amount = formatDecimalInput(value);
+  return {
+    ...order,
+    [key]: amount,
+    ...(hasNonZeroAmount(amount)
+      ? { [key === "soValueCapital" ? "soValueRevenue" : "soValueCapital"]: "" }
+      : {}),
+  };
+}
+
+function hasNonZeroAmount(value: string | undefined) {
+  const cleaned = (value ?? "").replace(/,/g, "").trim();
+  if (!cleaned) return false;
+  const amount = Number(cleaned);
+  return Number.isFinite(amount) && amount !== 0;
+}
+
 function isNo(value: string) {
   return value.trim().toLowerCase() === "no";
 }
 
 function isYes(value: string) {
   return value.trim().toLowerCase() === "yes";
+}
+
+function isInr(value: string | undefined) {
+  return (value ?? "").trim().toUpperCase() === "INR";
 }
 
 function getInitialExtensionCount(value: string) {
@@ -1650,10 +1669,6 @@ function formatLocalDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function shouldDisableIfa(form: FormState) {
-  return isNo(form.tcec) && form.mode !== "PBM";
-}
-
 function isDivisionAdNo(divisionName: string, divisions: ReturnType<typeof useDivisions>) {
   const division = divisions.find(
     (item) => item.name.trim().toLowerCase() === divisionName.trim().toLowerCase(),
@@ -1679,8 +1694,7 @@ function isTimelineFieldDisabled(
     (isNo(form.tcec) && tcecDisabledKeys.includes(key)) ||
     (isNo(form.gem) && gemDisabledKeys.includes(key)) ||
     (isNo(form.rqa) && rqaDisabledKeys.includes(key)) ||
-    (isNo(form.bg) && bgDisabledKeys.includes(key)) ||
-    (shouldDisableIfa(form) && ifaDisabledKeys.includes(key))
+    (isNo(form.bg) && bgDisabledKeys.includes(key))
   );
 }
 
@@ -1733,7 +1747,7 @@ function ValueField({
     >,
   ) => void;
 }) {
-  const value = capitalValue || revenueValue;
+  const value = capitalSelected ? capitalValue : revenueSelected ? revenueValue : "";
 
   const updateCapital = (checked: boolean) => {
     onChange({

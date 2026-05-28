@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { requestDeletionPassword } from "@/lib/delete-password";
-import { formatThousandsAndLakhs, getInrAmount, hasAmount, parseAmount } from "@/lib/money";
+import { formatThousandsAndLakhs, getInrAmount, parseAmount } from "@/lib/money";
 
 export const Route = createFileRoute("/search")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -43,7 +43,6 @@ type FieldDef = {
 };
 
 const tcecDisabledKeys: FileKey[] = [
-  "highValue",
   "highValueMeetingDate",
   "highValueMinutesDate",
   "preTcecDate",
@@ -55,12 +54,12 @@ const tcecDisabledKeys: FileKey[] = [
   "postTcecMinutesDate",
   "postTcecCommitteeNumber",
   "refloatPostTcecDate",
+  "refloatPostTcecMinutesDate",
   "refloatPostTcecCommitteeNo",
   "cncDate",
   "cncApprovalDate",
 ];
 
-const ifaDisabledKeys: FileKey[] = ["ifa", "ifaSentDate", "ifaFinalDate"];
 const gemDisabledKeys: FileKey[] = ["gemUndertakingDate", "gemSoNo"];
 const rqaDisabledKeys: FileKey[] = ["rqaApprovalDate"];
 const bgDisabledKeys: FileKey[] = ["bgValidityDate", "bgReturnDate"];
@@ -159,11 +158,16 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "bidOpened", label: "Bid opened (YES/NO)", options: yesNoCaps },
       { key: "refloat", label: "Refloat (Yes/No)", options: yesNo },
       { key: "postTcecDate", label: "Post-TCEC date", type: "date" },
-      { key: "postTcecMinutesDate", label: "Post TCEC minutes date", type: "date" },
-      { key: "postTcecCommitteeNumber", label: "Post TCEC committee number" },
+      { key: "postTcecMinutesDate", label: "Post-TCEC minutes date", type: "date" },
+      { key: "postTcecCommitteeNumber", label: "Post-TCEC committee number" },
       { key: "refloatBiddingDate", label: "Refloat bidding date", type: "date" },
       { key: "refloatBidOpeningDate", label: "Refloat Bid opening date", type: "date" },
       { key: "refloatPostTcecDate", label: "Refloat Post-TCEC date", type: "date" },
+      {
+        key: "refloatPostTcecMinutesDate",
+        label: "Refloat Post-TCEC minutes date",
+        type: "date",
+      },
       { key: "refloatPostTcecCommitteeNo", label: "Refloat Post-TCEC Committee no" },
       { key: "rst", label: "RST (Yes/No)", options: yesNo },
       { key: "cncDate", label: "CNC date", type: "date" },
@@ -247,9 +251,9 @@ const printColumns: PrintColumn[] = [
         : supplyOrderKeys.includes(field.key)
           ? getSupplyOrderFieldValue(file, field.key as SupplyOrderKey)
           : field.key === "valueCapital" || field.key === "valueRevenue"
-            ? formatInrAmountValue(file[field.key], file)
+            ? getFileAmountFieldValue(file, field.key)
             : field.key === "soValueCapital" || field.key === "soValueRevenue"
-              ? formatAmountValue(file[field.key])
+              ? getFileAmountFieldValue(file, field.key)
               : String(file[field.key] ?? ""),
   })),
 ];
@@ -1155,11 +1159,25 @@ function EditModal({
   const rqaIsNo = isNo(formWithLockedYear.rqa);
   const bgIsNo = isNo(formWithLockedYear.bg);
   const dpExtensionIsNo = isNo(formWithLockedYear.dpExtension);
-  const ifaDisabled = shouldDisableIfa(formWithLockedYear);
   const update = (key: FileKey, value: string) => {
     if (key === "year") return;
     setForm((current) => {
       const patch: Partial<Record<FileKey, string>> = { [key]: value };
+      if (key === "valueCapital" && hasNonZeroAmount(value)) {
+        patch.valueRevenue = "";
+      }
+      if (key === "valueRevenue" && hasNonZeroAmount(value)) {
+        patch.valueCapital = "";
+      }
+      if (key === "soValueCapital" && hasNonZeroAmount(value)) {
+        patch.soValueRevenue = "";
+      }
+      if (key === "soValueRevenue" && hasNonZeroAmount(value)) {
+        patch.soValueCapital = "";
+      }
+      if (key === "currency" && isInr(value)) {
+        patch.exchangeRate = "1";
+      }
       if (key === "gem" && isYes(value)) {
         patch.paymentMode = "Online";
       }
@@ -1204,8 +1222,7 @@ function EditModal({
                       (gemIsNo && gemDisabledKeys.includes(field.key)) ||
                       (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
                       (bgIsNo && bgDisabledKeys.includes(field.key)) ||
-                      (dpExtensionIsNo && field.key === "ld") ||
-                      (ifaDisabled && ifaDisabledKeys.includes(field.key))
+                      (dpExtensionIsNo && field.key === "ld")
                     }
                     onChange={(value) => update(field.key, value)}
                   />
@@ -1383,10 +1400,37 @@ function getDefaultFieldValue(key: FileKey) {
 
 function applyConditionalRules(form: Record<FileKey, string>) {
   let next = form;
+  if (isInr(next.currency) && !next.exchangeRate) {
+    next = {
+      ...next,
+      exchangeRate: "1",
+    };
+  }
+  if (hasNonZeroAmount(next.valueCapital)) {
+    next = {
+      ...next,
+      valueRevenue: "",
+    };
+  } else if (hasNonZeroAmount(next.valueRevenue)) {
+    next = {
+      ...next,
+      valueCapital: "",
+    };
+  }
+  if (hasNonZeroAmount(next.soValueCapital)) {
+    next = {
+      ...next,
+      soValueRevenue: "",
+    };
+  } else if (hasNonZeroAmount(next.soValueRevenue)) {
+    next = {
+      ...next,
+      soValueCapital: "",
+    };
+  }
   if (isNo(next.tcec)) {
     next = {
       ...next,
-      highValue: "No",
       highValueMeetingDate: "",
       highValueMinutesDate: "",
       preTcecDate: "",
@@ -1398,6 +1442,7 @@ function applyConditionalRules(form: Record<FileKey, string>) {
       postTcecMinutesDate: "",
       postTcecCommitteeNumber: "",
       refloatPostTcecDate: "",
+      refloatPostTcecMinutesDate: "",
       refloatPostTcecCommitteeNo: "",
       cncDate: "",
       cncApprovalDate: "",
@@ -1447,14 +1492,6 @@ function applyConditionalRules(form: Record<FileKey, string>) {
     tenderLive: getAutoTenderLive(next),
     bidOpened: getAutoBidOpened(next),
   };
-  if (shouldDisableIfa(next)) {
-    next = {
-      ...next,
-      ifa: "",
-      ifaSentDate: "",
-      ifaFinalDate: "",
-    };
-  }
   return next;
 }
 
@@ -1526,10 +1563,6 @@ function formatLocalDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function shouldDisableIfa(form: Record<FileKey, string>) {
-  return isNo(form.tcec) && form.mode !== "PBM";
-}
-
 function disabledCls(disabled: boolean) {
   return disabled ? " opacity-60 cursor-not-allowed" : "";
 }
@@ -1546,6 +1579,17 @@ function includesText(value: string | undefined, query: string) {
 
 function isYes(value: string | undefined) {
   return ["yes", "y"].includes((value ?? "").trim().toLowerCase());
+}
+
+function isInr(value: string | undefined) {
+  return (value ?? "").trim().toUpperCase() === "INR";
+}
+
+function hasNonZeroAmount(value: string | undefined) {
+  const cleaned = (value ?? "").replace(/,/g, "").trim();
+  if (!cleaned) return false;
+  const amount = Number(cleaned);
+  return Number.isFinite(amount) && amount !== 0;
 }
 
 function fileSupplyOrders(file: FileRecord) {
@@ -1586,13 +1630,15 @@ function getNoOfSo(file: FileRecord) {
 }
 
 function getSupplyOrderFieldValue(file: FileRecord, key: SupplyOrderKey) {
-  return fileSupplyOrders(file)
+  const rows = fileSupplyOrders(file);
+  return rows
     .map((order, index) => {
-      const value = String(order[key] ?? "");
+      const value =
+        key === "soValueCapital" || key === "soValueRevenue"
+          ? getSupplyOrderAmountFieldValue(order, key)
+          : String(order[key] ?? "");
       if (!value.trim()) return "";
-      const formatted =
-        key === "soValueCapital" || key === "soValueRevenue" ? formatAmountValue(value) : value;
-      return fileSupplyOrders(file).length > 1 ? `${index + 1}. ${formatted}` : formatted;
+      return rows.length > 1 ? `${index + 1}. ${value}` : value;
     })
     .filter(Boolean)
     .join("; ");
@@ -1604,6 +1650,50 @@ function hasAny(file: FileRecord, keys: FileKey[]) {
       ? fileSupplyOrders(file).some((order) => Boolean(order[key as SupplyOrderKey]))
       : Boolean(file[key]),
   );
+}
+
+const milestoneDefinitions = [
+  { key: "scrutiny", previous: "receivedDate", current: "scrutinyCompletionDate" },
+  { key: "highValue", previous: "scrutinyCompletionDate", current: "highValueMinutesDate" },
+  { key: "tcec", previous: "immsDate", current: "preTcecMinutesDate" },
+  { key: "ad", previous: "preTcecMinutesDate", current: "adVettingDate" },
+  { key: "rqa", previous: "adVettingDate", current: "rqaApprovalDate" },
+  { key: "control", previous: "scrutinyCompletionDate", current: "immsDate" },
+  { key: "ifa", previous: "rqaApprovalDate", current: "ifaFinalDate" },
+  { key: "cfa", previous: "ifaFinalDate", current: "cfaDate" },
+  { key: "bidding", previous: "cfaDate", current: "bidDate" },
+  { key: "postTcec", previous: "bidDate", current: "postTcecMinutesDate" },
+  { key: "supplyOrder", previous: "postTcecMinutesDate", current: "soDate" },
+  { key: "bankGuarantee", previous: "soDate", current: "bgValidityDate" },
+  { key: "payment", previous: "bgValidityDate", current: "paymentDate" },
+] satisfies Array<{
+  key: string;
+  previous: FileKey | SupplyOrderKey;
+  current: FileKey | SupplyOrderKey;
+}>;
+
+function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  return hasMilestoneDate(file, milestone.previous) && !hasMilestoneDate(file, milestone.current);
+}
+
+function isClearedMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  return hasMilestoneDate(file, milestone.previous) && hasMilestoneDate(file, milestone.current);
+}
+
+function isEligibleMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  return hasMilestoneDate(file, milestone.previous);
+}
+
+function hasMilestoneDate(file: FileRecord, key: FileKey | SupplyOrderKey) {
+  return supplyOrderDateKeys.has(key as SupplyOrderKey)
+    ? fileSupplyOrders(file).some((order) => hasFilledString(order[key as SupplyOrderKey]))
+    : hasFilledString(file[key as FileKey]);
+}
+
+const supplyOrderDateKeys = new Set<SupplyOrderKey>(["soDate", "bgValidityDate", "paymentDate"]);
+
+function hasFilledString(value: string | undefined) {
+  return Boolean(value?.trim());
 }
 
 function isFileTenderLive(file: FileRecord) {
@@ -1716,6 +1806,18 @@ function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter === "ifaCompleted") return hasAny(file, ["ifaFinalDate"]);
   if (filter === "ifaRemaining") return hasAny(file, ["ifaSentDate"]);
   if (filter === "cfaCompleted") return hasAny(file, ["cfaDate"]);
+  if (filter.startsWith("milestone:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(10));
+    return milestone ? isPendingMilestone(file, milestone) : true;
+  }
+  if (filter.startsWith("milestoneCleared:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(17));
+    return milestone ? isClearedMilestone(file, milestone) : true;
+  }
+  if (filter.startsWith("milestoneEligible:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(18));
+    return milestone ? isEligibleMilestone(file, milestone) : true;
+  }
   if (filter === "soCompleted") return hasAny(file, ["soNo"]);
   if (filter === "soRemaining") return !hasAny(file, ["soNo"]);
   return true;
@@ -1732,6 +1834,35 @@ function formatAmountValue(value: string | undefined) {
   const amount = parseAmount(value);
   if (amount === undefined) return value ?? "";
   return formatThousandsAndLakhs(amount);
+}
+
+function getFileAmountFieldValue(
+  file: FileRecord,
+  key: "valueCapital" | "valueRevenue" | "soValueCapital" | "soValueRevenue",
+) {
+  const pairedKey = getPairedAmountKey(key);
+  if (!hasNonZeroAmount(file[key]) && hasNonZeroAmount(file[pairedKey])) return "-";
+  return key === "valueCapital" || key === "valueRevenue"
+    ? formatInrAmountValue(file[key], file)
+    : formatAmountValue(file[key]);
+}
+
+function getSupplyOrderAmountFieldValue(
+  order: SupplyOrderDetail,
+  key: "soValueCapital" | "soValueRevenue",
+) {
+  const pairedKey = key === "soValueCapital" ? "soValueRevenue" : "soValueCapital";
+  if (!hasNonZeroAmount(order[key]) && hasNonZeroAmount(order[pairedKey])) return "-";
+  return formatAmountValue(order[key]);
+}
+
+function getPairedAmountKey(
+  key: "valueCapital" | "valueRevenue" | "soValueCapital" | "soValueRevenue",
+): "valueCapital" | "valueRevenue" | "soValueCapital" | "soValueRevenue" {
+  if (key === "valueCapital") return "valueRevenue";
+  if (key === "valueRevenue") return "valueCapital";
+  if (key === "soValueCapital") return "soValueRevenue";
+  return "soValueCapital";
 }
 
 function formatInrAmountValue(value: string | undefined, file: FileRecord) {
@@ -1769,8 +1900,8 @@ function matchesValueRange(
 
 function matchesValueType(file: FileRecord, capitalOnly: boolean, revenueOnly: boolean) {
   if (!capitalOnly && !revenueOnly) return true;
-  const hasCapital = hasAmount(file.valueCapital);
-  const hasRevenue = hasAmount(file.valueRevenue);
+  const hasCapital = hasNonZeroAmount(file.valueCapital);
+  const hasRevenue = hasNonZeroAmount(file.valueRevenue);
   if (capitalOnly && revenueOnly) return hasCapital || hasRevenue;
   if (capitalOnly) return hasCapital;
   return hasRevenue;
