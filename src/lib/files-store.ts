@@ -57,6 +57,7 @@ export type FileRecord = {
   refloatPostTcecMinutesDate?: string;
   refloatPostTcecCommitteeNo?: string;
   rst?: string;
+  biddingStageOver?: string;
   cncDate?: string;
   cncApprovalDate?: string;
   noOfSo?: string;

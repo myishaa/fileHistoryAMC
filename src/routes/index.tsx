@@ -425,7 +425,10 @@ export function Dashboard() {
                   milestone={milestone}
                   index={index}
                   isLast={index === milestoneFlow.length - 1}
-                  onPendingClick={() => openSearchFilter(`milestone:${milestone.key}`)}
+                  onTotalClick={() => openSearchFilter(`milestoneTotal:${milestone.key}`)}
+                  onActiveClick={() => openSearchFilter(`milestone:${milestone.key}`)}
+                  onReviewedClick={() => openSearchFilter(`milestoneReviewed:${milestone.key}`)}
+                  onPendingClick={() => openSearchFilter(`milestonePending:${milestone.key}`)}
                   onClearedClick={() => openSearchFilter(`milestoneCleared:${milestone.key}`)}
                 />
               ))}
@@ -631,16 +634,30 @@ function MilestoneFlowNode({
   milestone,
   index,
   isLast,
+  onTotalClick,
+  onActiveClick,
+  onReviewedClick,
   onPendingClick,
   onClearedClick,
 }: {
-  milestone: { key: string; label: string; pending: number; cleared: number; total: number };
+  milestone: {
+    key: string;
+    label: string;
+    total: number;
+    active: number;
+    pending: number;
+    reviewed: number;
+    cleared: number;
+  };
   index: number;
   isLast: boolean;
+  onTotalClick: () => void;
+  onActiveClick: () => void;
+  onReviewedClick: () => void;
   onPendingClick: () => void;
   onClearedClick: () => void;
 }) {
-  const tone = getMilestoneTone(milestone.pending);
+  const tone = getMilestoneTone(milestone.active);
   const widthPercent =
     milestone.total > 0 ? Math.round((milestone.cleared / milestone.total) * 100) : 0;
 
@@ -668,15 +685,13 @@ function MilestoneFlowNode({
           <span className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              onClick={onPendingClick}
-              className={
-                "rounded-md px-2.5 py-1 text-center hover:ring-2 hover:ring-ring/30 " + tone.count
-              }
+              onClick={onTotalClick}
+              className="rounded-md border border-border bg-card px-2.5 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
             >
               <span className="block text-[10px] font-medium uppercase text-muted-foreground">
-                Pending
+                Total
               </span>
-              <span className="block text-lg font-semibold tabular-nums">{milestone.pending}</span>
+              <span className="block text-lg font-semibold tabular-nums">{milestone.total}</span>
             </button>
             <button
               type="button"
@@ -687,6 +702,39 @@ function MilestoneFlowNode({
                 Cleared
               </span>
               <span className="block text-lg font-semibold tabular-nums">{milestone.cleared}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onActiveClick}
+              className={
+                "col-span-2 rounded-md px-2.5 py-1 text-center hover:ring-2 hover:ring-ring/30 " +
+                tone.count
+              }
+            >
+              <span className="block text-[10px] font-medium uppercase text-muted-foreground">
+                Active
+              </span>
+              <span className="block text-lg font-semibold tabular-nums">{milestone.active}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onReviewedClick}
+              className="rounded-md border border-border bg-card px-2.5 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
+            >
+              <span className="block text-[10px] font-medium uppercase text-muted-foreground">
+                Reviewed
+              </span>
+              <span className="block text-lg font-semibold tabular-nums">{milestone.reviewed}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onPendingClick}
+              className="rounded-md border border-border bg-card px-2.5 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
+            >
+              <span className="block text-[10px] font-medium uppercase text-muted-foreground">
+                Pending
+              </span>
+              <span className="block text-lg font-semibold tabular-nums">{milestone.pending}</span>
             </button>
           </span>
         </span>
@@ -747,48 +795,122 @@ const milestoneDefinitions = [
   {
     key: "scrutiny",
     label: "Scrutiny",
-    previous: "receivedDate",
+    reviewed: "scrutinyDate",
     current: "scrutinyCompletionDate",
   },
   {
     key: "highValue",
     label: "High Value",
-    previous: "scrutinyCompletionDate",
+    reviewed: "highValueMeetingDate",
     current: "highValueMinutesDate",
+    applies: (file) => isYes(file.highValue),
   },
-  { key: "tcec", label: "Pre-TCEC", previous: "immsDate", current: "preTcecMinutesDate" },
-  { key: "ad", label: "AD", previous: "preTcecMinutesDate", current: "adVettingDate" },
-  { key: "rqa", label: "R&QA", previous: "adVettingDate", current: "rqaApprovalDate" },
-  { key: "control", label: "Control", previous: "scrutinyCompletionDate", current: "immsDate" },
-  { key: "ifa", label: "IFA", previous: "rqaApprovalDate", current: "ifaFinalDate" },
-  { key: "cfa", label: "CFA", previous: "ifaFinalDate", current: "cfaDate" },
-  { key: "bidding", label: "Bidding", previous: "cfaDate", current: "bidDate" },
-  { key: "postTcec", label: "Post-TCEC", previous: "bidDate", current: "postTcecMinutesDate" },
-  { key: "supplyOrder", label: "Supply Order", previous: "postTcecMinutesDate", current: "soDate" },
-  { key: "bankGuarantee", label: "Bank Guarantee", previous: "soDate", current: "bgValidityDate" },
-  { key: "payment", label: "Payment", previous: "bgValidityDate", current: "paymentDate" },
+  {
+    key: "tcec",
+    label: "Pre-TCEC",
+    reviewed: "preTcecDate",
+    current: "preTcecMinutesDate",
+    applies: (file) => isYes(file.tcec),
+  },
+  { key: "ad", label: "AD", current: "adVettingDate", applies: (file) => isYes(file.ad) },
+  { key: "rqa", label: "R&QA", current: "rqaApprovalDate", applies: (file) => isYes(file.rqa) },
+  { key: "control", label: "Controlled", current: "immsDate" },
+  {
+    key: "ifa",
+    label: "IFA",
+    reviewed: "ifaSentDate",
+    current: "ifaFinalDate",
+    applies: (file) => isYes(file.ifa),
+  },
+  { key: "cfa", label: "CFA", current: "cfaDate" },
+  { key: "bidding", label: "Bidding", current: "biddingStageOver" },
+  { key: "cnc", label: "CNC", current: "cncDate", applies: (file) => isYes(file.tcec) },
+  {
+    key: "postTcec",
+    label: "Post-TCEC",
+    reviewed: "postTcecDate",
+    current: "postTcecMinutesDate",
+    applies: (file) => isYes(file.tcec),
+  },
+  { key: "supplyOrder", label: "Supply Order", current: "soDate" },
+  { key: "payment", label: "Payment", current: "paymentDate" },
+  {
+    key: "bankGuarantee",
+    label: "Bank Guarantee",
+    current: "bgValidityDate",
+    applies: (file) => isYes(file.bg),
+  },
 ] satisfies Array<{
   key: string;
   label: string;
-  previous: keyof FileRecord | keyof SupplyOrderDetail;
+  reviewed?: keyof FileRecord | keyof SupplyOrderDetail;
   current: keyof FileRecord | keyof SupplyOrderDetail;
+  applies?: (file: FileRecord) => boolean;
 }>;
 
 function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
   return milestoneDefinitions.map((milestone) => {
-    const eligibleFiles = files.filter((file) => hasMilestoneDate(file, milestone.previous));
+    const applicableFiles = files.filter((file) => isMilestoneApplicable(file, milestone));
+    const reachedFiles = applicableFiles.filter((file) => isEligibleMilestone(file, milestone));
+    const reviewed = reachedFiles.filter((file) => isMilestoneReviewed(file, milestone)).length;
+    const cleared = reachedFiles.filter((file) => isMilestoneComplete(file, milestone)).length;
+    const reached = reachedFiles.length;
     return {
       key: milestone.key,
       label: milestone.label,
-      pending: eligibleFiles.filter((file) => !hasMilestoneDate(file, milestone.current)).length,
-      cleared: eligibleFiles.filter((file) => hasMilestoneDate(file, milestone.current)).length,
-      total: eligibleFiles.length,
+      total: applicableFiles.length,
+      active: Math.max(0, reached - cleared),
+      pending: Math.max(0, reached - reviewed - cleared),
+      reviewed,
+      cleared,
     };
   });
 }
 
 function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
-  return hasMilestoneDate(file, milestone.previous) && !hasMilestoneDate(file, milestone.current);
+  return (
+    isEligibleMilestone(file, milestone) &&
+    !isMilestoneReviewed(file, milestone) &&
+    !isMilestoneComplete(file, milestone)
+  );
+}
+
+function isEligibleMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  return (
+    isMilestoneApplicable(file, milestone) && isPreviousApplicableMilestoneComplete(file, milestone)
+  );
+}
+
+function isMilestoneApplicable(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  return milestone.applies ? milestone.applies(file) : true;
+}
+
+function isPreviousApplicableMilestoneComplete(
+  file: FileRecord,
+  milestone: (typeof milestoneDefinitions)[number],
+) {
+  let previousMilestone: (typeof milestoneDefinitions)[number] | undefined;
+  for (const item of milestoneDefinitions) {
+    if (item.key === milestone.key) break;
+    if (isMilestoneApplicable(file, item)) {
+      previousMilestone = item;
+    }
+  }
+  return previousMilestone
+    ? isMilestoneComplete(file, previousMilestone)
+    : hasMilestoneDate(file, "receivedDate");
+}
+
+function isMilestoneComplete(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  if (milestone.key === "bidding") {
+    return isYes(file.biddingStageOver);
+  }
+  return hasMilestoneDate(file, milestone.current);
+}
+
+function isMilestoneReviewed(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  if (!milestone.reviewed) return false;
+  return hasMilestoneDate(file, milestone.reviewed) && !isMilestoneComplete(file, milestone);
 }
 
 function hasMilestoneDate(file: FileRecord, key: keyof FileRecord | keyof SupplyOrderDetail) {

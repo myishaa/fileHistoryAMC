@@ -80,6 +80,7 @@ const defaultNoKeys: FileKey[] = [
   "tenderLive",
   "refloat",
   "rst",
+  "biddingStageOver",
   "demandCancelled",
   "soCancelled",
 ];
@@ -195,6 +196,7 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "refloatBiddingDate", label: "Refloat bidding date", type: "date" },
       { key: "refloatBidOpeningDate", label: "Refloat Bid opening date", type: "date" },
       { key: "rst", label: "RST (Yes/No)", options: yesNo },
+      { key: "biddingStageOver", label: "Bidding stage over", options: yesNo },
       { key: "cncDate", label: "CNC date", type: "date" },
       { key: "cncApprovalDate", label: "CNC approval date", type: "date" },
       { key: "biddingRemark1", label: "Bidding Remark-1", type: "textarea" },
@@ -1758,35 +1760,121 @@ function hasAny(file: FileRecord, keys: FileKey[]) {
 }
 
 const milestoneDefinitions = [
-  { key: "scrutiny", previous: "receivedDate", current: "scrutinyCompletionDate" },
-  { key: "highValue", previous: "scrutinyCompletionDate", current: "highValueMinutesDate" },
-  { key: "tcec", previous: "immsDate", current: "preTcecMinutesDate" },
-  { key: "ad", previous: "preTcecMinutesDate", current: "adVettingDate" },
-  { key: "rqa", previous: "adVettingDate", current: "rqaApprovalDate" },
-  { key: "control", previous: "scrutinyCompletionDate", current: "immsDate" },
-  { key: "ifa", previous: "rqaApprovalDate", current: "ifaFinalDate" },
+  {
+    key: "scrutiny",
+    previous: "receivedDate",
+    reviewed: "scrutinyDate",
+    current: "scrutinyCompletionDate",
+  },
+  {
+    key: "highValue",
+    previous: "scrutinyCompletionDate",
+    reviewed: "highValueMeetingDate",
+    current: "highValueMinutesDate",
+    applies: (file) => isYes(file.highValue),
+  },
+  {
+    key: "tcec",
+    previous: "highValueMinutesDate",
+    reviewed: "preTcecDate",
+    current: "preTcecMinutesDate",
+    applies: (file) => isYes(file.tcec),
+  },
+  {
+    key: "ad",
+    previous: "preTcecMinutesDate",
+    current: "adVettingDate",
+    applies: (file) => isYes(file.ad),
+  },
+  {
+    key: "rqa",
+    previous: "adVettingDate",
+    current: "rqaApprovalDate",
+    applies: (file) => isYes(file.rqa),
+  },
+  { key: "control", previous: "rqaApprovalDate", current: "immsDate" },
+  {
+    key: "ifa",
+    previous: "immsDate",
+    reviewed: "ifaSentDate",
+    current: "ifaFinalDate",
+    applies: (file) => isYes(file.ifa),
+  },
   { key: "cfa", previous: "ifaFinalDate", current: "cfaDate" },
-  { key: "bidding", previous: "cfaDate", current: "bidDate" },
-  { key: "postTcec", previous: "bidDate", current: "postTcecMinutesDate" },
+  { key: "bidding", previous: "cfaDate", current: "biddingStageOver" },
+  {
+    key: "cnc",
+    previous: "biddingStageOver",
+    current: "cncDate",
+    applies: (file) => isYes(file.tcec),
+  },
+  {
+    key: "postTcec",
+    previous: "cncDate",
+    reviewed: "postTcecDate",
+    current: "postTcecMinutesDate",
+    applies: (file) => isYes(file.tcec),
+  },
   { key: "supplyOrder", previous: "postTcecMinutesDate", current: "soDate" },
-  { key: "bankGuarantee", previous: "soDate", current: "bgValidityDate" },
-  { key: "payment", previous: "bgValidityDate", current: "paymentDate" },
+  { key: "payment", previous: "soDate", current: "paymentDate" },
+  {
+    key: "bankGuarantee",
+    previous: "paymentDate",
+    current: "bgValidityDate",
+    applies: (file) => isYes(file.bg),
+  },
 ] satisfies Array<{
   key: string;
   previous: FileKey | SupplyOrderKey;
+  reviewed?: FileKey | SupplyOrderKey;
   current: FileKey | SupplyOrderKey;
+  applies?: (file: FileRecord) => boolean;
 }>;
 
 function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
-  return hasMilestoneDate(file, milestone.previous) && !hasMilestoneDate(file, milestone.current);
+  return isEligibleMilestone(file, milestone) && !isMilestoneComplete(file, milestone);
 }
 
 function isClearedMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
-  return hasMilestoneDate(file, milestone.previous) && hasMilestoneDate(file, milestone.current);
+  return isEligibleMilestone(file, milestone) && isMilestoneComplete(file, milestone);
 }
 
 function isEligibleMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
-  return hasMilestoneDate(file, milestone.previous);
+  return (
+    isMilestoneApplicable(file, milestone) && isPreviousApplicableMilestoneComplete(file, milestone)
+  );
+}
+
+function isMilestoneApplicable(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  return milestone.applies ? milestone.applies(file) : true;
+}
+
+function isPreviousApplicableMilestoneComplete(
+  file: FileRecord,
+  milestone: (typeof milestoneDefinitions)[number],
+) {
+  let previousMilestone: (typeof milestoneDefinitions)[number] | undefined;
+  for (const item of milestoneDefinitions) {
+    if (item.key === milestone.key) break;
+    if (isMilestoneApplicable(file, item)) {
+      previousMilestone = item;
+    }
+  }
+  return previousMilestone
+    ? isMilestoneComplete(file, previousMilestone)
+    : hasMilestoneDate(file, "receivedDate");
+}
+
+function isMilestoneComplete(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  if (milestone.key === "bidding") {
+    return isYes(file.biddingStageOver);
+  }
+  return hasMilestoneDate(file, milestone.current);
+}
+
+function isMilestoneReviewed(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  if (!milestone.reviewed) return false;
+  return hasMilestoneDate(file, milestone.reviewed) && !isMilestoneComplete(file, milestone);
 }
 
 function hasMilestoneDate(file: FileRecord, key: FileKey | SupplyOrderKey) {
@@ -1911,9 +1999,27 @@ function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter === "ifaCompleted") return hasAny(file, ["ifaFinalDate"]);
   if (filter === "ifaRemaining") return hasAny(file, ["ifaSentDate"]);
   if (filter === "cfaCompleted") return hasAny(file, ["cfaDate"]);
+  if (filter.startsWith("milestoneTotal:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(15));
+    return milestone ? isMilestoneApplicable(file, milestone) : true;
+  }
   if (filter.startsWith("milestone:")) {
     const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(10));
     return milestone ? isPendingMilestone(file, milestone) : true;
+  }
+  if (filter.startsWith("milestoneReviewed:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(18));
+    return milestone
+      ? isEligibleMilestone(file, milestone) && isMilestoneReviewed(file, milestone)
+      : true;
+  }
+  if (filter.startsWith("milestonePending:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(17));
+    return milestone
+      ? isEligibleMilestone(file, milestone) &&
+          !isMilestoneReviewed(file, milestone) &&
+          !isMilestoneComplete(file, milestone)
+      : true;
   }
   if (filter.startsWith("milestoneCleared:")) {
     const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(17));
