@@ -207,6 +207,11 @@ const ifaDisabledKeys: FieldKey[] = ["ifaSentDate", "ifaFinalDate"];
 const bgDisabledKeys: FieldKey[] = ["bgValidityDate", "bgReturnDate"];
 const refloatDisabledKeys: FieldKey[] = ["refloatBiddingDate", "refloatBidOpeningDate"];
 const supplyOrderBgDisabledKeys: SupplyOrderKey[] = ["bgValidityDate", "bgReturnDate"];
+const tcecCommitteeKeys: FieldKey[] = [
+  "preTcecCommitteeNo",
+  "postTcecCommitteeNumber",
+  "refloatPostTcecCommitteeNo",
+];
 
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
@@ -304,10 +309,10 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
   {
     title: "TCEC block",
     fields: [
-      { key: "preTcecCommitteeNo", label: "Pre TCEC committee" },
+      { key: "preTcecCommitteeNo", label: "Pre-TCEC" },
       { key: "preTcecDate", label: "Pre-TCEC Date", type: "date" },
       { key: "preTcecMinutesDate", label: "Pre-TCEC minutes date", type: "date" },
-      { key: "postTcecCommitteeNumber", label: "Post-TCEC committee number" },
+      { key: "postTcecCommitteeNumber", label: "Post-TCEC committee" },
       { key: "postTcecDate", label: "Post-TCEC date", type: "date" },
       { key: "postTcecMinutesDate", label: "Post-TCEC minutes date", type: "date" },
       { key: "refloatPostTcecCommitteeNo", label: "Refloat Post-TCEC committee number" },
@@ -559,7 +564,15 @@ function AddFilePage() {
                 placeholder: "Type or select division",
                 typeahead: true,
               }
-            : field;
+            : tcecCommitteeKeys.includes(field.key)
+              ? {
+                  ...field,
+                  options: getTcecCommitteeOptions(
+                    settings.tcecCommittees,
+                    formWithLockedYear[field.key],
+                  ),
+                }
+              : field;
         const existingValueLocked =
           isEditing &&
           !unlockedSections.has(section.title) &&
@@ -1463,6 +1476,11 @@ function cleanFirmRows(rows: FirmDetail[]) {
     }))
     .filter((row) => row.firmName || row.city || row.emailId);
   return cleaned.length ? cleaned : undefined;
+}
+
+function getTcecCommitteeOptions(committees: string[] | undefined, currentValue: string) {
+  const values = (committees ?? []).filter(Boolean);
+  return currentValue && !values.includes(currentValue) ? [...values, currentValue] : values;
 }
 
 function cleanSupplyOrderRows(rows: SupplyOrderDetail[]) {

@@ -158,6 +158,7 @@ export type AppSettings = {
   theme: AppTheme;
   themeTint: AppThemeTint;
   deletionPassword: string;
+  tcecCommittees: string[];
   activeUserId?: string;
 };
 
@@ -175,6 +176,7 @@ const defaultSettings: AppSettings = {
   theme: "light",
   themeTint: "plain",
   deletionPassword: "",
+  tcecCommittees: [],
 };
 
 const defaultDivisions: Division[] = [

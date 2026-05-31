@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import {
   store,
+  useActiveUser,
   useDivisions,
   useFiles,
   useSettings,
@@ -67,6 +68,7 @@ function SettingsPage() {
 
         <TabsContent value="admin" className="space-y-4">
           <DivisionSettings />
+          <TcecCommitteeSettings />
           <UserSettings />
         </TabsContent>
 
@@ -145,6 +147,81 @@ function WorkspaceSettings() {
           onChange={(value) => store.updateSettings({ deletionPassword: value })}
         />
         <Field label="Locale" value="English (India)" />
+      </div>
+    </div>
+  );
+}
+
+function TcecCommitteeSettings() {
+  const settings = useSettings();
+  const activeUser = useActiveUser();
+  const [name, setName] = useState("");
+  const committees = settings.tcecCommittees ?? [];
+
+  if (activeUser && activeUser.role !== "admin") return null;
+
+  const updateCommittees = (next: string[]) => {
+    store.updateSettings({ tcecCommittees: next });
+  };
+
+  const add = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const exists = committees.some(
+      (committee) => committee.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (exists) {
+      setName("");
+      return;
+    }
+    updateCommittees([...committees, trimmed]);
+    setName("");
+  };
+
+  const remove = (committee: string) => {
+    updateCommittees(committees.filter((item) => item !== committee));
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
+      <h2 className="text-sm font-semibold mb-1">TCEC Committee</h2>
+      <p className="text-xs text-muted-foreground mb-5">
+        Add committee names for selection in TCEC fields.
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+        <DivisionInput value={name} onChange={setName} placeholder="Committee name" />
+        <button
+          type="button"
+          onClick={add}
+          className="h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+        >
+          <Plus className="size-4" /> Add
+        </button>
+      </div>
+
+      <div className="mt-4 rounded-md border border-border">
+        {committees.length === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+            No committee names added yet.
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {committees.map((committee) => (
+              <li key={committee} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="text-sm font-medium">{committee}</span>
+                <button
+                  type="button"
+                  onClick={() => remove(committee)}
+                  className="size-8 grid place-items-center rounded-md text-destructive hover:bg-destructive/10"
+                  aria-label={`Delete ${committee}`}
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
@@ -872,9 +949,7 @@ function formatThousandsAndLakhs(value: number, maximumFractionDigits = 2) {
 
   const lastTwoBeforeThousands = beforeThousands.slice(-2);
   const lakhPart = beforeThousands.slice(0, -2);
-  const formattedInteger = [lakhPart, lastTwoBeforeThousands, lastThree]
-    .filter(Boolean)
-    .join(",");
+  const formattedInteger = [lakhPart, lastTwoBeforeThousands, lastThree].filter(Boolean).join(",");
 
   return `${sign}${formattedInteger}${decimalPart ? `.${decimalPart}` : ""}`;
 }

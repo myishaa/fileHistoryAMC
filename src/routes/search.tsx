@@ -69,6 +69,11 @@ const rqaDisabledKeys: FileKey[] = ["rqaApprovalDate"];
 const ifaDisabledKeys: FileKey[] = ["ifaSentDate", "ifaFinalDate"];
 const bgDisabledKeys: FileKey[] = ["bgValidityDate", "bgReturnDate"];
 const refloatDisabledKeys: FileKey[] = ["refloatBiddingDate", "refloatBidOpeningDate"];
+const tcecCommitteeKeys: FileKey[] = [
+  "preTcecCommitteeNo",
+  "postTcecCommitteeNumber",
+  "refloatPostTcecCommitteeNo",
+];
 
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
@@ -147,12 +152,12 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
     fields: [
       { key: "preTcecDate", label: "Pre-TCEC Date", type: "date" },
       { key: "preTcecMinutesDate", label: "Pre-TCEC minutes date", type: "date" },
-      { key: "preTcecCommitteeNo", label: "Pre-TCEC Committee no." },
+      { key: "preTcecCommitteeNo", label: "Pre-TCEC" },
       { key: "tcecRemark1", label: "TCEC Remark-1", type: "textarea" },
       { key: "tcecRemark2", label: "TCEC Remark-2", type: "textarea" },
       { key: "postTcecDate", label: "Post-TCEC date", type: "date" },
       { key: "postTcecMinutesDate", label: "Post-TCEC minutes date", type: "date" },
-      { key: "postTcecCommitteeNumber", label: "Post-TCEC committee number" },
+      { key: "postTcecCommitteeNumber", label: "Post-TCEC committee" },
       { key: "refloatPostTcecDate", label: "Refloat Post-TCEC date", type: "date" },
       {
         key: "refloatPostTcecMinutesDate",
@@ -1283,7 +1288,17 @@ function EditModal({
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {section.fields.map((field) => {
                 const renderedField =
-                  field.key === "division" ? { ...field, options: divisions } : field;
+                  field.key === "division"
+                    ? { ...field, options: divisions }
+                    : tcecCommitteeKeys.includes(field.key)
+                      ? {
+                          ...field,
+                          options: getTcecCommitteeOptions(
+                            settings.tcecCommittees,
+                            formWithLockedYear[field.key],
+                          ),
+                        }
+                      : field;
                 return (
                   <EditField
                     key={field.key}
@@ -1678,6 +1693,11 @@ function getFirmCount(rows: FirmDetail[] | undefined) {
   return normalizeFirmRows(rows).length;
 }
 
+function getTcecCommitteeOptions(committees: string[] | undefined, currentValue: string) {
+  const values = (committees ?? []).filter(Boolean);
+  return currentValue && !values.includes(currentValue) ? [...values, currentValue] : values;
+}
+
 function matchesFirmCount(rows: FirmDetail[] | undefined, query: string) {
   const expected = Number.parseInt(query, 10);
   if (!Number.isFinite(expected)) return true;
@@ -1803,26 +1823,27 @@ const milestoneDefinitions = [
   { key: "cfa", previous: "ifaFinalDate", current: "cfaDate" },
   { key: "bidding", previous: "cfaDate", current: "biddingStageOver" },
   {
-    key: "cnc",
-    previous: "biddingStageOver",
-    current: "cncDate",
-    applies: (file) => isYes(file.tcec),
-  },
-  {
     key: "postTcec",
-    previous: "cncDate",
+    previous: "biddingStageOver",
     reviewed: "postTcecDate",
     current: "postTcecMinutesDate",
     applies: (file) => isYes(file.tcec),
   },
+  {
+    key: "cnc",
+    previous: "postTcecMinutesDate",
+    reviewed: "cncDate",
+    current: "cncApprovalDate",
+    applies: (file) => isYes(file.tcec),
+  },
   { key: "supplyOrder", previous: "postTcecMinutesDate", current: "soDate" },
-  { key: "payment", previous: "soDate", current: "paymentDate" },
   {
     key: "bankGuarantee",
-    previous: "paymentDate",
+    previous: "soDate",
     current: "bgValidityDate",
     applies: (file) => isYes(file.bg),
   },
+  { key: "payment", previous: "bgValidityDate", current: "paymentDate" },
 ] satisfies Array<{
   key: string;
   previous: FileKey | SupplyOrderKey;
@@ -1853,6 +1874,10 @@ function isPreviousApplicableMilestoneComplete(
   file: FileRecord,
   milestone: (typeof milestoneDefinitions)[number],
 ) {
+  if (milestone.key === "bankGuarantee") {
+    return isSupplyOrderPlaced(file);
+  }
+
   let previousMilestone: (typeof milestoneDefinitions)[number] | undefined;
   for (const item of milestoneDefinitions) {
     if (item.key === milestone.key) break;
@@ -1935,6 +1960,84 @@ function isDeliveryOverdue(file: FileRecord) {
   });
 }
 
+function isDeliveryCompleted(file: FileRecord) {
+  return isDeliveryActive(file) && fileSupplyOrders(file).some(isCompletedDeliveryOrder);
+}
+
+function isDeliveryDue(file: FileRecord) {
+  return isDeliveryActive(file) && fileSupplyOrders(file).some(isDueDeliveryOrder);
+}
+
+function isDeliveryActive(file: FileRecord) {
+  return isSupplyOrderPlaced(file);
+}
+
+function isCompletedDeliveryOrder(order: SupplyOrderDetail) {
+  return hasFilledString(order.materialReceiptDate);
+}
+
+function isDueDeliveryOrder(order: SupplyOrderDetail) {
+  return (
+    !hasFilledString(order.materialReceiptDate) && isDateBeforeToday(getDeliveryDueDate(order))
+  );
+}
+
+function getDeliveryDueDate(order: SupplyOrderDetail) {
+  return hasFilledString(order.revisedDp) ? order.revisedDp : order.dpDate;
+}
+
+function isDeliveryPeriodValid(file: FileRecord) {
+  return isDeliveryPeriodActive(file) && fileSupplyOrders(file).some(isValidDeliveryPeriodOrder);
+}
+
+function isDeliveryPeriodExpired(file: FileRecord) {
+  return isDeliveryPeriodActive(file) && fileSupplyOrders(file).some(isExpiredDeliveryPeriodOrder);
+}
+
+function isDeliveryPeriodExtended(file: FileRecord) {
+  return isDeliveryPeriodActive(file) && fileSupplyOrders(file).some(isExtendedDeliveryPeriodOrder);
+}
+
+function isDeliveryPeriodActive(file: FileRecord) {
+  return isSupplyOrderPlaced(file);
+}
+
+function isSupplyOrderPlaced(file: FileRecord) {
+  const supplyOrderMilestone = milestoneDefinitions.find(
+    (milestone) => milestone.key === "supplyOrder",
+  );
+  return supplyOrderMilestone ? isMilestoneComplete(file, supplyOrderMilestone) : false;
+}
+
+function isValidDeliveryPeriodOrder(order: SupplyOrderDetail) {
+  return (
+    !hasFilledString(order.revisedDp) &&
+    isDateAfterToday(order.dpDate) &&
+    !hasFilledString(order.materialReceiptDate)
+  );
+}
+
+function isExpiredDeliveryPeriodOrder(order: SupplyOrderDetail) {
+  const deliveryPeriodDate = getDeliveryPeriodDate(order);
+  return (
+    Boolean(deliveryPeriodDate) &&
+    isDateBeforeToday(deliveryPeriodDate) &&
+    !hasFilledString(order.materialReceiptDate)
+  );
+}
+
+function isExtendedDeliveryPeriodOrder(order: SupplyOrderDetail) {
+  return (
+    hasFilledString(order.revisedDp) &&
+    isDateAfterToday(order.revisedDp) &&
+    !hasFilledString(order.materialReceiptDate)
+  );
+}
+
+function getDeliveryPeriodDate(order: SupplyOrderDetail) {
+  return hasFilledString(order.revisedDp) ? order.revisedDp : order.dpDate;
+}
+
 function isPaymentDue(file: FileRecord) {
   return fileSupplyOrders(file).some(
     (order) => Boolean(order.materialReceiptDate) && !order.paymentDate,
@@ -1982,6 +2085,11 @@ function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter === "dpExtension") return isYes(file.dpExtension);
   if (filter === "dpExpired") return isDpExpired(file);
   if (filter === "deliveryOverdue") return isDeliveryOverdue(file);
+  if (filter === "deliveryCompleted") return isDeliveryCompleted(file);
+  if (filter === "deliveryDue") return isDeliveryDue(file);
+  if (filter === "deliveryPeriodValid") return isDeliveryPeriodValid(file);
+  if (filter === "deliveryPeriodExpired") return isDeliveryPeriodExpired(file);
+  if (filter === "deliveryPeriodExtended") return isDeliveryPeriodExtended(file);
   if (filter === "paymentDue") return isPaymentDue(file);
   if (filter === "scrutinyCompleted") return hasAny(file, ["scrutinyCompletionDate"]);
   if (filter === "scrutinyUnderProgress") return !hasAny(file, ["scrutinyDate"]);
