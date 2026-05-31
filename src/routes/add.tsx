@@ -52,6 +52,7 @@ const empty = {
   ad: "",
   rqa: "",
   ifa: "",
+  psb: "",
   bg: "",
   highValueMeetingDate: "",
   highValueMinutesDate: "",
@@ -199,7 +200,9 @@ const tcecDisabledKeys: FieldKey[] = [
 ];
 
 const gemDisabledKeys: FieldKey[] = ["gemUndertakingDate", "gemSoNo"];
+const highValueDisabledKeys: FieldKey[] = ["highValueMeetingDate", "highValueMinutesDate"];
 const rqaDisabledKeys: FieldKey[] = ["rqaApprovalDate"];
+const ifaDisabledKeys: FieldKey[] = ["ifaSentDate", "ifaFinalDate"];
 const bgDisabledKeys: FieldKey[] = ["bgValidityDate", "bgReturnDate"];
 const supplyOrderBgDisabledKeys: SupplyOrderKey[] = ["bgValidityDate", "bgReturnDate"];
 
@@ -277,6 +280,7 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "highValue", label: "High value (Yes/No)", options: yesNo },
       { key: "rqa", label: "R&QA (Yes/No)", options: yesNo },
       { key: "ifa", label: "IFA (Yes/No)", options: yesNo },
+      { key: "psb", label: "PSB (Yes/No)", options: yesNo },
       { key: "bg", label: "BG (Yes/No)", options: yesNo },
       { key: "fileDetailsRemark1", label: "Remark-1", type: "textarea" },
       { key: "fileDetailsRemark2", label: "Remark-2", type: "textarea" },
@@ -418,7 +422,9 @@ function AddFilePage() {
   };
   const tcecIsNo = isNo(formWithLockedYear.tcec);
   const gemIsNo = isNo(formWithLockedYear.gem);
+  const highValueIsNo = isNo(formWithLockedYear.highValue);
   const rqaIsNo = isNo(formWithLockedYear.rqa);
+  const ifaIsNo = isNo(formWithLockedYear.ifa);
   const bgIsNo = isNo(formWithLockedYear.bg);
   const dpExtensionIsNo = isNo(formWithLockedYear.dpExtension);
   const adVettingDisabled = isDivisionAdNo(formWithLockedYear.division, divisions);
@@ -602,7 +608,9 @@ function AddFilePage() {
               (field.key === "adVettingDate" && adVettingDisabled) ||
               (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
               (gemIsNo && gemDisabledKeys.includes(field.key)) ||
+              (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
               (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
+              (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
               (bgIsNo && bgDisabledKeys.includes(field.key)) ||
               (dpExtensionIsNo && field.key === "ld")
             }
@@ -1510,6 +1518,13 @@ function applyConditionalRules(form: FormState) {
       gemSoNo: "",
     };
   }
+  if (isNo(next.highValue)) {
+    next = {
+      ...next,
+      highValueMeetingDate: "",
+      highValueMinutesDate: "",
+    };
+  }
   if (isYes(next.gem) && !next.paymentMode) {
     next = {
       ...next,
@@ -1520,6 +1535,13 @@ function applyConditionalRules(form: FormState) {
     next = {
       ...next,
       rqaApprovalDate: "",
+    };
+  }
+  if (isNo(next.ifa)) {
+    next = {
+      ...next,
+      ifaSentDate: "",
+      ifaFinalDate: "",
     };
   }
   if (isNo(next.bg)) {
@@ -1693,7 +1715,9 @@ function isTimelineFieldDisabled(
     (key === "adVettingDate" && isDivisionAdNo(form.division, divisions)) ||
     (isNo(form.tcec) && tcecDisabledKeys.includes(key)) ||
     (isNo(form.gem) && gemDisabledKeys.includes(key)) ||
+    (isNo(form.highValue) && highValueDisabledKeys.includes(key)) ||
     (isNo(form.rqa) && rqaDisabledKeys.includes(key)) ||
+    (isNo(form.ifa) && ifaDisabledKeys.includes(key)) ||
     (isNo(form.bg) && bgDisabledKeys.includes(key))
   );
 }

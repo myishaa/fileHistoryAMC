@@ -30,6 +30,7 @@ export type FileRecord = {
   ad?: string;
   rqa?: string;
   ifa?: string;
+  psb?: string;
   bg?: string;
   highValueMeetingDate?: string;
   highValueMinutesDate?: string;

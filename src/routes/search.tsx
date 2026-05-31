@@ -56,12 +56,16 @@ const tcecDisabledKeys: FileKey[] = [
   "refloatPostTcecDate",
   "refloatPostTcecMinutesDate",
   "refloatPostTcecCommitteeNo",
+  "tcecRemark1",
+  "tcecRemark2",
   "cncDate",
   "cncApprovalDate",
 ];
 
 const gemDisabledKeys: FileKey[] = ["gemUndertakingDate", "gemSoNo"];
+const highValueDisabledKeys: FileKey[] = ["highValueMeetingDate", "highValueMinutesDate"];
 const rqaDisabledKeys: FileKey[] = ["rqaApprovalDate"];
+const ifaDisabledKeys: FileKey[] = ["ifaSentDate", "ifaFinalDate"];
 const bgDisabledKeys: FileKey[] = ["bgValidityDate", "bgReturnDate"];
 
 const yesNo = ["Yes", "No"];
@@ -115,6 +119,7 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "currency", label: "Currency" },
       { key: "exchangeRate", label: "Exchange rate", type: "number" },
       { key: "gte", label: "GTE", options: yesNo },
+      { key: "tcec", label: "TCEC (YES/NO)", options: yesNoCaps },
       { key: "fileDetailsRemark1", label: "File details Remark-1", type: "textarea" },
       { key: "fileDetailsRemark2", label: "File details Remark-2", type: "textarea" },
     ],
@@ -127,41 +132,16 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
     ],
   },
   {
-    title: "Approvals and tender",
+    title: "TCEC block",
     fields: [
-      { key: "tcec", label: "TCEC (YES/NO)", options: yesNoCaps },
-      { key: "mode", label: "Mode", options: modeOptions },
-      { key: "gem", label: "GeM (yes/no)", options: yesNo },
-      { key: "highValue", label: "High value (Yes/No)", options: yesNo },
-      { key: "ad", label: "AD (Yes/No)", options: yesNo },
-      { key: "rqa", label: "R&QA (Yes/No)", options: yesNo },
-      { key: "ifa", label: "IFA (Yes/No)", options: yesNo },
-      { key: "bg", label: "BG (Yes/No)", options: yesNo },
-      { key: "highValueMeetingDate", label: "High value meeting date", type: "date" },
-      { key: "highValueMinutesDate", label: "High value minutes date", type: "date" },
       { key: "preTcecDate", label: "Pre-TCEC Date", type: "date" },
       { key: "preTcecMinutesDate", label: "Pre-TCEC minutes date", type: "date" },
       { key: "preTcecCommitteeNo", label: "Pre-TCEC Committee no." },
       { key: "tcecRemark1", label: "TCEC Remark-1", type: "textarea" },
       { key: "tcecRemark2", label: "TCEC Remark-2", type: "textarea" },
-      { key: "adVettingDate", label: "AD Vetting date", type: "date" },
-      { key: "rqaApprovalDate", label: "R&QA approval date", type: "date" },
-      { key: "ifaSentDate", label: "IFA sent date", type: "date" },
-      { key: "ifaFinalDate", label: "IFA final date", type: "date" },
-      { key: "cfaDate", label: "CFA date", type: "date" },
-      { key: "approvalRemark1", label: "Approval Remark-1", type: "textarea" },
-      { key: "approvalRemark2", label: "Approval Remark-2", type: "textarea" },
-      { key: "gemUndertakingDate", label: "GeM undertaking date", type: "date" },
-      { key: "tenderLive", label: "Tender Live (Yes/No)", options: yesNo },
-      { key: "bidDate", label: "Bid date", type: "date" },
-      { key: "bidOpeningDate", label: "Bid opening Date", type: "date" },
-      { key: "bidOpened", label: "Bid opened (YES/NO)", options: yesNoCaps },
-      { key: "refloat", label: "Refloat (Yes/No)", options: yesNo },
       { key: "postTcecDate", label: "Post-TCEC date", type: "date" },
       { key: "postTcecMinutesDate", label: "Post-TCEC minutes date", type: "date" },
       { key: "postTcecCommitteeNumber", label: "Post-TCEC committee number" },
-      { key: "refloatBiddingDate", label: "Refloat bidding date", type: "date" },
-      { key: "refloatBidOpeningDate", label: "Refloat Bid opening date", type: "date" },
       { key: "refloatPostTcecDate", label: "Refloat Post-TCEC date", type: "date" },
       {
         key: "refloatPostTcecMinutesDate",
@@ -169,6 +149,41 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
         type: "date",
       },
       { key: "refloatPostTcecCommitteeNo", label: "Refloat Post-TCEC Committee no" },
+    ],
+  },
+  {
+    title: "Approval block",
+    fields: [
+      { key: "mode", label: "Mode", options: modeOptions },
+      { key: "gem", label: "GeM (yes/no)", options: yesNo },
+      { key: "highValue", label: "High value (Yes/No)", options: yesNo },
+      { key: "ad", label: "AD (Yes/No)", options: yesNo },
+      { key: "rqa", label: "R&QA (Yes/No)", options: yesNo },
+      { key: "ifa", label: "IFA (Yes/No)", options: yesNo },
+      { key: "psb", label: "PSB (Yes/No)", options: yesNo },
+      { key: "bg", label: "BG (Yes/No)", options: yesNo },
+      { key: "highValueMeetingDate", label: "High value meeting date", type: "date" },
+      { key: "highValueMinutesDate", label: "High value minutes date", type: "date" },
+      { key: "adVettingDate", label: "AD Vetting date", type: "date" },
+      { key: "rqaApprovalDate", label: "R&QA approval date", type: "date" },
+      { key: "ifaSentDate", label: "IFA sent date", type: "date" },
+      { key: "ifaFinalDate", label: "IFA final date", type: "date" },
+      { key: "cfaDate", label: "CFA date", type: "date" },
+      { key: "approvalRemark1", label: "Approval Remark-1", type: "textarea" },
+      { key: "approvalRemark2", label: "Approval Remark-2", type: "textarea" },
+    ],
+  },
+  {
+    title: "Bidding details",
+    fields: [
+      { key: "gemUndertakingDate", label: "GeM undertaking date", type: "date" },
+      { key: "tenderLive", label: "Tender Live (Yes/No)", options: yesNo },
+      { key: "bidDate", label: "Bid date", type: "date" },
+      { key: "bidOpeningDate", label: "Bid opening Date", type: "date" },
+      { key: "bidOpened", label: "Bid opened (YES/NO)", options: yesNoCaps },
+      { key: "refloat", label: "Refloat (Yes/No)", options: yesNo },
+      { key: "refloatBiddingDate", label: "Refloat bidding date", type: "date" },
+      { key: "refloatBidOpeningDate", label: "Refloat Bid opening date", type: "date" },
       { key: "rst", label: "RST (Yes/No)", options: yesNo },
       { key: "cncDate", label: "CNC date", type: "date" },
       { key: "cncApprovalDate", label: "CNC approval date", type: "date" },
@@ -1156,7 +1171,9 @@ function EditModal({
   const formWithLockedYear = { ...form, year: settings.financialYear };
   const tcecIsNo = isNo(formWithLockedYear.tcec);
   const gemIsNo = isNo(formWithLockedYear.gem);
+  const highValueIsNo = isNo(formWithLockedYear.highValue);
   const rqaIsNo = isNo(formWithLockedYear.rqa);
+  const ifaIsNo = isNo(formWithLockedYear.ifa);
   const bgIsNo = isNo(formWithLockedYear.bg);
   const dpExtensionIsNo = isNo(formWithLockedYear.dpExtension);
   const update = (key: FileKey, value: string) => {
@@ -1220,7 +1237,9 @@ function EditModal({
                       field.key === "bidOpened" ||
                       (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
                       (gemIsNo && gemDisabledKeys.includes(field.key)) ||
+                      (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
                       (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
+                      (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
                       (bgIsNo && bgDisabledKeys.includes(field.key)) ||
                       (dpExtensionIsNo && field.key === "ld")
                     }
@@ -1455,6 +1474,13 @@ function applyConditionalRules(form: Record<FileKey, string>) {
       gemSoNo: "",
     };
   }
+  if (isNo(next.highValue)) {
+    next = {
+      ...next,
+      highValueMeetingDate: "",
+      highValueMinutesDate: "",
+    };
+  }
   if (isYes(next.gem) && !next.paymentMode) {
     next = {
       ...next,
@@ -1465,6 +1491,13 @@ function applyConditionalRules(form: Record<FileKey, string>) {
     next = {
       ...next,
       rqaApprovalDate: "",
+    };
+  }
+  if (isNo(next.ifa)) {
+    next = {
+      ...next,
+      ifaSentDate: "",
+      ifaFinalDate: "",
     };
   }
   if (isNo(next.bg)) {
