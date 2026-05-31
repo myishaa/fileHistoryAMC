@@ -67,12 +67,21 @@ const highValueDisabledKeys: FileKey[] = ["highValueMeetingDate", "highValueMinu
 const rqaDisabledKeys: FileKey[] = ["rqaApprovalDate"];
 const ifaDisabledKeys: FileKey[] = ["ifaSentDate", "ifaFinalDate"];
 const bgDisabledKeys: FileKey[] = ["bgValidityDate", "bgReturnDate"];
+const refloatDisabledKeys: FileKey[] = ["refloatBiddingDate", "refloatBidOpeningDate"];
 
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
 const modeOptions = ["OBM", "PBM", "SBM", "LBM", "LPC"];
 const paymentModeOptions = ["Online", "Offline"];
-const defaultNoKeys: FileKey[] = ["dpExtension", "gte", "ld", "tenderLive", "refloat", "rst"];
+const defaultNoKeys: FileKey[] = [
+  "dpExtension",
+  "gte",
+  "tenderLive",
+  "refloat",
+  "rst",
+  "demandCancelled",
+  "soCancelled",
+];
 type SortDirection = "asc" | "desc";
 type SupplyOrderKey = keyof SupplyOrderDetail;
 const supplyOrderKeys: FileKey[] = [
@@ -1175,7 +1184,7 @@ function EditModal({
   const rqaIsNo = isNo(formWithLockedYear.rqa);
   const ifaIsNo = isNo(formWithLockedYear.ifa);
   const bgIsNo = isNo(formWithLockedYear.bg);
-  const dpExtensionIsNo = isNo(formWithLockedYear.dpExtension);
+  const refloatIsNo = isNo(formWithLockedYear.refloat);
   const update = (key: FileKey, value: string) => {
     if (key === "year") return;
     setForm((current) => {
@@ -1234,14 +1243,13 @@ function EditModal({
                     disabled={
                       field.key === "year" ||
                       field.key === "tenderLive" ||
-                      field.key === "bidOpened" ||
                       (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
                       (gemIsNo && gemDisabledKeys.includes(field.key)) ||
                       (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
                       (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
                       (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
                       (bgIsNo && bgDisabledKeys.includes(field.key)) ||
-                      (dpExtensionIsNo && field.key === "ld")
+                      (refloatIsNo && refloatDisabledKeys.includes(field.key))
                     }
                     onChange={(value) => update(field.key, value)}
                   />
@@ -1507,6 +1515,13 @@ function applyConditionalRules(form: Record<FileKey, string>) {
       bgReturnDate: "",
     };
   }
+  if (isNo(next.refloat)) {
+    next = {
+      ...next,
+      refloatBiddingDate: "",
+      refloatBidOpeningDate: "",
+    };
+  }
   if (isYes(next.dpExtension)) {
     next = {
       ...next,
@@ -1517,14 +1532,18 @@ function applyConditionalRules(form: Record<FileKey, string>) {
     next = {
       ...next,
       dpExtensionCount: "",
-      ld: "No",
     };
   }
   next = {
     ...next,
     tenderLive: getAutoTenderLive(next),
-    bidOpened: getAutoBidOpened(next),
   };
+  if (isYes(next.tenderLive)) {
+    next = {
+      ...next,
+      bidOpened: "NO",
+    };
+  }
   return next;
 }
 
@@ -1535,11 +1554,6 @@ function isNo(value: string | undefined) {
 function getInitialExtensionCount(value: string | undefined) {
   const count = Number(value);
   return Number.isFinite(count) && count > 0 ? (value ?? "") : "1";
-}
-
-function getAutoBidOpened(form: Record<FileKey, string>) {
-  const activeOpeningDate = form.refloatBidOpeningDate || form.bidOpeningDate;
-  return isDateOnOrAfterToday(activeOpeningDate) ? "YES" : "NO";
 }
 
 function getAutoTenderLive(form: Record<FileKey, string>) {
@@ -1569,17 +1583,6 @@ function isTenderLiveOnCalendarDate(
 
 function hasDate(date: string | undefined) {
   return parseLocalDateTime(date ?? "") !== undefined;
-}
-
-function isDateOnOrAfterToday(date: string | undefined) {
-  const dateTime = parseLocalDateTime(date ?? "");
-  const todayTime = parseLocalDateTime(formatLocalDate(new Date()));
-
-  if (dateTime === undefined || todayTime === undefined) {
-    return false;
-  }
-
-  return todayTime >= dateTime;
 }
 
 function parseLocalDateTime(date: string) {

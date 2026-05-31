@@ -92,14 +92,14 @@ const empty = {
   bgValidityDate: "",
   dpExtension: "No",
   dpExtensionCount: "",
-  ld: "No",
+  ld: "",
   revisedDp: "",
   materialReceiptDate: "",
   paymentDate: "",
   paymentMode: "",
   bgReturnDate: "",
-  demandCancelled: "",
-  soCancelled: "",
+  demandCancelled: "No",
+  soCancelled: "No",
   fileDetailsRemark1: "",
   fileDetailsRemark2: "",
   scrutinyRemark1: "",
@@ -204,6 +204,7 @@ const highValueDisabledKeys: FieldKey[] = ["highValueMeetingDate", "highValueMin
 const rqaDisabledKeys: FieldKey[] = ["rqaApprovalDate"];
 const ifaDisabledKeys: FieldKey[] = ["ifaSentDate", "ifaFinalDate"];
 const bgDisabledKeys: FieldKey[] = ["bgValidityDate", "bgReturnDate"];
+const refloatDisabledKeys: FieldKey[] = ["refloatBiddingDate", "refloatBidOpeningDate"];
 const supplyOrderBgDisabledKeys: SupplyOrderKey[] = ["bgValidityDate", "bgReturnDate"];
 
 const yesNo = ["Yes", "No"];
@@ -227,14 +228,14 @@ const emptySupplyOrder: Required<SupplyOrderDetail> = {
   bgValidityDate: "",
   dpExtension: "No",
   dpExtensionCount: "",
-  ld: "No",
+  ld: "",
   revisedDp: "",
   materialReceiptDate: "",
   paymentDate: "",
   paymentMode: "",
   bgReturnDate: "",
-  demandCancelled: "",
-  soCancelled: "",
+  demandCancelled: "No",
+  soCancelled: "No",
   supplyOrderRemark1: "",
   supplyOrderRemark2: "",
 };
@@ -426,7 +427,7 @@ function AddFilePage() {
   const rqaIsNo = isNo(formWithLockedYear.rqa);
   const ifaIsNo = isNo(formWithLockedYear.ifa);
   const bgIsNo = isNo(formWithLockedYear.bg);
-  const dpExtensionIsNo = isNo(formWithLockedYear.dpExtension);
+  const refloatIsNo = isNo(formWithLockedYear.refloat);
   const adVettingDisabled = isDivisionAdNo(formWithLockedYear.division, divisions);
   const activeSection = extraSections.find((section) => section.title === activeBoardSection);
   const activeSectionIndex = extraSections.findIndex(
@@ -603,7 +604,6 @@ function AddFilePage() {
               field.key === "year" ||
               field.key === "uniqueCode" ||
               field.key === "tenderLive" ||
-              field.key === "bidOpened" ||
               existingValueLocked ||
               (field.key === "adVettingDate" && adVettingDisabled) ||
               (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
@@ -612,7 +612,7 @@ function AddFilePage() {
               (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
               (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
               (bgIsNo && bgDisabledKeys.includes(field.key)) ||
-              (dpExtensionIsNo && field.key === "ld")
+              (refloatIsNo && refloatDisabledKeys.includes(field.key))
             }
             onChange={(value) => update(field.key, value)}
           />
@@ -726,7 +726,6 @@ function AddFilePage() {
                   disabled={supplyOrdersLocked}
                   gemDisabled={gemIsNo}
                   bgDisabled={bgIsNo}
-                  dpExtensionDisabled={dpExtensionIsNo}
                   onCountChange={(value) => update("noOfSo", value)}
                   onOrderChange={updateSupplyOrder}
                 />
@@ -910,7 +909,6 @@ function SupplyOrdersBlock({
   disabled,
   gemDisabled,
   bgDisabled,
-  dpExtensionDisabled,
   onCountChange,
   onOrderChange,
 }: {
@@ -919,7 +917,6 @@ function SupplyOrdersBlock({
   disabled: boolean;
   gemDisabled: boolean;
   bgDisabled: boolean;
-  dpExtensionDisabled: boolean;
   onCountChange: (value: string) => void;
   onOrderChange: (index: number, key: SupplyOrderKey, value: string) => void;
 }) {
@@ -932,9 +929,7 @@ function SupplyOrdersBlock({
         onChange={onCountChange}
       />
 
-      {orders.map((order, index) => {
-        const dpExtensionIsNo = isNo(order.dpExtension);
-        return (
+      {orders.map((order, index) => (
           <div key={index} className="rounded-md border border-border bg-secondary/20 p-4">
             <div className="mb-4 border-b border-border pb-2 text-sm font-semibold">
               Supply Order {index + 1}
@@ -972,8 +967,7 @@ function SupplyOrdersBlock({
                     disabled={
                       disabled ||
                       (gemDisabled && key === "gemSoNo") ||
-                      (bgDisabled && supplyOrderBgDisabledKeys.includes(key)) ||
-                      ((dpExtensionDisabled || dpExtensionIsNo) && key === "ld")
+                      (bgDisabled && supplyOrderBgDisabledKeys.includes(key))
                     }
                     onChange={(value) => onOrderChange(index, key, value)}
                   />
@@ -981,8 +975,7 @@ function SupplyOrdersBlock({
               })}
             </div>
           </div>
-        );
-      })}
+        ))}
     </div>
   );
 }
@@ -1405,14 +1398,14 @@ function normalizeSupplyOrderRows(file: FileRecord | undefined) {
       bgValidityDate: file.bgValidityDate ?? "",
       dpExtension: file.dpExtension ?? "No",
       dpExtensionCount: file.dpExtensionCount ?? "",
-      ld: file.ld ?? "No",
+      ld: file.ld ?? "",
       revisedDp: file.revisedDp ?? "",
       materialReceiptDate: file.materialReceiptDate ?? "",
       paymentDate: file.paymentDate ?? "",
       paymentMode: file.paymentMode ?? "",
       bgReturnDate: file.bgReturnDate ?? "",
-      demandCancelled: file.demandCancelled ?? "",
-      soCancelled: file.soCancelled ?? "",
+      demandCancelled: file.demandCancelled ?? "No",
+      soCancelled: file.soCancelled ?? "No",
       supplyOrderRemark1: file.supplyOrderRemark1 ?? "",
       supplyOrderRemark2: file.supplyOrderRemark2 ?? "",
     },
@@ -1551,6 +1544,13 @@ function applyConditionalRules(form: FormState) {
       bgReturnDate: "",
     };
   }
+  if (isNo(next.refloat)) {
+    next = {
+      ...next,
+      refloatBiddingDate: "",
+      refloatBidOpeningDate: "",
+    };
+  }
   if (isYes(next.dpExtension)) {
     next = {
       ...next,
@@ -1561,14 +1561,18 @@ function applyConditionalRules(form: FormState) {
     next = {
       ...next,
       dpExtensionCount: "",
-      ld: "No",
     };
   }
   next = {
     ...next,
     tenderLive: getAutoTenderLive(next),
-    bidOpened: getAutoBidOpened(next),
   };
+  if (isYes(next.tenderLive)) {
+    next = {
+      ...next,
+      bidOpened: "NO",
+    };
+  }
   return next;
 }
 
@@ -1587,7 +1591,7 @@ function applySupplyOrderRules(
     next = { ...next, dpExtensionCount: getInitialExtensionCount(next.dpExtensionCount ?? "") };
   }
   if (isNo(next.dpExtension)) {
-    next = { ...next, dpExtensionCount: "", ld: "No" };
+    next = { ...next, dpExtensionCount: "" };
   }
   return next;
 }
@@ -1635,11 +1639,6 @@ function getInitialExtensionCount(value: string) {
   return Number.isFinite(count) && count > 0 ? value : "1";
 }
 
-function getAutoBidOpened(form: FormState) {
-  const activeOpeningDate = form.refloatBidOpeningDate || form.bidOpeningDate;
-  return isDateOnOrAfterToday(activeOpeningDate) ? "YES" : "NO";
-}
-
 function getAutoTenderLive(form: FormState) {
   if (hasDate(form.refloatBiddingDate) && hasDate(form.refloatBidOpeningDate)) {
     return isTenderLiveOnCalendarDate(form.refloatBiddingDate, form.refloatBidOpeningDate)
@@ -1664,17 +1663,6 @@ function isTenderLiveOnCalendarDate(bidDate: string, bidOpeningDate: string) {
 
 function hasDate(date: string) {
   return parseLocalDateTime(date) !== undefined;
-}
-
-function isDateOnOrAfterToday(date: string) {
-  const dateTime = parseLocalDateTime(date);
-  const todayTime = parseLocalDateTime(formatLocalDate(new Date()));
-
-  if (dateTime === undefined || todayTime === undefined) {
-    return false;
-  }
-
-  return todayTime >= dateTime;
 }
 
 function parseLocalDateTime(date: string) {
@@ -1718,7 +1706,8 @@ function isTimelineFieldDisabled(
     (isNo(form.highValue) && highValueDisabledKeys.includes(key)) ||
     (isNo(form.rqa) && rqaDisabledKeys.includes(key)) ||
     (isNo(form.ifa) && ifaDisabledKeys.includes(key)) ||
-    (isNo(form.bg) && bgDisabledKeys.includes(key))
+    (isNo(form.bg) && bgDisabledKeys.includes(key)) ||
+    (isNo(form.refloat) && refloatDisabledKeys.includes(key))
   );
 }
 
