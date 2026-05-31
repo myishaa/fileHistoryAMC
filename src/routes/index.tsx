@@ -648,6 +648,7 @@ function MilestoneFlowNode({
     key: string;
     label: string;
     completedLabel: string;
+    totalLabel: string;
     pendingLabel: string;
     total: number;
     underProcess: number;
@@ -699,7 +700,7 @@ function MilestoneFlowNode({
               className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
             >
               <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                Total
+                {milestone.totalLabel}
               </span>
               <span className="block text-base font-semibold tabular-nums">{milestone.total}</span>
             </button>
@@ -715,7 +716,7 @@ function MilestoneFlowNode({
                 {milestone.cleared}
               </span>
             </button>
-            {milestone.hasReviewed ? (
+            {milestone.hasReviewed && milestone.key !== "scrutiny" ? (
               <button
                 type="button"
                 onClick={onUnderProcessClick}
@@ -729,7 +730,10 @@ function MilestoneFlowNode({
                 </span>
               </button>
             ) : null}
-            {milestone.hasReviewed ? (
+            {milestone.key === "scrutiny" ? (
+              <span aria-hidden="true" className="rounded-md border border-transparent px-2 py-1" />
+            ) : null}
+            {milestone.hasReviewed || milestone.key === "cnc" ? (
               <>
                 <button
                   type="button"
@@ -739,24 +743,26 @@ function MilestoneFlowNode({
                   }
                 >
                   <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                    Active
+                    Under process
                   </span>
                   <span className="block text-base font-semibold tabular-nums">
                     {milestone.active}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={onReviewedClick}
-                  className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-                >
-                  <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                    Reviewed
-                  </span>
-                  <span className="block text-base font-semibold tabular-nums">
-                    {milestone.reviewed}
-                  </span>
-                </button>
+                {milestone.hasReviewed ? (
+                  <button
+                    type="button"
+                    onClick={onReviewedClick}
+                    className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
+                  >
+                    <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
+                      Reviewed
+                    </span>
+                    <span className="block text-base font-semibold tabular-nums">
+                      {milestone.reviewed}
+                    </span>
+                  </button>
+                ) : null}
               </>
             ) : null}
             <button
@@ -844,12 +850,14 @@ const milestoneDefinitions = [
   {
     key: "scrutiny",
     label: "Scrutiny",
+    totalLabel: "Total files",
     reviewed: "scrutinyDate",
     current: "scrutinyCompletionDate",
   },
   {
     key: "highValue",
     label: "High Value",
+    totalLabel: "Total cases",
     reviewed: "highValueMeetingDate",
     current: "highValueMinutesDate",
     applies: (file) => isYes(file.highValue),
@@ -857,23 +865,48 @@ const milestoneDefinitions = [
   {
     key: "tcec",
     label: "Pre-TCEC",
+    totalLabel: "Total files",
     reviewed: "preTcecDate",
     current: "preTcecMinutesDate",
     applies: (file) => isYes(file.tcec),
   },
-  { key: "ad", label: "AD", current: "adVettingDate", applies: (file) => isYes(file.ad) },
-  { key: "rqa", label: "R&QA", current: "rqaApprovalDate", applies: (file) => isYes(file.rqa) },
-  { key: "control", label: "Controlled", current: "immsDate" },
+  {
+    key: "ad",
+    label: "AD",
+    totalLabel: "Total cases",
+    current: "adVettingDate",
+    applies: (file) => isYes(file.ad),
+  },
+  {
+    key: "rqa",
+    label: "R&QA",
+    totalLabel: "Total cases",
+    current: "rqaApprovalDate",
+    applies: (file) => isYes(file.rqa),
+  },
+  { key: "control", label: "Controlled", totalLabel: "Total files", current: "immsDate" },
   {
     key: "ifa",
     label: "IFA",
+    totalLabel: "Total cases",
     reviewed: "ifaSentDate",
     current: "ifaFinalDate",
     applies: (file) => isYes(file.ifa),
   },
-  { key: "cfa", label: "CFA", current: "cfaDate" },
-  { key: "bidding", label: "Bidding", current: "biddingStageOver" },
-  { key: "cnc", label: "CNC", current: "cncDate", applies: (file) => isYes(file.tcec) },
+  { key: "cfa", label: "CFA", totalLabel: "Total files", current: "cfaDate" },
+  {
+    key: "bidding",
+    label: "Bidding",
+    totalLabel: "Total files",
+    current: "biddingStageOver",
+  },
+  {
+    key: "cnc",
+    label: "CNC",
+    totalLabel: "Total cases",
+    current: "cncDate",
+    applies: (file) => isYes(file.tcec),
+  },
   {
     key: "postTcec",
     label: "Post-TCEC",
@@ -881,12 +914,19 @@ const milestoneDefinitions = [
     current: "postTcecMinutesDate",
     applies: (file) => isYes(file.tcec),
   },
-  { key: "supplyOrder", label: "Supply Order", completedLabel: "Placed", current: "soDate" },
-  { key: "payment", label: "Payment", current: "paymentDate" },
+  {
+    key: "supplyOrder",
+    label: "Supply Order",
+    completedLabel: "Placed",
+    totalLabel: "Total demands",
+    current: "soDate",
+  },
+  { key: "payment", label: "Payment", totalLabel: "Total demands", current: "paymentDate" },
   {
     key: "bankGuarantee",
     label: "Bank Guarantee",
     completedLabel: "Received",
+    totalLabel: "Total demands",
     current: "bgValidityDate",
     applies: (file) => isYes(file.bg),
   },
@@ -894,6 +934,7 @@ const milestoneDefinitions = [
   key: string;
   label: string;
   completedLabel?: string;
+  totalLabel?: string;
   pendingLabel?: string;
   reviewed?: keyof FileRecord | keyof SupplyOrderDetail;
   current: keyof FileRecord | keyof SupplyOrderDetail;
@@ -911,6 +952,7 @@ function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
       key: milestone.key,
       label: milestone.label,
       completedLabel: milestone.completedLabel ?? "Completed",
+      totalLabel: milestone.totalLabel ?? "Total",
       pendingLabel: milestone.pendingLabel ?? "Pending",
       total: applicableFiles.length,
       underProcess: Math.max(0, applicableFiles.length - reached),
