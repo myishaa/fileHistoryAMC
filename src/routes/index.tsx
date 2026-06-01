@@ -1062,10 +1062,7 @@ function MilestoneFlowNode({
     onBidOverdueClick,
     onLiveSupplyOrdersClick,
   });
-  const metricGridClass =
-    milestone.key === "scrutiny"
-      ? "grid grid-cols-3 gap-1.5"
-      : "grid grid-cols-2 gap-1.5 sm:grid-cols-3";
+  const metricGridClass = "grid grid-cols-2 gap-1.5 sm:grid-cols-3";
 
   return (
     <div className="relative min-w-0">
@@ -1089,11 +1086,15 @@ function MilestoneFlowNode({
               <span className="block truncate text-sm font-semibold">{milestone.label}</span>
             </span>
           </span>
-          <span className={metricGridClass}>
-            {metrics.map((metric) => (
-              <StatusMetricBox key={metric.label} metric={metric} />
-            ))}
-          </span>
+          {milestone.key === "scrutiny" ? (
+            <ScrutinyMetricGrid metrics={metrics} />
+          ) : (
+            <span className={metricGridClass}>
+              {metrics.map((metric) => (
+                <StatusMetricBox key={metric.label} metric={metric} />
+              ))}
+            </span>
+          )}
         </span>
         <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-background">
           <span
@@ -1108,6 +1109,77 @@ function MilestoneFlowNode({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ScrutinyMetricGrid({ metrics }: { metrics: StatusMetric[] }) {
+  const active = metrics.find((metric) => metric.label === "Active");
+  const reviewed = metrics.find((metric) => metric.label === "Reviewed");
+  const pending = metrics.find((metric) => metric.label === "Pending");
+  const total = metrics.find((metric) => metric.label === "Total files");
+  const completed = metrics.find((metric) => metric.label === "Completed");
+
+  if (!active || !reviewed || !pending || !total || !completed) {
+    return (
+      <span className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        {metrics.map((metric) => (
+          <StatusMetricBox key={metric.label} metric={metric} />
+        ))}
+      </span>
+    );
+  }
+
+  return (
+    <span className="grid gap-1.5">
+      <span className="grid grid-cols-2 gap-1.5">
+        <StatusMetricBox metric={total} />
+        <StatusMetricBox metric={completed} />
+      </span>
+      <span className="grid grid-cols-3 gap-1.5 rounded-md border border-chart-5/40 bg-chart-5/10 p-1.5">
+        <MetricButton
+          metric={active}
+          className="border-chart-5/50 bg-chart-5/15 hover:bg-chart-5/20"
+        />
+        <MetricButton metric={reviewed} className="bg-card hover:bg-accent" compact />
+        <MetricButton metric={pending} className="bg-card hover:bg-accent" compact />
+      </span>
+    </span>
+  );
+}
+
+function MetricButton({
+  metric,
+  className,
+  compact = false,
+}: {
+  metric: StatusMetric;
+  className?: string;
+  compact?: boolean;
+}) {
+  const content = (
+    <>
+      <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
+        {metric.label}
+      </span>
+      <span className={(compact ? "text-sm" : "text-base") + " block font-semibold tabular-nums"}>
+        {metric.count}
+      </span>
+    </>
+  );
+  const baseClass =
+    "min-h-12 rounded-md border border-border px-2 py-1.5 text-center transition hover:ring-2 hover:ring-ring/30 " +
+    (className ?? "bg-card hover:bg-accent");
+
+  if (!metric.onClick) {
+    return (
+      <div className={baseClass.replace(" hover:ring-2 hover:ring-ring/30", "")}>{content}</div>
+    );
+  }
+
+  return (
+    <button type="button" onClick={metric.onClick} className={baseClass}>
+      {content}
+    </button>
   );
 }
 
