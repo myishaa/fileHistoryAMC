@@ -33,7 +33,7 @@ export const Route = createFileRoute("/search")({
 
 type FileKey = Exclude<
   keyof FileRecord,
-  "id" | "createdAt" | "invitedFirms" | "bidderFirms" | "supplyOrders"
+  "id" | "createdAt" | "invitedFirms" | "bidderFirms" | "supplyOrders" | "completedMilestones"
 >;
 
 type FieldDef = {
@@ -1857,7 +1857,15 @@ const milestoneDefinitions = [
 }>;
 
 function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
-  return isEligibleMilestone(file, milestone) && !isMilestoneComplete(file, milestone);
+  if (milestone.reviewed) {
+    return (
+      isManualActiveMilestone(file, milestone) &&
+      !hasMilestoneDate(file, milestone.reviewed) &&
+      !isMilestoneComplete(file, milestone)
+    );
+  }
+
+  return isManualActiveMilestone(file, milestone) && !isMilestoneComplete(file, milestone);
 }
 
 function isClearedMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
@@ -1903,7 +1911,48 @@ function isMilestoneComplete(file: FileRecord, milestone: (typeof milestoneDefin
 
 function isMilestoneReviewed(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
   if (!milestone.reviewed) return false;
-  return hasMilestoneDate(file, milestone.reviewed) && !isMilestoneComplete(file, milestone);
+  return (
+    isManualActiveMilestone(file, milestone) &&
+    hasMilestoneDate(file, milestone.reviewed) &&
+    !isMilestoneComplete(file, milestone)
+  );
+}
+
+function isManualActiveMilestone(
+  file: FileRecord,
+  milestone: (typeof milestoneDefinitions)[number],
+) {
+  const current = normalizeMilestoneName(file.currentMilestone);
+  return getMilestoneLabelAliases(milestone.key).some(
+    (label) => current === normalizeMilestoneName(label),
+  );
+}
+
+function getMilestoneLabelAliases(key: string) {
+  const labels: Record<string, string> = {
+    scrutiny: "Scrutiny",
+    highValue: "High Value",
+    tcec: "Pre-TCEC",
+    ad: "AD",
+    rqa: "R&QA",
+    control: "Controlling",
+    ifa: "IFA",
+    cfa: "CFA",
+    bidding: "Bidding",
+    postTcec: "Post-TCEC",
+    cnc: "CNC",
+    supplyOrder: "Supply Order",
+    bankGuarantee: "Bank Guarantee",
+    payment: "Payment",
+  };
+  return key === "control" ? [labels[key], "Controlled"] : [labels[key] ?? key];
+}
+
+function normalizeMilestoneName(value: string | undefined) {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
 }
 
 function hasMilestoneDate(file: FileRecord, key: FileKey | SupplyOrderKey) {
@@ -1919,21 +1968,22 @@ function hasFilledString(value: string | undefined) {
 }
 
 function isFileTenderLive(file: FileRecord) {
-  if (hasDate(file.refloatBiddingDate) && hasDate(file.refloatBidOpeningDate)) {
-    return isTenderLiveOnCalendarDate(file.refloatBiddingDate, file.refloatBidOpeningDate);
-  }
-
-  return isTenderLiveOnCalendarDate(file.bidDate, file.bidOpeningDate);
+  return isYes(file.tenderLive);
 }
 
 function isBidOverdue(file: FileRecord) {
-  const activeOpeningDate = file.refloatBidOpeningDate || file.bidOpeningDate;
-  return isNo(file.bidOpened) && isDateBeforeToday(activeOpeningDate);
+  return (
+    isNo(file.bidOpened) &&
+    (isDateBeforeToday(file.bidOpeningDate) || isDateBeforeToday(file.refloatBidOpeningDate))
+  );
 }
 
 function isLiveSupplyOrder(file: FileRecord) {
   return fileSupplyOrders(file).some(
-    (order) => Boolean(order.soDate) && isDateAfterToday(order.dpDate),
+    (order) =>
+      hasSupplyOrderDate(order) &&
+      !hasFilledString(order.materialReceiptDate) &&
+      !isYes(order.soCancelled),
   );
 }
 
@@ -1984,7 +2034,7 @@ function isDueDeliveryOrder(order: SupplyOrderDetail) {
   return (
     hasSupplyOrderDate(order) &&
     !hasFilledString(order.materialReceiptDate) &&
-    isDateBeforeToday(getDeliveryDueDate(order))
+    !isYes(order.soCancelled)
   );
 }
 
@@ -2013,6 +2063,13 @@ function isSupplyOrderPlaced(file: FileRecord) {
     (milestone) => milestone.key === "supplyOrder",
   );
   return supplyOrderMilestone ? isMilestoneComplete(file, supplyOrderMilestone) : false;
+}
+
+function isBankGuaranteeEligible(file: FileRecord) {
+  return (
+    isYes(file.bg) &&
+    fileSupplyOrders(file).some((order) => hasSupplyOrderDate(order) && !isYes(order.soCancelled))
+  );
 }
 
 function isValidDeliveryPeriodOrder(order: SupplyOrderDetail) {
@@ -2133,7 +2190,10 @@ function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter === "cfaCompleted") return hasAny(file, ["cfaDate"]);
   if (filter.startsWith("milestoneTotal:")) {
     const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(15));
-    return milestone ? isMilestoneApplicable(file, milestone) : true;
+    if (!milestone) return true;
+    return milestone.key === "bankGuarantee"
+      ? isBankGuaranteeEligible(file)
+      : isMilestoneApplicable(file, milestone);
   }
   if (filter.startsWith("milestoneUnderProcess:")) {
     const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(22));
@@ -2141,27 +2201,32 @@ function matchesDashboardFilter(file: FileRecord, filter: string) {
       ? isMilestoneApplicable(file, milestone) && !isEligibleMilestone(file, milestone)
       : true;
   }
+  if (filter.startsWith("milestoneActive:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(16));
+    if (!milestone) return true;
+    if (milestone.key === "bidding") {
+      return isManualActiveMilestone(file, milestone) && !isFileTenderLive(file);
+    }
+    return isManualActiveMilestone(file, milestone);
+  }
   if (filter.startsWith("milestone:")) {
     const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(10));
     return milestone ? isPendingMilestone(file, milestone) : true;
   }
   if (filter.startsWith("milestoneReviewed:")) {
     const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(18));
-    return milestone
-      ? isEligibleMilestone(file, milestone) && isMilestoneReviewed(file, milestone)
-      : true;
+    return milestone ? isMilestoneReviewed(file, milestone) : true;
   }
   if (filter.startsWith("milestonePending:")) {
     const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(17));
-    return milestone
-      ? isEligibleMilestone(file, milestone) &&
-          !isMilestoneReviewed(file, milestone) &&
-          !isMilestoneComplete(file, milestone)
-      : true;
+    return milestone ? isPendingMilestone(file, milestone) : true;
   }
   if (filter.startsWith("milestoneCleared:")) {
     const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(17));
-    return milestone ? isClearedMilestone(file, milestone) : true;
+    if (!milestone) return true;
+    return milestone.key === "bankGuarantee"
+      ? isBankGuaranteeEligible(file) && hasMilestoneDate(file, milestone.current)
+      : isClearedMilestone(file, milestone);
   }
   if (filter.startsWith("milestoneEligible:")) {
     const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(18));

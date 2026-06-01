@@ -42,12 +42,13 @@ export function Dashboard() {
   );
 
   const modeCounts = getModeCounts(dashboardFiles);
-  const milestoneFlow = getManualMilestoneFlow(
+  const manualMilestoneFlow = getManualMilestoneFlow(
     dashboardFiles,
     getConfiguredMilestones(settings.milestones),
   );
+  const statusFlow = getMilestoneFlow(dashboardFiles);
   const miscellaneousCounts = getMiscellaneousCounts(dashboardFiles);
-  const analytics = getAnalyticsSummary(dashboardFiles, milestoneFlow);
+  const analytics = getAnalyticsSummary(dashboardFiles, manualMilestoneFlow);
   const financeTotals = {
     allocatedCapital: dashboardDivisions.reduce(
       (sum, division) => sum + (parseAmount(division.allocatedCapital) ?? 0),
@@ -301,32 +302,56 @@ export function Dashboard() {
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {milestoneFlow.map((milestone, index) => (
-                <ManualMilestoneFlowNode
-                  key={milestone.name}
-                  milestone={milestone}
-                  index={index}
-                  isLast={false}
-                  onCurrentClick={() =>
-                    openSearchFilter(`manualMilestoneCurrent:${milestone.name}`)
-                  }
-                  onCompletedClick={() =>
-                    openSearchFilter(`manualMilestoneCompleted:${milestone.name}`)
-                  }
-                />
-              ))}
+              {statusFlow.map((milestone, index) => {
+                if ("valid" in milestone) {
+                  return (
+                    <DeliveryPeriodFlowNode
+                      key={milestone.key}
+                      milestone={milestone}
+                      index={index}
+                      isLast={false}
+                      onValidClick={() => openSearchFilter("deliveryPeriodValid")}
+                      onExpiredClick={() => openSearchFilter("deliveryPeriodExpired")}
+                      onExtendedClick={() => openSearchFilter("deliveryPeriodExtended")}
+                    />
+                  );
+                }
+
+                if ("due" in milestone) {
+                  return (
+                    <DeliveryFlowNode
+                      key={milestone.key}
+                      milestone={milestone}
+                      index={index}
+                      isLast={false}
+                      onCompletedClick={() => openSearchFilter("deliveryCompleted")}
+                      onDueClick={() => openSearchFilter("deliveryDue")}
+                    />
+                  );
+                }
+
+                return (
+                  <MilestoneFlowNode
+                    key={milestone.key}
+                    milestone={milestone}
+                    index={index}
+                    isLast={false}
+                    onTotalClick={() => openSearchFilter(`milestoneTotal:${milestone.key}`)}
+                    onUnderProcessClick={() =>
+                      openSearchFilter(`milestoneUnderProcess:${milestone.key}`)
+                    }
+                    onActiveClick={() => openSearchFilter(`milestoneActive:${milestone.key}`)}
+                    onReviewedClick={() => openSearchFilter(`milestoneReviewed:${milestone.key}`)}
+                    onPendingClick={() => openSearchFilter(`milestonePending:${milestone.key}`)}
+                    onClearedClick={() => openSearchFilter(`milestoneCleared:${milestone.key}`)}
+                    onLiveBidsClick={() => openSearchFilter("liveBids")}
+                    onBidOverdueClick={() => openSearchFilter("bidOverdue")}
+                    onLiveSupplyOrdersClick={() => openSearchFilter("liveSupplyOrders")}
+                  />
+                );
+              })}
               <StatusFlowNode
-                index={14}
-                title="Bank Guarantee"
-                isLast={false}
-                items={[
-                  { label: "Received", count: 0 },
-                  { label: "Pending", count: 0 },
-                  { label: "To be returned", count: 0 },
-                ]}
-              />
-              <StatusFlowNode
-                index={15}
+                index={statusFlow.length}
                 title="Miscellaneous"
                 isLast
                 items={[
@@ -815,6 +840,41 @@ function StatusSubBox({
   );
 }
 
+type StatusMetric = {
+  label: string;
+  count: number;
+  onClick?: () => void;
+  toneCount?: boolean;
+};
+
+function StatusMetricBox({ metric }: { metric: StatusMetric }) {
+  const content = (
+    <>
+      <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
+        {metric.label}
+      </span>
+      <span className="block text-base font-semibold tabular-nums">{metric.count}</span>
+    </>
+  );
+  const className =
+    "min-h-12 rounded-md border px-2 py-1.5 text-center transition hover:ring-2 hover:ring-ring/30 " +
+    (metric.toneCount
+      ? "border-chart-5/40 bg-chart-5/15 text-foreground hover:bg-chart-5/20"
+      : "border-border bg-card hover:bg-accent");
+
+  if (!metric.onClick) {
+    return (
+      <div className={className.replace(" hover:ring-2 hover:ring-ring/30", "")}>{content}</div>
+    );
+  }
+
+  return (
+    <button type="button" onClick={metric.onClick} className={className}>
+      {content}
+    </button>
+  );
+}
+
 function AnalyticsMetric({
   label,
   value,
@@ -969,8 +1029,10 @@ function MilestoneFlowNode({
     reviewed: number;
     hasReviewed: boolean;
     cleared: number;
+    activeLabel: string;
     liveBids?: number;
     overdueBids?: number;
+    inProcessBids?: number;
     liveSupplyOrders?: number;
   };
   index: number;
@@ -988,9 +1050,22 @@ function MilestoneFlowNode({
   const tone = getMilestoneTone(milestone.active);
   const widthPercent =
     milestone.total > 0 ? Math.round((milestone.cleared / milestone.total) * 100) : 0;
-  const underProcessLabel = previousStageLabelKeys.has(milestone.key)
-    ? "At previous stages"
-    : "Under process";
+  const metrics = getStatusMetrics({
+    milestone,
+    onTotalClick,
+    onUnderProcessClick,
+    onActiveClick,
+    onReviewedClick,
+    onPendingClick,
+    onClearedClick,
+    onLiveBidsClick,
+    onBidOverdueClick,
+    onLiveSupplyOrdersClick,
+  });
+  const metricGridClass =
+    milestone.key === "scrutiny"
+      ? "grid grid-cols-3 gap-1.5"
+      : "grid grid-cols-2 gap-1.5 sm:grid-cols-3";
 
   return (
     <div className="relative min-w-0">
@@ -1014,160 +1089,10 @@ function MilestoneFlowNode({
               <span className="block truncate text-sm font-semibold">{milestone.label}</span>
             </span>
           </span>
-          <span className="grid grid-cols-3 gap-1.5">
-            <button
-              type="button"
-              onClick={onTotalClick}
-              className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-            >
-              <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                {milestone.totalLabel}
-              </span>
-              <span className="block text-base font-semibold tabular-nums">{milestone.total}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClearedClick}
-              className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-            >
-              <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                {milestone.completedLabel}
-              </span>
-              <span className="block text-base font-semibold tabular-nums">
-                {milestone.cleared}
-              </span>
-            </button>
-            {milestone.key === "cnc" ? (
-              <button
-                type="button"
-                onClick={onUnderProcessClick}
-                className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-              >
-                <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                  {underProcessLabel}
-                </span>
-                <span className="block text-base font-semibold tabular-nums">
-                  {milestone.underProcess}
-                </span>
-              </button>
-            ) : null}
-            {milestone.hasReviewed && milestone.key !== "scrutiny" && milestone.key !== "cnc" ? (
-              <button
-                type="button"
-                onClick={onUnderProcessClick}
-                className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-              >
-                <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                  {underProcessLabel}
-                </span>
-                <span className="block text-base font-semibold tabular-nums">
-                  {milestone.underProcess}
-                </span>
-              </button>
-            ) : null}
-            {milestone.key === "bidding" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onLiveBidsClick}
-                  className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-                >
-                  <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                    Live
-                  </span>
-                  <span className="block text-base font-semibold tabular-nums">
-                    {milestone.liveBids ?? 0}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onBidOverdueClick}
-                  className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-                >
-                  <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                    Overdue
-                  </span>
-                  <span className="block text-base font-semibold tabular-nums">
-                    {milestone.overdueBids ?? 0}
-                  </span>
-                </button>
-              </>
-            ) : null}
-            {milestone.key === "supplyOrder" ? (
-              <button
-                type="button"
-                onClick={onLiveSupplyOrdersClick}
-                className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-              >
-                <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                  Live
-                </span>
-                <span className="block text-base font-semibold tabular-nums">
-                  {milestone.liveSupplyOrders ?? 0}
-                </span>
-              </button>
-            ) : null}
-            {milestone.key === "scrutiny" ? (
-              <span aria-hidden="true" className="rounded-md border border-transparent px-2 py-1" />
-            ) : null}
-            {milestone.hasReviewed || milestone.key === "cnc" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onActiveClick}
-                  className={
-                    "rounded-md px-2 py-1 text-center hover:ring-2 hover:ring-ring/30 " + tone.count
-                  }
-                >
-                  <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                    Under process
-                  </span>
-                  <span className="block text-base font-semibold tabular-nums">
-                    {milestone.active}
-                  </span>
-                </button>
-                {milestone.hasReviewed ? (
-                  <button
-                    type="button"
-                    onClick={onReviewedClick}
-                    className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-                  >
-                    <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                      Reviewed
-                    </span>
-                    <span className="block text-base font-semibold tabular-nums">
-                      {milestone.reviewed}
-                    </span>
-                  </button>
-                ) : null}
-              </>
-            ) : null}
-            <button
-              type="button"
-              onClick={onPendingClick}
-              className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-            >
-              <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                {milestone.pendingLabel}
-              </span>
-              <span className="block text-base font-semibold tabular-nums">
-                {milestone.pending}
-              </span>
-            </button>
-            {!milestone.hasReviewed && milestone.key !== "cnc" ? (
-              <button
-                type="button"
-                onClick={onUnderProcessClick}
-                className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
-              >
-                <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
-                  {underProcessLabel}
-                </span>
-                <span className="block text-base font-semibold tabular-nums">
-                  {milestone.underProcess}
-                </span>
-              </button>
-            ) : null}
+          <span className={metricGridClass}>
+            {metrics.map((metric) => (
+              <StatusMetricBox key={metric.label} metric={metric} />
+            ))}
           </span>
         </span>
         <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-background">
@@ -1184,6 +1109,114 @@ function MilestoneFlowNode({
       ) : null}
     </div>
   );
+}
+
+function getStatusMetrics({
+  milestone,
+  onTotalClick,
+  onUnderProcessClick,
+  onActiveClick,
+  onReviewedClick,
+  onPendingClick,
+  onClearedClick,
+  onLiveBidsClick,
+  onBidOverdueClick,
+  onLiveSupplyOrdersClick,
+}: {
+  milestone: {
+    key: string;
+    completedLabel: string;
+    totalLabel: string;
+    pendingLabel: string;
+    total: number;
+    underProcess: number;
+    active: number;
+    pending: number;
+    reviewed: number;
+    cleared: number;
+    activeLabel: string;
+    liveBids?: number;
+    overdueBids?: number;
+    inProcessBids?: number;
+    liveSupplyOrders?: number;
+  };
+  onTotalClick: () => void;
+  onUnderProcessClick: () => void;
+  onActiveClick: () => void;
+  onReviewedClick: () => void;
+  onPendingClick: () => void;
+  onClearedClick: () => void;
+  onLiveBidsClick: () => void;
+  onBidOverdueClick: () => void;
+  onLiveSupplyOrdersClick: () => void;
+}): StatusMetric[] {
+  const total = {
+    label: milestone.totalLabel,
+    count: milestone.total,
+    onClick: onTotalClick,
+  };
+  const completed = {
+    label: milestone.completedLabel,
+    count: milestone.cleared,
+    onClick: onClearedClick,
+  };
+  const previous = {
+    label: "At previous stage",
+    count: milestone.underProcess,
+    onClick: onUnderProcessClick,
+  };
+  const active = {
+    label: milestone.activeLabel,
+    count: milestone.active,
+    onClick: onActiveClick,
+    toneCount: true,
+  };
+  const reviewed = { label: "Reviewed", count: milestone.reviewed, onClick: onReviewedClick };
+  const pending = {
+    label: milestone.pendingLabel,
+    count: milestone.pending,
+    onClick: onPendingClick,
+  };
+
+  if (milestone.key === "scrutiny") {
+    return [active, reviewed, pending, total, completed];
+  }
+
+  if (["highValue", "tcec", "ifa", "postTcec", "cnc"].includes(milestone.key)) {
+    return [total, completed, previous, active, reviewed, pending];
+  }
+
+  if (milestone.key === "bidding") {
+    return [
+      total,
+      completed,
+      { label: "Live", count: milestone.liveBids ?? 0, onClick: onLiveBidsClick },
+      { label: "Overdue", count: milestone.overdueBids ?? 0, onClick: onBidOverdueClick },
+      { label: "In process", count: milestone.inProcessBids ?? 0, onClick: onActiveClick },
+      { label: "At previous stages", count: milestone.underProcess, onClick: onUnderProcessClick },
+    ];
+  }
+
+  if (milestone.key === "supplyOrder") {
+    return [
+      total,
+      completed,
+      { label: "Live", count: milestone.liveSupplyOrders ?? 0, onClick: onLiveSupplyOrdersClick },
+      { label: milestone.pendingLabel, count: milestone.pending, onClick: onPendingClick },
+      { label: "At previous stages", count: milestone.underProcess, onClick: onUnderProcessClick },
+    ];
+  }
+
+  if (milestone.key === "payment" || milestone.key === "bankGuarantee") {
+    return [
+      total,
+      completed,
+      { label: milestone.pendingLabel, count: milestone.pending, onClick: onPendingClick },
+      previous,
+    ];
+  }
+
+  return [total, completed, active, previous];
 }
 
 function DeliveryPeriodFlowNode({
@@ -1589,7 +1622,7 @@ const milestoneDefinitions = [
     current: "rqaApprovalDate",
     applies: (file) => isYes(file.rqa),
   },
-  { key: "control", label: "Controlled", totalLabel: "Total files", current: "immsDate" },
+  { key: "control", label: "Controlling", totalLabel: "Total files", current: "immsDate" },
   {
     key: "ifa",
     label: "IFA",
@@ -1632,7 +1665,7 @@ const milestoneDefinitions = [
     key: "bankGuarantee",
     label: "Bank Guarantee",
     completedLabel: "Received",
-    totalLabel: "Total cases",
+    totalLabel: "Total files",
     current: "bgValidityDate",
     applies: (file) => isYes(file.bg),
   },
@@ -1687,26 +1720,70 @@ function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
   const flow = milestoneDefinitions.map((milestone) => {
     const applicableFiles = files.filter((file) => isMilestoneApplicable(file, milestone));
     const reachedFiles = applicableFiles.filter((file) => isEligibleMilestone(file, milestone));
-    const reviewed = reachedFiles.filter((file) => isMilestoneReviewed(file, milestone)).length;
-    const cleared = reachedFiles.filter((file) => isMilestoneComplete(file, milestone)).length;
-    const reached = reachedFiles.length;
+    const activeFiles = applicableFiles.filter((file) => isManualActiveMilestone(file, milestone));
+    const reviewedFiles = activeFiles.filter((file) => isMilestoneReviewed(file, milestone));
+    const clearedFiles = applicableFiles.filter((file) => isMilestoneComplete(file, milestone));
+    const pendingFiles = activeFiles.filter((file) => isPendingMilestone(file, milestone));
+    const total =
+      milestone.key === "payment" ? countSupplyOrders(applicableFiles) : applicableFiles.length;
+    const cleared =
+      milestone.key === "payment"
+        ? countPaymentCompletedOrders(applicableFiles)
+        : clearedFiles.length;
+    const pending =
+      milestone.key === "payment" ? countPaymentPendingOrders(activeFiles) : pendingFiles.length;
+
+    if (milestone.key === "bankGuarantee") {
+      const eligibleBgFiles = applicableFiles.filter(isBankGuaranteeEligible);
+      const activeBgFiles = eligibleBgFiles.filter((file) =>
+        isManualActiveMilestone(file, milestone),
+      );
+      return {
+        key: milestone.key,
+        label: milestone.label,
+        completedLabel: milestone.completedLabel ?? "Completed",
+        totalLabel: milestone.totalLabel ?? "Total files",
+        pendingLabel: getMilestonePendingLabel(milestone),
+        total: eligibleBgFiles.length,
+        underProcess: Math.max(
+          0,
+          applicableFiles.filter((file) => !isEligibleMilestone(file, milestone)).length,
+        ),
+        active: activeBgFiles.length,
+        pending: activeBgFiles.filter((file) => !hasMilestoneDate(file, milestone.current)).length,
+        reviewed: 0,
+        hasReviewed: Boolean(milestone.reviewed),
+        cleared: eligibleBgFiles.filter((file) => hasMilestoneDate(file, milestone.current)).length,
+        activeLabel: "Active",
+      };
+    }
+
     return {
       key: milestone.key,
       label: milestone.label,
       completedLabel: milestone.completedLabel ?? "Completed",
       totalLabel: milestone.totalLabel ?? "Total",
-      pendingLabel: milestone.pendingLabel ?? "Pending",
-      total: applicableFiles.length,
-      underProcess: Math.max(0, applicableFiles.length - reached),
-      active: Math.max(0, reached - cleared),
-      pending: Math.max(0, reached - reviewed - cleared),
-      reviewed,
+      pendingLabel: getMilestonePendingLabel(milestone),
+      total,
+      underProcess: Math.max(0, applicableFiles.length - reachedFiles.length),
+      active: activeFiles.length,
+      pending,
+      reviewed: reviewedFiles.length,
       hasReviewed: Boolean(milestone.reviewed),
       cleared,
-      liveBids: milestone.key === "bidding" ? files.filter(isFileTenderLive).length : undefined,
-      overdueBids: milestone.key === "bidding" ? files.filter(isBidOverdue).length : undefined,
+      activeLabel: milestone.key === "bidding" ? "In process" : "Active",
+      liveBids:
+        milestone.key === "bidding" ? applicableFiles.filter(isFileTenderLive).length : undefined,
+      overdueBids:
+        milestone.key === "bidding" ? applicableFiles.filter(isBidOverdue).length : undefined,
+      inProcessBids:
+        milestone.key === "bidding"
+          ? activeFiles.filter((file) => !isFileTenderLive(file)).length
+          : undefined,
       liveSupplyOrders:
-        milestone.key === "supplyOrder" ? files.filter(isLiveSupplyOrder).length : undefined,
+        milestone.key === "supplyOrder"
+          ? applicableFiles.filter(isLiveSupplyOrder).length
+          : undefined,
     };
   });
   const supplyOrderIndex = flow.findIndex((milestone) => milestone.key === "supplyOrder");
@@ -1744,12 +1821,21 @@ function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
   ];
 }
 
+function getMilestonePendingLabel(milestone: (typeof milestoneDefinitions)[number]) {
+  if (!("pendingLabel" in milestone)) return "Pending";
+  return typeof milestone.pendingLabel === "string" ? milestone.pendingLabel : "Pending";
+}
+
 function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
-  return (
-    isEligibleMilestone(file, milestone) &&
-    !isMilestoneReviewed(file, milestone) &&
-    !isMilestoneComplete(file, milestone)
-  );
+  if (milestone.reviewed) {
+    return (
+      isManualActiveMilestone(file, milestone) &&
+      !hasMilestoneDate(file, milestone.reviewed) &&
+      !isMilestoneComplete(file, milestone)
+    );
+  }
+
+  return isManualActiveMilestone(file, milestone) && !isMilestoneComplete(file, milestone);
 }
 
 function isEligibleMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
@@ -1791,7 +1877,32 @@ function isMilestoneComplete(file: FileRecord, milestone: (typeof milestoneDefin
 
 function isMilestoneReviewed(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
   if (!milestone.reviewed) return false;
-  return hasMilestoneDate(file, milestone.reviewed) && !isMilestoneComplete(file, milestone);
+  return (
+    isManualActiveMilestone(file, milestone) &&
+    hasMilestoneDate(file, milestone.reviewed) &&
+    !isMilestoneComplete(file, milestone)
+  );
+}
+
+function isManualActiveMilestone(
+  file: FileRecord,
+  milestone: (typeof milestoneDefinitions)[number],
+) {
+  const current = normalizeMilestoneName(file.currentMilestone);
+  return getMilestoneNameAliases(milestone).some(
+    (name) => current === normalizeMilestoneName(name),
+  );
+}
+
+function getMilestoneNameAliases(milestone: (typeof milestoneDefinitions)[number]) {
+  return milestone.key === "control" ? [milestone.label, "Controlled"] : [milestone.label];
+}
+
+function normalizeMilestoneName(value: string | undefined) {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
 }
 
 function hasMilestoneDate(file: FileRecord, key: keyof FileRecord | keyof SupplyOrderDetail) {
@@ -1823,6 +1934,7 @@ function fileSupplyOrders(file: FileRecord) {
     materialReceiptDate: file.materialReceiptDate,
     paymentDate: file.paymentDate,
     bgReturnDate: file.bgReturnDate,
+    soCancelled: file.soCancelled,
   };
   return Object.values(legacy).some((value) => Boolean(String(value ?? "").trim())) ? [legacy] : [];
 }
@@ -1845,20 +1957,23 @@ function isNo(value: string | undefined) {
 }
 
 function isFileTenderLive(file: FileRecord) {
-  if (hasDate(file.refloatBiddingDate) && hasDate(file.refloatBidOpeningDate)) {
-    return isDateInRangeToday(file.refloatBiddingDate, file.refloatBidOpeningDate);
-  }
-
-  return isDateInRangeToday(file.bidDate, file.bidOpeningDate);
+  return isYes(file.tenderLive);
 }
 
 function isBidOverdue(file: FileRecord) {
-  const activeOpeningDate = file.refloatBidOpeningDate || file.bidOpeningDate;
-  return isNo(file.bidOpened) && isDateBeforeToday(activeOpeningDate);
+  return (
+    isNo(file.bidOpened) &&
+    (isDateBeforeToday(file.bidOpeningDate) || isDateBeforeToday(file.refloatBidOpeningDate))
+  );
 }
 
 function isLiveSupplyOrder(file: FileRecord) {
-  return hasFilledField(file, "soDate") && isDateAfterToday(file.dpDate);
+  return fileSupplyOrders(file).some(
+    (order) =>
+      hasSupplyOrderDate(order) &&
+      !hasFilledString(order.materialReceiptDate) &&
+      !isYes(order.soCancelled),
+  );
 }
 
 function isBgToBeReceived(file: FileRecord) {
@@ -1905,7 +2020,7 @@ function isDueDeliveryOrder(order: SupplyOrderDetail) {
   return (
     hasSupplyOrderDate(order) &&
     !hasFilledString(order.materialReceiptDate) &&
-    isDateBeforeToday(getDeliveryDueDate(order))
+    !isYes(order.soCancelled)
   );
 }
 
@@ -1934,6 +2049,42 @@ function isSupplyOrderPlaced(file: FileRecord) {
     (milestone) => milestone.key === "supplyOrder",
   );
   return supplyOrderMilestone ? isMilestoneComplete(file, supplyOrderMilestone) : false;
+}
+
+function countSupplyOrders(files: FileRecord[]) {
+  return files.reduce(
+    (sum, file) => sum + fileSupplyOrders(file).filter(hasSupplyOrderDate).length,
+    0,
+  );
+}
+
+function countPaymentCompletedOrders(files: FileRecord[]) {
+  return files.reduce(
+    (sum, file) =>
+      sum +
+      fileSupplyOrders(file).filter(
+        (order) => hasSupplyOrderDate(order) && hasFilledString(order.paymentDate),
+      ).length,
+    0,
+  );
+}
+
+function countPaymentPendingOrders(files: FileRecord[]) {
+  return files.reduce(
+    (sum, file) =>
+      sum +
+      fileSupplyOrders(file).filter(
+        (order) => hasSupplyOrderDate(order) && !hasFilledString(order.paymentDate),
+      ).length,
+    0,
+  );
+}
+
+function isBankGuaranteeEligible(file: FileRecord) {
+  return (
+    isYes(file.bg) &&
+    fileSupplyOrders(file).some((order) => hasSupplyOrderDate(order) && !isYes(order.soCancelled))
+  );
 }
 
 function isValidDeliveryPeriodOrder(order: SupplyOrderDetail) {
