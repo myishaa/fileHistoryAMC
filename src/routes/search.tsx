@@ -1753,7 +1753,11 @@ function fileSupplyOrders(file: FileRecord) {
 }
 
 function getNoOfSo(file: FileRecord) {
-  return file.noOfSo ?? String(fileSupplyOrders(file).length);
+  return String(fileSupplyOrders(file).filter(hasSupplyOrderDate).length);
+}
+
+function hasSupplyOrderDate(order: SupplyOrderDetail) {
+  return hasFilledString(order.soDate);
 }
 
 function getSupplyOrderFieldValue(file: FileRecord, key: SupplyOrderKey) {
@@ -1973,12 +1977,14 @@ function isDeliveryActive(file: FileRecord) {
 }
 
 function isCompletedDeliveryOrder(order: SupplyOrderDetail) {
-  return hasFilledString(order.materialReceiptDate);
+  return hasSupplyOrderDate(order) && hasFilledString(order.materialReceiptDate);
 }
 
 function isDueDeliveryOrder(order: SupplyOrderDetail) {
   return (
-    !hasFilledString(order.materialReceiptDate) && isDateBeforeToday(getDeliveryDueDate(order))
+    hasSupplyOrderDate(order) &&
+    !hasFilledString(order.materialReceiptDate) &&
+    isDateBeforeToday(getDeliveryDueDate(order))
   );
 }
 
@@ -2011,6 +2017,7 @@ function isSupplyOrderPlaced(file: FileRecord) {
 
 function isValidDeliveryPeriodOrder(order: SupplyOrderDetail) {
   return (
+    hasSupplyOrderDate(order) &&
     !hasFilledString(order.revisedDp) &&
     isDateAfterToday(order.dpDate) &&
     !hasFilledString(order.materialReceiptDate)
@@ -2020,6 +2027,7 @@ function isValidDeliveryPeriodOrder(order: SupplyOrderDetail) {
 function isExpiredDeliveryPeriodOrder(order: SupplyOrderDetail) {
   const deliveryPeriodDate = getDeliveryPeriodDate(order);
   return (
+    hasSupplyOrderDate(order) &&
     Boolean(deliveryPeriodDate) &&
     isDateBeforeToday(deliveryPeriodDate) &&
     !hasFilledString(order.materialReceiptDate)
@@ -2028,6 +2036,7 @@ function isExpiredDeliveryPeriodOrder(order: SupplyOrderDetail) {
 
 function isExtendedDeliveryPeriodOrder(order: SupplyOrderDetail) {
   return (
+    hasSupplyOrderDate(order) &&
     hasFilledString(order.revisedDp) &&
     isDateAfterToday(order.revisedDp) &&
     !hasFilledString(order.materialReceiptDate)
@@ -2068,6 +2077,14 @@ function isDateAfterToday(date: string | undefined) {
 
 function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter.startsWith("mode:")) return (file.mode ?? "").trim().toUpperCase() === filter.slice(5);
+  if (filter.startsWith("manualMilestoneCurrent:")) {
+    return file.currentMilestone === filter.slice("manualMilestoneCurrent:".length);
+  }
+  if (filter.startsWith("manualMilestoneCompleted:")) {
+    return Boolean(
+      file.completedMilestones?.includes(filter.slice("manualMilestoneCompleted:".length)),
+    );
+  }
   if (filter === "totalFiles") return true;
   if (filter === "demandsControlled") return hasAny(file, ["imms"]);
   if (filter === "tcecFiles") return isYes(file.tcec);
@@ -2091,6 +2108,13 @@ function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter === "deliveryPeriodExpired") return isDeliveryPeriodExpired(file);
   if (filter === "deliveryPeriodExtended") return isDeliveryPeriodExtended(file);
   if (filter === "paymentDue") return isPaymentDue(file);
+  if (filter === "miscLd") return fileSupplyOrders(file).some((order) => isYes(order.ld));
+  if (filter === "miscDemandCancelled") {
+    return fileSupplyOrders(file).some((order) => isYes(order.demandCancelled));
+  }
+  if (filter === "miscSoCancelled") {
+    return fileSupplyOrders(file).some((order) => isYes(order.soCancelled));
+  }
   if (filter === "scrutinyCompleted") return hasAny(file, ["scrutinyCompletionDate"]);
   if (filter === "scrutinyUnderProgress") return !hasAny(file, ["scrutinyDate"]);
   if (filter === "preTcecCompleted")

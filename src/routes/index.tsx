@@ -5,6 +5,7 @@ import {
   type SupplyOrderDetail,
   useAccessibleDivisions,
   useAccessibleFiles,
+  useSettings,
 } from "@/lib/files-store";
 import { formatThousandsAndLakhs, getInrAmount, hasAmount, parseAmount } from "@/lib/money";
 import { ArrowRight } from "lucide-react";
@@ -15,14 +16,15 @@ export const Route = createFileRoute("/")({
   },
 });
 
+type DashboardTab = "snapshot" | "status" | "analytics" | "finance";
+
 export function Dashboard() {
   const files = useAccessibleFiles();
   const divisions = useAccessibleDivisions();
+  const settings = useSettings();
   const navigate = useNavigate();
   const [selectedDivision, setSelectedDivision] = useState("all");
-  const [activeDashboardTab, setActiveDashboardTab] = useState<"snapshot" | "status" | "finance">(
-    "status",
-  );
+  const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTab>("status");
   const selectedDivisionIsAccessible =
     selectedDivision === "all" || divisions.some((division) => division.name === selectedDivision);
   const activeDivision = selectedDivisionIsAccessible ? selectedDivision : "all";
@@ -40,7 +42,12 @@ export function Dashboard() {
   );
 
   const modeCounts = getModeCounts(dashboardFiles);
-  const milestoneFlow = getMilestoneFlow(dashboardFiles);
+  const milestoneFlow = getManualMilestoneFlow(
+    dashboardFiles,
+    getConfiguredMilestones(settings.milestones),
+  );
+  const miscellaneousCounts = getMiscellaneousCounts(dashboardFiles);
+  const analytics = getAnalyticsSummary(dashboardFiles, milestoneFlow);
   const financeTotals = {
     allocatedCapital: dashboardDivisions.reduce(
       (sum, division) => sum + (parseAmount(division.allocatedCapital) ?? 0),
@@ -172,12 +179,13 @@ export function Dashboard() {
           {[
             { key: "status", label: "Status" },
             { key: "snapshot", label: "Snapshot" },
+            { key: "analytics", label: "Analytics" },
             { key: "finance", label: "Finance" },
           ].map((tab) => (
             <button
               key={tab.key}
               type="button"
-              onClick={() => setActiveDashboardTab(tab.key as "snapshot" | "status" | "finance")}
+              onClick={() => setActiveDashboardTab(tab.key as DashboardTab)}
               className={
                 "h-8 rounded-md px-3 text-sm font-medium transition-colors " +
                 (activeDashboardTab === tab.key
@@ -293,46 +301,148 @@ export function Dashboard() {
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {milestoneFlow.map((milestone, index) =>
-                milestone.key === "delivery" ? (
-                  <DeliveryFlowNode
-                    key={milestone.key}
-                    milestone={milestone}
-                    index={index}
-                    isLast={index === milestoneFlow.length - 1}
-                    onCompletedClick={() => openSearchFilter("deliveryCompleted")}
-                    onDueClick={() => openSearchFilter("deliveryDue")}
+              {milestoneFlow.map((milestone, index) => (
+                <ManualMilestoneFlowNode
+                  key={milestone.name}
+                  milestone={milestone}
+                  index={index}
+                  isLast={false}
+                  onCurrentClick={() =>
+                    openSearchFilter(`manualMilestoneCurrent:${milestone.name}`)
+                  }
+                  onCompletedClick={() =>
+                    openSearchFilter(`manualMilestoneCompleted:${milestone.name}`)
+                  }
+                />
+              ))}
+              <StatusFlowNode
+                index={14}
+                title="Bank Guarantee"
+                isLast={false}
+                items={[
+                  { label: "Received", count: 0 },
+                  { label: "Pending", count: 0 },
+                  { label: "To be returned", count: 0 },
+                ]}
+              />
+              <StatusFlowNode
+                index={15}
+                title="Miscellaneous"
+                isLast
+                items={[
+                  {
+                    label: "LD",
+                    count: miscellaneousCounts.ld,
+                    onClick: () => openSearchFilter("miscLd"),
+                  },
+                  {
+                    label: "Demand cancelled",
+                    count: miscellaneousCounts.demandCancelled,
+                    onClick: () => openSearchFilter("miscDemandCancelled"),
+                  },
+                  {
+                    label: "S.O. cancelled",
+                    count: miscellaneousCounts.soCancelled,
+                    onClick: () => openSearchFilter("miscSoCancelled"),
+                  },
+                ]}
+              />
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {activeDashboardTab === "analytics" ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-sm font-bold">Analytics</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <AnalyticsMetric
+              label="Assigned to stage"
+              value={analytics.assignedFiles}
+              helper={`${formatPercent(getPercent(analytics.assignedFiles, analytics.totalFiles))} of files`}
+            />
+            <AnalyticsMetric
+              label="S.O. placed"
+              value={analytics.supplyOrderFiles}
+              helper={`${formatPercent(getPercent(analytics.supplyOrderFiles, analytics.totalFiles))} conversion`}
+              onClick={() => openSearchFilter("supplyOrders")}
+            />
+            <AnalyticsMetric
+              label="Open risks"
+              value={analytics.openRiskFiles}
+              helper="Delivery due, expired DP, LD, or cancelled"
+            />
+            <AnalyticsMetric
+              label="Payment pending"
+              value={analytics.paymentPendingFiles}
+              helper="Material received but payment not done"
+              onClick={() => openSearchFilter("paymentDue")}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+              <div className="mb-4">
+                <h3 className="text-sm font-bold">Current stage concentration</h3>
+                <p className="text-xs text-muted-foreground">Where active files are sitting now</p>
+              </div>
+              <AnalyticsBarList
+                items={analytics.stageConcentration}
+                total={Math.max(1, analytics.assignedFiles)}
+                emptyLabel="No current stages selected yet."
+                onClick={(item) => openSearchFilter(`manualMilestoneCurrent:${item.name}`)}
+              />
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+              <div className="mb-4">
+                <h3 className="text-sm font-bold">Work mix</h3>
+                <p className="text-xs text-muted-foreground">Important file attributes</p>
+              </div>
+              <AnalyticsBarList
+                items={analytics.workMix}
+                total={Math.max(1, analytics.totalFiles)}
+                emptyLabel="No files available."
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+              <div className="mb-4">
+                <h3 className="text-sm font-bold">Delivery and S.O. health</h3>
+                <p className="text-xs text-muted-foreground">Demand movement after supply order</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {analytics.supplyHealth.map((item) => (
+                  <AnalyticsMiniMetric
+                    key={item.label}
+                    label={item.label}
+                    value={item.value}
+                    helper={item.helper}
+                    onClick={item.filter ? () => openSearchFilter(item.filter!) : undefined}
                   />
-                ) : milestone.key === "deliveryPeriod" ? (
-                  <DeliveryPeriodFlowNode
-                    key={milestone.key}
-                    milestone={milestone}
-                    index={index}
-                    isLast={index === milestoneFlow.length - 1}
-                    onValidClick={() => openSearchFilter("deliveryPeriodValid")}
-                    onExpiredClick={() => openSearchFilter("deliveryPeriodExpired")}
-                    onExtendedClick={() => openSearchFilter("deliveryPeriodExtended")}
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+              <div className="mb-4">
+                <h3 className="text-sm font-bold">Cycle time</h3>
+                <p className="text-xs text-muted-foreground">Average days from available dates</p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {analytics.cycleTimes.map((item) => (
+                  <AnalyticsMiniMetric
+                    key={item.label}
+                    label={item.label}
+                    value={item.value}
+                    helper={`${item.sampleSize} files`}
                   />
-                ) : (
-                  <MilestoneFlowNode
-                    key={milestone.key}
-                    milestone={milestone}
-                    index={index}
-                    isLast={index === milestoneFlow.length - 1}
-                    onTotalClick={() => openSearchFilter(`milestoneTotal:${milestone.key}`)}
-                    onUnderProcessClick={() =>
-                      openSearchFilter(`milestoneUnderProcess:${milestone.key}`)
-                    }
-                    onActiveClick={() => openSearchFilter(`milestone:${milestone.key}`)}
-                    onReviewedClick={() => openSearchFilter(`milestoneReviewed:${milestone.key}`)}
-                    onPendingClick={() => openSearchFilter(`milestonePending:${milestone.key}`)}
-                    onClearedClick={() => openSearchFilter(`milestoneCleared:${milestone.key}`)}
-                    onLiveBidsClick={() => openSearchFilter("liveBids")}
-                    onBidOverdueClick={() => openSearchFilter("bidOverdue")}
-                    onLiveSupplyOrdersClick={() => openSearchFilter("liveSupplyOrders")}
-                  />
-                ),
-              )}
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -527,6 +637,307 @@ function SummaryMetric({
   return (
     <div className={"rounded-lg border border-border bg-secondary/35 " + (compact ? "p-3" : "p-4")}>
       {content}
+    </div>
+  );
+}
+
+function ManualMilestoneFlowNode({
+  milestone,
+  index,
+  isLast,
+  onCurrentClick,
+  onCompletedClick,
+}: {
+  milestone: {
+    name: string;
+    current: number;
+    completed: number;
+  };
+  index: number;
+  isLast: boolean;
+  onCurrentClick: () => void;
+  onCompletedClick: () => void;
+}) {
+  const tone = getMilestoneTone(milestone.current);
+
+  return (
+    <div className="relative min-w-0">
+      <div
+        className={
+          "group flex h-full w-full flex-col justify-between rounded-lg border p-2.5 text-left transition hover:shadow-[var(--shadow-card)] " +
+          tone.card
+        }
+      >
+        <span className="flex flex-col gap-2">
+          <span className="flex min-w-0 items-center gap-2 border-b border-border/60 pb-2">
+            <span
+              className={
+                "grid size-7 shrink-0 place-items-center rounded-md text-[11px] font-bold " +
+                tone.step
+              }
+            >
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{milestone.name}</span>
+            </span>
+          </span>
+          <span className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={onCurrentClick}
+              className={
+                "rounded-md px-2 py-1 text-center hover:ring-2 hover:ring-ring/30 " + tone.count
+              }
+            >
+              <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
+                Currently running
+              </span>
+              <span className="block text-base font-semibold tabular-nums">
+                {milestone.current}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={onCompletedClick}
+              className="rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
+            >
+              <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
+                Completed
+              </span>
+              <span className="block text-base font-semibold tabular-nums">
+                {milestone.completed}
+              </span>
+            </button>
+          </span>
+        </span>
+      </div>
+      {!isLast ? (
+        <div className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 translate-x-1/2 rounded-full border border-border bg-card p-1 text-muted-foreground xl:block">
+          <ArrowRight className="size-4" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function StatusFlowNode({
+  index,
+  title,
+  items,
+  isLast,
+}: {
+  index: number;
+  title: string;
+  items: Array<{ label: string; count: number; onClick?: () => void }>;
+  isLast: boolean;
+}) {
+  const tone = getMilestoneTone(items.reduce((sum, item) => sum + item.count, 0));
+
+  return (
+    <div className="relative min-w-0">
+      <div
+        className={
+          "group flex h-full w-full flex-col justify-between rounded-lg border p-2.5 text-left transition hover:shadow-[var(--shadow-card)] " +
+          tone.card
+        }
+      >
+        <span className="flex flex-col gap-2">
+          <span className="flex min-w-0 items-center gap-2 border-b border-border/60 pb-2">
+            <span
+              className={
+                "grid size-7 shrink-0 place-items-center rounded-md text-[11px] font-bold " +
+                tone.step
+              }
+            >
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{title}</span>
+            </span>
+          </span>
+          <span className="grid grid-cols-3 gap-1.5">
+            {items.map((item) => (
+              <StatusSubBox
+                key={item.label}
+                label={item.label}
+                count={item.count}
+                onClick={item.onClick}
+              />
+            ))}
+          </span>
+        </span>
+      </div>
+      {!isLast ? (
+        <div className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 translate-x-1/2 rounded-full border border-border bg-card p-1 text-muted-foreground xl:block">
+          <ArrowRight className="size-4" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function StatusSubBox({
+  label,
+  count,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  onClick?: () => void;
+}) {
+  const tone = getMilestoneTone(count);
+  const content = (
+    <>
+      <span className="block text-[9px] font-medium uppercase leading-tight text-muted-foreground">
+        {label}
+      </span>
+      <span className="block text-base font-semibold tabular-nums">{count}</span>
+    </>
+  );
+
+  if (!onClick) {
+    return (
+      <div className="rounded-md border border-border bg-card px-2 py-1 text-center">{content}</div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "rounded-md border border-border bg-card px-2 py-1 text-center hover:bg-accent hover:ring-2 hover:ring-ring/30"
+      }
+    >
+      {content}
+    </button>
+  );
+}
+
+function AnalyticsMetric({
+  label,
+  value,
+  helper,
+  onClick,
+}: {
+  label: string;
+  value: number | string;
+  helper: string;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
+      <span className="text-xs font-medium uppercase text-muted-foreground">{label}</span>
+      <span className="mt-2 block text-2xl font-semibold tracking-tight tabular-nums">{value}</span>
+      <span className="mt-1 block text-xs text-muted-foreground">{helper}</span>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded-xl border border-border bg-card p-4 text-left shadow-[var(--shadow-card)] hover:bg-accent"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
+      {content}
+    </div>
+  );
+}
+
+function AnalyticsMiniMetric({
+  label,
+  value,
+  helper,
+  onClick,
+}: {
+  label: string;
+  value: number | string;
+  helper: string;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
+      <span className="text-[11px] font-medium uppercase text-muted-foreground">{label}</span>
+      <span className="mt-1 block text-xl font-semibold tabular-nums">{value}</span>
+      <span className="mt-0.5 block text-xs text-muted-foreground">{helper}</span>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded-md border border-border bg-secondary/35 px-3 py-2 text-left hover:bg-accent"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className="rounded-md border border-border bg-secondary/35 px-3 py-2">{content}</div>;
+}
+
+function AnalyticsBarList({
+  items,
+  total,
+  emptyLabel,
+  onClick,
+}: {
+  items: Array<{ name: string; count: number }>;
+  total: number;
+  emptyLabel: string;
+  onClick?: (item: { name: string; count: number }) => void;
+}) {
+  if (!items.length) return <div className="text-sm text-muted-foreground">{emptyLabel}</div>;
+
+  return (
+    <div className="space-y-3">
+      {items.map((item) => {
+        const width = Math.max(4, getPercent(item.count, total));
+        const row = (
+          <>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate font-medium">{item.name}</span>
+              <span className="shrink-0 font-semibold tabular-nums">{item.count}</span>
+            </div>
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-secondary">
+              <div className="h-full rounded-full bg-primary" style={{ width: `${width}%` }} />
+            </div>
+          </>
+        );
+
+        if (onClick) {
+          return (
+            <button
+              key={item.name}
+              type="button"
+              onClick={() => onClick(item)}
+              className="w-full rounded-md border border-border bg-secondary/25 px-3 py-2 text-left hover:bg-accent"
+            >
+              {row}
+            </button>
+          );
+        }
+
+        return (
+          <div
+            key={item.name}
+            className="rounded-md border border-border bg-secondary/25 px-3 py-2"
+          >
+            {row}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1001,6 +1412,145 @@ function getModeCounts(files: ReturnType<typeof useAccessibleFiles>) {
   return modes.map((name) => ({ name, count: counts[name] ?? 0 }));
 }
 
+function getMiscellaneousCounts(files: ReturnType<typeof useAccessibleFiles>) {
+  return {
+    ld: files.filter((file) => fileSupplyOrders(file).some((order) => isYes(order.ld))).length,
+    demandCancelled: files.filter((file) =>
+      fileSupplyOrders(file).some((order) => isYes(order.demandCancelled)),
+    ).length,
+    soCancelled: files.filter((file) =>
+      fileSupplyOrders(file).some((order) => isYes(order.soCancelled)),
+    ).length,
+  };
+}
+
+function getAnalyticsSummary(
+  files: ReturnType<typeof useAccessibleFiles>,
+  milestoneFlow: ReturnType<typeof getManualMilestoneFlow>,
+) {
+  const totalFiles = files.length;
+  const assignedFiles = files.filter((file) => Boolean(file.currentMilestone)).length;
+  const supplyOrderFiles = files.filter(isSupplyOrderPlacedByDate).length;
+  const paymentPendingFiles = files.filter(isPaymentPending).length;
+  const openRiskFiles = files.filter(
+    (file) =>
+      isDeliveryDue(file) ||
+      isDeliveryPeriodExpired(file) ||
+      fileSupplyOrders(file).some(
+        (order) => isYes(order.ld) || isYes(order.demandCancelled) || isYes(order.soCancelled),
+      ),
+  ).length;
+
+  return {
+    totalFiles,
+    assignedFiles,
+    supplyOrderFiles,
+    paymentPendingFiles,
+    openRiskFiles,
+    stageConcentration: milestoneFlow
+      .filter((milestone) => milestone.current > 0)
+      .map((milestone) => ({ name: milestone.name, count: milestone.current }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8),
+    workMix: [
+      { name: "TCEC", count: files.filter((file) => isYes(file.tcec)).length },
+      { name: "GeM", count: files.filter((file) => isYes(file.gem)).length },
+      { name: "High value", count: files.filter((file) => isYes(file.highValue)).length },
+      { name: "R&QA", count: files.filter((file) => isYes(file.rqa)).length },
+      { name: "IFA", count: files.filter((file) => isYes(file.ifa)).length },
+      { name: "BG", count: files.filter((file) => isYes(file.bg)).length },
+    ].filter((item) => item.count > 0),
+    supplyHealth: [
+      {
+        label: "S.O. placed",
+        value: supplyOrderFiles,
+        helper: `${formatPercent(getPercent(supplyOrderFiles, totalFiles))} of files`,
+        filter: "supplyOrders",
+      },
+      {
+        label: "Delivery due",
+        value: files.filter(isDeliveryDue).length,
+        helper: "Past delivery date",
+        filter: "deliveryDue",
+      },
+      {
+        label: "DP expired",
+        value: files.filter(isDeliveryPeriodExpired).length,
+        helper: "Material not received",
+        filter: "deliveryPeriodExpired",
+      },
+      {
+        label: "BG pending",
+        value: files.filter(isBgToBeReceived).length,
+        helper: "BG yes, validity not filled",
+        filter: "bgToBeReceived",
+      },
+    ],
+    cycleTimes: [
+      getAverageCycleMetric(files, "Received to S.O.", "receivedDate", getFirstSoDate),
+      getAverageCycleMetric(files, "Received to payment", "receivedDate", getFirstPaymentDate),
+      getAverageCycleMetric(
+        files,
+        "Scrutiny time",
+        "scrutinyDate",
+        (file) => file.scrutinyCompletionDate,
+      ),
+    ],
+  };
+}
+
+function getAverageCycleMetric(
+  files: FileRecord[],
+  label: string,
+  startKey: keyof FileRecord,
+  getEndDate: (file: FileRecord) => string | undefined,
+) {
+  const durations = files
+    .map((file) => getDayDifference(file[startKey], getEndDate(file)))
+    .filter((value): value is number => value !== undefined && value >= 0);
+  const average = durations.length
+    ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
+    : undefined;
+
+  return {
+    label,
+    value: average === undefined ? "-" : `${average}d`,
+    sampleSize: durations.length,
+  };
+}
+
+function getDayDifference(fromDate: string | undefined, toDate: string | undefined) {
+  const fromTime = parseLocalDateTime(fromDate ?? "");
+  const toTime = parseLocalDateTime(toDate ?? "");
+  if (fromTime === undefined || toTime === undefined) return undefined;
+  return Math.round((toTime - fromTime) / 86_400_000);
+}
+
+function getFirstSoDate(file: FileRecord) {
+  return getEarliestSupplyOrderDate(file, "soDate");
+}
+
+function getFirstPaymentDate(file: FileRecord) {
+  return getEarliestSupplyOrderDate(file, "paymentDate");
+}
+
+function getEarliestSupplyOrderDate(file: FileRecord, key: keyof SupplyOrderDetail) {
+  return fileSupplyOrders(file)
+    .map((order) => String(order[key] ?? ""))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))[0];
+}
+
+function isSupplyOrderPlacedByDate(file: FileRecord) {
+  return fileSupplyOrders(file).some(hasSupplyOrderDate);
+}
+
+function isPaymentPending(file: FileRecord) {
+  return fileSupplyOrders(file).some(
+    (order) => hasFilledString(order.materialReceiptDate) && !hasFilledString(order.paymentDate),
+  );
+}
+
 const milestoneDefinitions = [
   {
     key: "scrutiny",
@@ -1097,6 +1647,41 @@ const milestoneDefinitions = [
   current: keyof FileRecord | keyof SupplyOrderDetail;
   applies?: (file: FileRecord) => boolean;
 }>;
+
+const defaultManualMilestones = [
+  "Scrutiny",
+  "High Value",
+  "Pre-TCEC",
+  "AD",
+  "R&QA",
+  "Controlled",
+  "IFA",
+  "CFA",
+  "Bidding",
+  "Post-TCEC",
+  "CNC",
+  "Supply Order",
+  "Delivery Period",
+  "Bank Guarantee",
+  "Delivery",
+  "Payment",
+];
+
+function getConfiguredMilestones(milestones: string[] | undefined) {
+  const values = (milestones ?? []).map((item) => item.trim()).filter(Boolean);
+  return values.length ? values : defaultManualMilestones;
+}
+
+function getManualMilestoneFlow(
+  files: ReturnType<typeof useAccessibleFiles>,
+  milestones: string[],
+) {
+  return milestones.map((name) => ({
+    name,
+    current: files.filter((file) => file.currentMilestone === name).length,
+    completed: files.filter((file) => file.completedMilestones?.includes(name)).length,
+  }));
+}
 
 function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
   const flow = milestoneDefinitions.map((milestone) => {
@@ -1313,12 +1898,14 @@ function isDeliveryActive(file: FileRecord) {
 }
 
 function isCompletedDeliveryOrder(order: SupplyOrderDetail) {
-  return hasFilledString(order.materialReceiptDate);
+  return hasSupplyOrderDate(order) && hasFilledString(order.materialReceiptDate);
 }
 
 function isDueDeliveryOrder(order: SupplyOrderDetail) {
   return (
-    !hasFilledString(order.materialReceiptDate) && isDateBeforeToday(getDeliveryDueDate(order))
+    hasSupplyOrderDate(order) &&
+    !hasFilledString(order.materialReceiptDate) &&
+    isDateBeforeToday(getDeliveryDueDate(order))
   );
 }
 
@@ -1351,6 +1938,7 @@ function isSupplyOrderPlaced(file: FileRecord) {
 
 function isValidDeliveryPeriodOrder(order: SupplyOrderDetail) {
   return (
+    hasSupplyOrderDate(order) &&
     !hasFilledString(order.revisedDp) &&
     isDateAfterToday(order.dpDate) &&
     !hasFilledString(order.materialReceiptDate)
@@ -1360,6 +1948,7 @@ function isValidDeliveryPeriodOrder(order: SupplyOrderDetail) {
 function isExpiredDeliveryPeriodOrder(order: SupplyOrderDetail) {
   const deliveryPeriodDate = getDeliveryPeriodDate(order);
   return (
+    hasSupplyOrderDate(order) &&
     Boolean(deliveryPeriodDate) &&
     isDateBeforeToday(deliveryPeriodDate) &&
     !hasFilledString(order.materialReceiptDate)
@@ -1368,6 +1957,7 @@ function isExpiredDeliveryPeriodOrder(order: SupplyOrderDetail) {
 
 function isExtendedDeliveryPeriodOrder(order: SupplyOrderDetail) {
   return (
+    hasSupplyOrderDate(order) &&
     hasFilledString(order.revisedDp) &&
     isDateAfterToday(order.revisedDp) &&
     !hasFilledString(order.materialReceiptDate)
@@ -1376,6 +1966,10 @@ function isExtendedDeliveryPeriodOrder(order: SupplyOrderDetail) {
 
 function getDeliveryPeriodDate(order: SupplyOrderDetail) {
   return hasFilledString(order.revisedDp) ? order.revisedDp : order.dpDate;
+}
+
+function hasSupplyOrderDate(order: SupplyOrderDetail) {
+  return hasFilledString(order.soDate);
 }
 
 function isPaymentDue(file: FileRecord) {

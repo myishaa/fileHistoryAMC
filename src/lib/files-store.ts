@@ -103,6 +103,8 @@ export type FileRecord = {
   invitedFirms?: FirmDetail[];
   bidderFirms?: FirmDetail[];
   supplyOrders?: SupplyOrderDetail[];
+  currentMilestone?: string;
+  completedMilestones?: string[];
   createdAt: string;
 };
 
@@ -159,6 +161,7 @@ export type AppSettings = {
   themeTint: AppThemeTint;
   deletionPassword: string;
   tcecCommittees: string[];
+  milestones: string[];
   activeUserId?: string;
 };
 
@@ -177,6 +180,7 @@ const defaultSettings: AppSettings = {
   themeTint: "plain",
   deletionPassword: "",
   tcecCommittees: [],
+  milestones: [],
 };
 
 const defaultDivisions: Division[] = [

@@ -69,6 +69,7 @@ function SettingsPage() {
         <TabsContent value="admin" className="space-y-4">
           <DivisionSettings />
           <TcecCommitteeSettings />
+          <MilestoneSettings />
           <UserSettings />
         </TabsContent>
 
@@ -215,6 +216,81 @@ function TcecCommitteeSettings() {
                   onClick={() => remove(committee)}
                   className="size-8 grid place-items-center rounded-md text-destructive hover:bg-destructive/10"
                   aria-label={`Delete ${committee}`}
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MilestoneSettings() {
+  const settings = useSettings();
+  const activeUser = useActiveUser();
+  const [name, setName] = useState("");
+  const milestones = settings.milestones ?? [];
+
+  if (activeUser && activeUser.role !== "admin") return null;
+
+  const updateMilestones = (next: string[]) => {
+    store.updateSettings({ milestones: next });
+  };
+
+  const add = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const exists = milestones.some(
+      (milestone) => milestone.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (exists) {
+      setName("");
+      return;
+    }
+    updateMilestones([...milestones, trimmed]);
+    setName("");
+  };
+
+  const remove = (milestone: string) => {
+    updateMilestones(milestones.filter((item) => item !== milestone));
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
+      <h2 className="text-sm font-semibold mb-1">Milestones</h2>
+      <p className="text-xs text-muted-foreground mb-5">
+        Add milestone names for administrative reference.
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+        <DivisionInput value={name} onChange={setName} placeholder="Milestone name" />
+        <button
+          type="button"
+          onClick={add}
+          className="h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+        >
+          <Plus className="size-4" /> Add
+        </button>
+      </div>
+
+      <div className="mt-4 rounded-md border border-border">
+        {milestones.length === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+            No milestone names added yet.
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {milestones.map((milestone) => (
+              <li key={milestone} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="text-sm font-medium">{milestone}</span>
+                <button
+                  type="button"
+                  onClick={() => remove(milestone)}
+                  className="size-8 grid place-items-center rounded-md text-destructive hover:bg-destructive/10"
+                  aria-label={`Delete ${milestone}`}
                 >
                   <Trash2 className="size-4" />
                 </button>

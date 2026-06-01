@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   store,
+  type Division,
   type FileRecord,
   type FirmDetail,
   type SupplyOrderDetail,
@@ -82,7 +83,7 @@ const empty = {
   biddingStageOver: "No",
   cncDate: "",
   cncApprovalDate: "",
-  noOfSo: "0",
+  noOfSo: "1",
   soNo: "",
   gemSoNo: "",
   soDate: "",
@@ -124,6 +125,25 @@ const empty = {
   remark9: "",
 };
 
+const defaultMilestones = [
+  "Scrutiny",
+  "High Value",
+  "Pre-TCEC",
+  "AD",
+  "R&QA",
+  "Controlled",
+  "IFA",
+  "CFA",
+  "Bidding",
+  "Post-TCEC",
+  "CNC",
+  "Supply Order",
+  "Delivery Period",
+  "Bank Guarantee",
+  "Delivery",
+  "Payment",
+];
+
 type FormState = typeof empty;
 type FieldKey = keyof FormState;
 type SupplyOrderKey = keyof SupplyOrderDetail;
@@ -155,8 +175,13 @@ function createFirmDetailsFromFile(file: FileRecord | undefined): FirmDetailsSta
   };
 }
 
+function normalizeCompletedMilestones(value: string[] | undefined) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
 function createSupplyOrdersFromFile(file: FileRecord | undefined): SupplyOrderDetail[] {
   const rows = normalizeSupplyOrderRows(file);
+  if (!file) return resizeSupplyOrders(rows, clampSupplyOrderCount(empty.noOfSo));
   const count = clampSupplyOrderCount(file?.noOfSo ?? String(rows.length));
   return resizeSupplyOrders(rows, count);
 }
@@ -309,7 +334,7 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
   {
     title: "TCEC block",
     fields: [
-      { key: "preTcecCommitteeNo", label: "Pre-TCEC" },
+      { key: "preTcecCommitteeNo", label: "Pre-TCEC committee" },
       { key: "preTcecDate", label: "Pre-TCEC Date", type: "date" },
       { key: "preTcecMinutesDate", label: "Pre-TCEC minutes date", type: "date" },
       { key: "postTcecCommitteeNumber", label: "Post-TCEC committee" },
@@ -374,6 +399,12 @@ const timelineFields = extraSections
   .filter((field) => field.type === "date")
   .map((field) => ({ key: field.key, label: field.label }));
 
+type TimelineItem = {
+  label: string;
+  date: string;
+  order: number;
+};
+
 function AddFilePage() {
   const allDivisions = useDivisions();
   const divisions = useAccessibleDivisions();
@@ -397,6 +428,10 @@ function AddFilePage() {
   const [supplyOrders, setSupplyOrders] = useState<SupplyOrderDetail[]>(() =>
     createSupplyOrdersFromFile(editingFile),
   );
+  const [currentMilestone, setCurrentMilestone] = useState(editingFile?.currentMilestone ?? "");
+  const [completedMilestones, setCompletedMilestones] = useState<string[]>(() =>
+    normalizeCompletedMilestones(editingFile?.completedMilestones),
+  );
   const [saved, setSaved] = useState(false);
   const [unlockedSections, setUnlockedSections] = useState<Set<string>>(() => new Set());
   const [activeBoardSection, setActiveBoardSection] = useState(section ?? "File details");
@@ -411,6 +446,8 @@ function AddFilePage() {
     );
     setFirmDetails(createFirmDetailsFromFile(editingFile));
     setSupplyOrders(createSupplyOrdersFromFile(editingFile));
+    setCurrentMilestone(editingFile?.currentMilestone ?? "");
+    setCompletedMilestones(normalizeCompletedMilestones(editingFile?.completedMilestones));
     setUnlockedSections(new Set());
     // The file object is re-read from localStorage on each render; reset only when the edited id changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -436,6 +473,27 @@ function AddFilePage() {
   const bgIsNo = isNo(formWithLockedYear.bg);
   const refloatIsNo = isNo(formWithLockedYear.refloat);
   const adVettingDisabled = isDivisionAdNo(formWithLockedYear.division, divisions);
+  const milestoneOptions = useMemo(
+    () => getConfiguredMilestones(settings.milestones),
+    [settings.milestones],
+  );
+  const applicableMilestones = getApplicableMilestones(
+    milestoneOptions,
+    formWithLockedYear,
+    supplyOrders,
+    divisions,
+  );
+
+  useEffect(() => {
+    setCurrentMilestone((current) =>
+      current && !applicableMilestones.has(current) ? "" : current,
+    );
+    setCompletedMilestones((current) => {
+      const next = current.filter((item) => applicableMilestones.has(item));
+      return next.length === current.length ? current : next;
+    });
+  }, [applicableMilestones]);
+
   const activeSection = extraSections.find((section) => section.title === activeBoardSection);
   const activeSectionIndex = extraSections.findIndex(
     (section) => section.title === activeBoardSection,
@@ -526,12 +584,9 @@ function AddFilePage() {
       [group]: current[group].filter((_, rowIndex) => !selected.has(rowIndex)),
     }));
   };
-  const firmDetailsLocked =
-    isEditing && !unlockedSections.has("Firm details") && hasSavedFirmDetails(editingFile);
-  const supplyOrdersLocked =
-    isEditing &&
-    !unlockedSections.has("Supply order and payment") &&
-    hasSavedSupplyOrders(editingFile);
+  const firmDetailsLocked = isEditing && !unlockedSections.has("Firm details");
+  const supplyOrdersLocked = isEditing && !unlockedSections.has("Supply order and payment");
+  const milestonesLocked = isEditing && !unlockedSections.has("Milestones");
   const renderSectionUnlockButton = (sectionTitle: string) => {
     if (!isEditing) return null;
 
@@ -573,14 +628,7 @@ function AddFilePage() {
                   ),
                 }
               : field;
-        const existingValueLocked =
-          isEditing &&
-          !unlockedSections.has(section.title) &&
-          (field.key === "valueCapital"
-            ? Boolean(editingFile?.valueCapital || editingFile?.valueRevenue)
-            : field.key === "soValueCapital"
-              ? Boolean(editingFile?.soValueCapital || editingFile?.soValueRevenue)
-              : Boolean(getSavedFileValue(editingFile, field.key)));
+        const sectionLocked = isEditing && !unlockedSections.has(section.title);
 
         if (field.key === "valueCapital") {
           return (
@@ -590,7 +638,7 @@ function AddFilePage() {
               revenueValue={formWithLockedYear.valueRevenue}
               capitalSelected={formWithLockedYear.valueCapitalSelected === "Yes"}
               revenueSelected={formWithLockedYear.valueRevenueSelected === "Yes"}
-              disabled={existingValueLocked}
+              disabled={sectionLocked}
               onChange={(patch) => {
                 setForm((current) => applyConditionalRules({ ...current, ...patch }));
                 setSupplyOrders((current) =>
@@ -615,7 +663,7 @@ function AddFilePage() {
               revenueSelected={formWithLockedYear.valueRevenueSelected === "Yes"}
               capitalValue={formWithLockedYear.soValueCapital}
               revenueValue={formWithLockedYear.soValueRevenue}
-              disabled={existingValueLocked}
+              disabled={sectionLocked}
               onChange={(patch) =>
                 setForm((current) => applyConditionalRules({ ...current, ...patch }))
               }
@@ -632,7 +680,7 @@ function AddFilePage() {
               field.key === "year" ||
               field.key === "uniqueCode" ||
               field.key === "tenderLive" ||
-              existingValueLocked ||
+              sectionLocked ||
               (field.key === "adVettingDate" && adVettingDisabled) ||
               (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
               (gemIsNo && gemDisabledKeys.includes(field.key)) ||
@@ -663,9 +711,12 @@ function AddFilePage() {
       supplyOrders: cleanedSupplyOrders,
       invitedFirms: cleanFirmRows(firmDetails.invitedFirms),
       bidderFirms: cleanFirmRows(firmDetails.bidderFirms),
+      currentMilestone: currentMilestone || undefined,
+      completedMilestones: completedMilestones.length ? completedMilestones : undefined,
     };
     if (editingFile) {
       store.updateFile(editingFile.id, payload);
+      setUnlockedSections(new Set());
       setSaved(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
       setTimeout(() => setSaved(false), 1200);
@@ -726,7 +777,23 @@ function AddFilePage() {
 
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
           {activeBoardSection === "Timeline" && (
-            <TimelineBlock form={formWithLockedYear} divisions={divisions} />
+            <TimelineBlock
+              form={formWithLockedYear}
+              supplyOrders={supplyOrders}
+              divisions={divisions}
+            />
+          )}
+          {activeBoardSection === "Milestones" && (
+            <MilestonesBlock
+              milestones={milestoneOptions}
+              applicableMilestones={applicableMilestones}
+              currentMilestone={currentMilestone}
+              completedMilestones={completedMilestones}
+              disabled={milestonesLocked}
+              lockControl={renderSectionUnlockButton("Milestones")}
+              onCurrentChange={setCurrentMilestone}
+              onCompletedChange={setCompletedMilestones}
+            />
           )}
 
           {activeSection && (
@@ -756,8 +823,10 @@ function AddFilePage() {
                   disabled={supplyOrdersLocked}
                   gemDisabled={gemIsNo}
                   bgDisabled={bgIsNo}
-                  onCountChange={(value) => update("noOfSo", value)}
-                  onOrderChange={updateSupplyOrder}
+                  onCountChange={
+                    supplyOrdersLocked ? () => undefined : (value) => update("noOfSo", value)
+                  }
+                  onOrderChange={supplyOrdersLocked ? () => undefined : updateSupplyOrder}
                 />
               ) : (
                 renderSectionFields(activeSection)
@@ -782,9 +851,11 @@ function AddFilePage() {
             {!isEditing && (
               <button
                 type="button"
-                onClick={() =>
-                  setForm(applyConditionalRules(createEmptyForm(settings.financialYear)))
-                }
+                onClick={() => {
+                  setForm(applyConditionalRules(createEmptyForm(settings.financialYear)));
+                  setCurrentMilestone("");
+                  setCompletedMilestones([]);
+                }}
                 className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md border border-border bg-card text-sm hover:bg-accent"
               >
                 <Eraser className="size-4" /> Clear
@@ -811,7 +882,7 @@ function SectionBoard({
   active: string;
   onOpen: (sectionTitle: string) => void;
 }) {
-  const links = ["Timeline", ...extraSections.map((section) => section.title)];
+  const links = ["Timeline", "Milestones", ...extraSections.map((section) => section.title)];
 
   return (
     <div className="border-b border-border bg-card px-5 py-3">
@@ -1108,25 +1179,32 @@ function SupplyOrdersBlock({
 
 function TimelineBlock({
   form,
+  supplyOrders,
   divisions,
 }: {
   form: FormState;
+  supplyOrders: SupplyOrderDetail[];
   divisions: ReturnType<typeof useDivisions>;
 }) {
   const [showAllDates, setShowAllDates] = useState(false);
   const enabledTimelineFields = getEnabledTimelineFields(form, divisions);
-  const filledItems = enabledTimelineFields
-    .map((field) => ({
+  const allItems = [
+    ...enabledTimelineFields.map((field, index) => ({
       label: field.label,
       date: form[field.key],
+      order: index,
+    })),
+    ...getSupplyOrderTimelineItems(supplyOrders, enabledTimelineFields.length),
+  ];
+  const filledItems = allItems
+    .map((field) => ({
+      label: field.label,
+      date: field.date,
+      order: field.order,
     }))
     .filter((item) => item.date)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const allItems = enabledTimelineFields.map((field) => ({
-    label: field.label,
-    date: form[field.key],
-  }));
-  const items = showAllDates ? allItems : filledItems;
+  const items = showAllDates ? getFullTimelineItems(allItems) : filledItems;
   const timelineMetrics = getTimelineMetrics(filledItems);
 
   return (
@@ -1138,7 +1216,7 @@ function TimelineBlock({
         <div>
           <h3 className="text-sm font-semibold">Timeline</h3>
           <span className="text-xs text-muted-foreground">
-            {filledItems.length} of {enabledTimelineFields.length} date fields filled
+            {filledItems.length} of {allItems.length} date fields filled
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1228,6 +1306,127 @@ function TimelineBlock({
   );
 }
 
+function MilestonesBlock({
+  milestones,
+  applicableMilestones,
+  currentMilestone,
+  completedMilestones,
+  disabled,
+  lockControl,
+  onCurrentChange,
+  onCompletedChange,
+}: {
+  milestones: string[];
+  applicableMilestones: Set<string>;
+  currentMilestone: string;
+  completedMilestones: string[];
+  disabled: boolean;
+  lockControl: ReactNode;
+  onCurrentChange: (value: string) => void;
+  onCompletedChange: (value: string[]) => void;
+}) {
+  const completedSet = new Set(completedMilestones);
+  const applicableMilestoneList = milestones.filter((milestone) =>
+    applicableMilestones.has(milestone),
+  );
+  const applicableCount = applicableMilestoneList.length;
+
+  const toggleCurrent = (milestone: string) => {
+    if (disabled) return;
+    if (!applicableMilestones.has(milestone) || completedSet.has(milestone)) return;
+    onCurrentChange(currentMilestone === milestone ? "" : milestone);
+  };
+
+  const toggleCompleted = (milestone: string) => {
+    if (disabled) return;
+    if (!applicableMilestones.has(milestone)) return;
+    const next = new Set(completedSet);
+    if (next.has(milestone)) {
+      next.delete(milestone);
+    } else {
+      next.add(milestone);
+      if (currentMilestone === milestone) {
+        onCurrentChange("");
+      }
+    }
+    onCompletedChange(
+      milestones.filter((item) => applicableMilestones.has(item) && next.has(item)),
+    );
+  };
+
+  return (
+    <section
+      id={sectionId("Milestones")}
+      className="md:col-span-2 scroll-mt-24 rounded-md border border-border bg-secondary/25 p-4"
+    >
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+        <div>
+          <h3 className="text-sm font-semibold">Milestones</h3>
+          <span className="text-xs text-muted-foreground">
+            Select the current stage and mark completed stages manually.
+          </span>
+        </div>
+        {lockControl}
+      </div>
+
+      <div className="rounded-md border border-border bg-card p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div>
+            <h4 className="text-sm font-semibold">Applicable stages</h4>
+            <p className="text-xs text-muted-foreground">
+              Select one current stage and mark completed stages.
+            </p>
+          </div>
+          <span className="rounded-md border border-border bg-secondary/40 px-2 py-1 text-xs tabular-nums text-muted-foreground">
+            {completedMilestones.length}/{applicableCount}
+          </span>
+        </div>
+        <div className="overflow-hidden rounded-md border border-border bg-background">
+          <div className="grid grid-cols-[minmax(0,1fr)_6rem_6rem] border-b border-border bg-secondary/35 px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+            <div>Stage</div>
+            <div className="text-center">Current</div>
+            <div className="text-center">Completed</div>
+          </div>
+          {applicableMilestoneList.map((milestone) => {
+            const isCompleted = completedSet.has(milestone);
+            const isCurrent = currentMilestone === milestone;
+            return (
+              <div
+                key={milestone}
+                className={`grid min-h-10 grid-cols-[minmax(0,1fr)_6rem_6rem] items-center border-b border-border px-3 py-2 text-sm last:border-b-0 ${
+                  isCurrent ? "bg-primary/10 font-semibold text-primary" : ""
+                } ${isCompleted ? "text-muted-foreground" : ""}`}
+              >
+                <div className="min-w-0 truncate">{milestone}</div>
+                <div className="flex justify-center">
+                  <input
+                    type="checkbox"
+                    checked={isCurrent}
+                    disabled={disabled || isCompleted}
+                    onChange={() => toggleCurrent(milestone)}
+                    className="size-4 accent-primary disabled:cursor-not-allowed"
+                    aria-label={`Mark ${milestone} as current`}
+                  />
+                </div>
+                <div className="flex justify-center">
+                  <input
+                    type="checkbox"
+                    checked={isCompleted}
+                    disabled={disabled}
+                    onChange={() => toggleCompleted(milestone)}
+                    className="size-4 accent-primary disabled:cursor-not-allowed"
+                    aria-label={`Mark ${milestone} as completed`}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function formatTimelineDate(date: string) {
   const parsed = new Date(`${date}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return date;
@@ -1256,7 +1455,7 @@ function formatDayCount(days: number | undefined) {
   return `${days} ${Math.abs(days) === 1 ? "day" : "days"}`;
 }
 
-function getTimelineMetrics(items: Array<{ label: string; date: string }>) {
+function getTimelineMetrics(items: TimelineItem[]) {
   const firstItem = items[0];
   return new Map(
     items.map((item, index) => {
@@ -1269,11 +1468,37 @@ function getTimelineMetrics(items: Array<{ label: string; date: string }>) {
   );
 }
 
-function getTimelineItemKey(item: { label: string; date: string }) {
+function getFullTimelineItems(items: TimelineItem[]) {
+  return [...items].sort((a, b) => {
+    if (a.date && b.date) return a.date.localeCompare(b.date) || a.order - b.order;
+    if (a.date) return -1;
+    if (b.date) return 1;
+    return a.order - b.order;
+  });
+}
+
+function getSupplyOrderTimelineItems(supplyOrders: SupplyOrderDetail[], startOrder: number) {
+  const dateFields = supplyOrderFields.filter((field) => field.type === "date");
+  const showOrderNumber = supplyOrders.length > 1;
+  return supplyOrders.flatMap((order, orderIndex) =>
+    dateFields
+      .filter((field) => field.key !== "revisedDp" || isYes(order.dpExtension ?? ""))
+      .map((field, fieldIndex) => {
+        const key = field.key as SupplyOrderKey;
+        return {
+          label: showOrderNumber ? `${field.label} (S.O. ${orderIndex + 1})` : field.label,
+          date: String(order[key] ?? ""),
+          order: startOrder + orderIndex * dateFields.length + fieldIndex,
+        };
+      }),
+  );
+}
+
+function getTimelineItemKey(item: TimelineItem) {
   return `${item.label}-${item.date}`;
 }
 
-function printTimelineReport(form: FormState, filledItems: Array<{ label: string; date: string }>) {
+function printTimelineReport(form: FormState, filledItems: TimelineItem[]) {
   const printWindow = window.open("", "_blank", "width=900,height=720");
   if (!printWindow) {
     alert("Allow pop-ups to print this timeline.");
@@ -1481,6 +1706,46 @@ function cleanFirmRows(rows: FirmDetail[]) {
 function getTcecCommitteeOptions(committees: string[] | undefined, currentValue: string) {
   const values = (committees ?? []).filter(Boolean);
   return currentValue && !values.includes(currentValue) ? [...values, currentValue] : values;
+}
+
+function getConfiguredMilestones(milestones: string[] | undefined) {
+  const values = (milestones ?? []).map((item) => item.trim()).filter(Boolean);
+  return values.length ? values : defaultMilestones;
+}
+
+function getApplicableMilestones(
+  milestones: string[],
+  form: FormState,
+  supplyOrders: SupplyOrderDetail[],
+  divisions: Division[],
+) {
+  return new Set(
+    milestones.filter((milestone) =>
+      isMilestoneApplicableToFile(milestone, form, supplyOrders, divisions),
+    ),
+  );
+}
+
+function isMilestoneApplicableToFile(
+  milestone: string,
+  form: FormState,
+  supplyOrders: SupplyOrderDetail[],
+  divisions: Division[],
+) {
+  const key = normalizeMilestoneName(milestone);
+
+  if (key === "highvalue") return isYes(form.highValue);
+  if (key === "pretcec" || key === "posttcec" || key === "cnc") return isYes(form.tcec);
+  if (key === "ad") return isYes(form.ad) && !isDivisionAdNo(form.division, divisions);
+  if (key === "rqa") return isYes(form.rqa);
+  if (key === "ifa") return isYes(form.ifa);
+  if (key === "bankguarantee") return isYes(form.bg);
+
+  return true;
+}
+
+function normalizeMilestoneName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function cleanSupplyOrderRows(rows: SupplyOrderDetail[]) {
