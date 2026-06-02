@@ -56,6 +56,7 @@ const empty = {
   ifa: "",
   psb: "",
   bg: "",
+  rfpVetting: "No",
   highValueMeetingDate: "",
   highValueMinutesDate: "",
   preTcecDate: "",
@@ -65,8 +66,11 @@ const empty = {
   rqaApprovalDate: "",
   ifaSentDate: "",
   ifaFinalDate: "",
+  cfaSentDate: "",
   cfaDate: "",
   gemUndertakingDate: "",
+  rfpVettingInitiationDate: "",
+  rfpVettingApprovalDate: "",
   tenderLive: "No",
   bidDate: "",
   bidOpeningDate: "",
@@ -227,6 +231,10 @@ const tcecDisabledKeys: FieldKey[] = [
 ];
 
 const gemDisabledKeys: FieldKey[] = ["gemUndertakingDate", "gemSoNo"];
+const rfpVettingDisabledKeys: FieldKey[] = [
+  "rfpVettingInitiationDate",
+  "rfpVettingApprovalDate",
+];
 const highValueDisabledKeys: FieldKey[] = ["highValueMeetingDate", "highValueMinutesDate"];
 const rqaDisabledKeys: FieldKey[] = ["rqaApprovalDate"];
 const ifaDisabledKeys: FieldKey[] = ["ifaSentDate", "ifaFinalDate"];
@@ -315,6 +323,7 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "ifa", label: "IFA (Yes/No)", options: yesNo },
       { key: "psb", label: "PSB (Yes/No)", options: yesNo },
       { key: "bg", label: "BG (Yes/No)", options: yesNo },
+      { key: "rfpVetting", label: "RFP vetting", options: yesNo },
       { key: "fileDetailsRemark1", label: "Remark-1", type: "textarea" },
       { key: "fileDetailsRemark2", label: "Remark-2", type: "textarea" },
     ],
@@ -361,7 +370,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "rqaApprovalDate", label: "R&QA approval date", type: "date" },
       { key: "ifaSentDate", label: "IFA sent date", type: "date" },
       { key: "ifaFinalDate", label: "IFA final date", type: "date" },
-      { key: "cfaDate", label: "CFA date", type: "date" },
+      { key: "cfaSentDate", label: "CFA sent date", type: "date" },
+      { key: "cfaDate", label: "CFA approval date", type: "date" },
       { key: "approvalRemark1", label: "Remark-1", type: "textarea" },
       { key: "approvalRemark2", label: "Remark-2", type: "textarea" },
     ],
@@ -370,6 +380,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
     title: "Bidding details",
     fields: [
       { key: "gemUndertakingDate", label: "GeM undertaking date", type: "date" },
+      { key: "rfpVettingInitiationDate", label: "RFP vetting initiation", type: "date" },
+      { key: "rfpVettingApprovalDate", label: "RFP vetting approval", type: "date" },
       { key: "tenderLive", label: "Tender live", options: yesNo },
       { key: "bidDate", label: "Bid date", type: "date" },
       { key: "bidOpeningDate", label: "Bid opening", type: "date" },
@@ -472,6 +484,7 @@ function AddFilePage() {
   const rqaIsNo = isNo(formWithLockedYear.rqa);
   const ifaIsNo = isNo(formWithLockedYear.ifa);
   const bgIsNo = isNo(formWithLockedYear.bg);
+  const rfpVettingIsNo = isNo(formWithLockedYear.rfpVetting);
   const refloatIsNo = isNo(formWithLockedYear.refloat);
   const adVettingDisabled = isDivisionAdNo(formWithLockedYear.division, divisions);
   const milestoneOptions = useMemo(
@@ -644,6 +657,7 @@ function AddFilePage() {
               revenueValue={formWithLockedYear.valueRevenue}
               capitalSelected={formWithLockedYear.valueCapitalSelected === "Yes"}
               revenueSelected={formWithLockedYear.valueRevenueSelected === "Yes"}
+              disabled={false}
               lockFilledFields={lockFilledFields}
               onChange={(patch) => {
                 setForm((current) => applyConditionalRules({ ...current, ...patch }));
@@ -669,6 +683,7 @@ function AddFilePage() {
               revenueSelected={formWithLockedYear.valueRevenueSelected === "Yes"}
               capitalValue={formWithLockedYear.soValueCapital}
               revenueValue={formWithLockedYear.soValueRevenue}
+              disabled={false}
               lockFilledFields={lockFilledFields}
               onChange={(patch) =>
                 setForm((current) => applyConditionalRules({ ...current, ...patch }))
@@ -694,6 +709,7 @@ function AddFilePage() {
               (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
               (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
               (bgIsNo && bgDisabledKeys.includes(field.key)) ||
+              (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
               (refloatIsNo && refloatDisabledKeys.includes(field.key))
             }
             onChange={(value) => update(field.key, value)}
@@ -737,7 +753,7 @@ function AddFilePage() {
     }
     setSaved(true);
     setTimeout(() => {
-      navigate({ to: "/search" });
+      navigate({ to: "/search", search: { dashboardFilter: undefined, division: undefined } });
     }, 700);
   };
 
@@ -747,7 +763,7 @@ function AddFilePage() {
       editingFile.uniqueCode || editingFile.imms || editingFile.demandDescription || "this file";
     if (!requestDeletionPassword(`delete ${label}`)) return;
     store.deleteFile(editingFile.id);
-    navigate({ to: "/search" });
+    navigate({ to: "/search", search: { dashboardFilter: undefined, division: undefined } });
   };
 
   if (fileId && !editingFile) {
@@ -760,7 +776,9 @@ function AddFilePage() {
           </p>
           <button
             type="button"
-            onClick={() => navigate({ to: "/search" })}
+            onClick={() =>
+              navigate({ to: "/search", search: { dashboardFilter: undefined, division: undefined } })
+            }
             className="mt-4 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
           >
             Back to search
@@ -1977,6 +1995,13 @@ function applyConditionalRules(form: FormState) {
       bgReturnDate: "",
     };
   }
+  if (isNo(next.rfpVetting)) {
+    next = {
+      ...next,
+      rfpVettingInitiationDate: "",
+      rfpVettingApprovalDate: "",
+    };
+  }
   if (isNo(next.refloat)) {
     next = {
       ...next,
@@ -2020,10 +2045,10 @@ function applySupplyOrderRules(
   if (form?.valueRevenueSelected === "Yes") {
     next = { ...next, soValueCapital: "" };
   }
-  if (isYes(next.dpExtension)) {
+  if (isYes(next.dpExtension ?? "")) {
     next = { ...next, dpExtensionCount: getInitialExtensionCount(next.dpExtensionCount ?? "") };
   }
-  if (isNo(next.dpExtension)) {
+  if (isNo(next.dpExtension ?? "")) {
     next = { ...next, dpExtensionCount: "" };
   }
   return next;
@@ -2140,6 +2165,7 @@ function isTimelineFieldDisabled(
     (isNo(form.rqa) && rqaDisabledKeys.includes(key)) ||
     (isNo(form.ifa) && ifaDisabledKeys.includes(key)) ||
     (isNo(form.bg) && bgDisabledKeys.includes(key)) ||
+    (isNo(form.rfpVetting) && rfpVettingDisabledKeys.includes(key)) ||
     (isNo(form.refloat) && refloatDisabledKeys.includes(key))
   );
 }

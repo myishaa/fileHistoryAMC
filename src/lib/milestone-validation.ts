@@ -50,7 +50,7 @@ const milestoneCompletionRules: MilestoneCompletionRule[] = [
   },
   {
     aliases: ["CFA"],
-    completionLabel: "CFA date",
+    completionLabel: "CFA approval date",
     isComplete: (file) => hasFilledString(file.cfaDate),
   },
   {

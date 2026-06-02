@@ -12,11 +12,20 @@ import { ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   beforeLoad: () => {
-    throw redirect({ to: "/search" });
+    throw redirect({ to: "/search", search: { dashboardFilter: undefined, division: undefined } });
   },
 });
 
 type DashboardTab = "snapshot" | "status" | "analytics" | "finance";
+type SummarySubMetric = { label: string; value: number | string; searchFilter?: string };
+type FinanceSplitValue = { capital: string; revenue: string };
+type SummaryMetricValue = number | string | FinanceSplitValue | SummarySubMetric[];
+type SummaryStat = {
+  label: string;
+  value: SummaryMetricValue;
+  hint?: string;
+  searchFilter?: string;
+};
 
 export function Dashboard() {
   const files = useAccessibleFiles();
@@ -112,7 +121,7 @@ export function Dashboard() {
     financeTotals.allocatedRevenue,
   );
 
-  const topSummaryStats = [
+  const topSummaryStats: SummaryStat[] = [
     {
       label: "TCEC",
       value: [
@@ -131,9 +140,9 @@ export function Dashboard() {
     },
   ];
 
-  const compactSummaryStats = [];
+  const compactSummaryStats: SummaryStat[] = [];
 
-  const summaryStats = [];
+  const summaryStats: SummaryStat[] = [];
 
   const financePercentStats = [
     {
@@ -222,37 +231,42 @@ export function Dashboard() {
           </div>
           <div className="bg-card border border-border rounded-xl p-5 shadow-[var(--shadow-card)]">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-              {topSummaryStats.map((stat) => (
-                <SummaryMetric
-                  key={stat.label}
-                  {...stat}
-                  onClick={
-                    stat.searchFilter ? () => openSearchFilter(stat.searchFilter) : undefined
-                  }
-                  onSubMetricClick={(dashboardFilter) => openSearchFilter(dashboardFilter)}
-                />
-              ))}
-              <div className="grid grid-cols-2 gap-2">
-                {compactSummaryStats.map((stat) => (
+              {topSummaryStats.map((stat) => {
+                const searchFilter = stat.searchFilter;
+                return (
                   <SummaryMetric
                     key={stat.label}
                     {...stat}
-                    compact
-                    onClick={() => openSearchFilter(stat.searchFilter)}
+                    onClick={searchFilter ? () => openSearchFilter(searchFilter) : undefined}
                     onSubMetricClick={(dashboardFilter) => openSearchFilter(dashboardFilter)}
                   />
-                ))}
+                );
+              })}
+              <div className="grid grid-cols-2 gap-2">
+                {compactSummaryStats.map((stat) => {
+                  const searchFilter = stat.searchFilter;
+                  return (
+                    <SummaryMetric
+                      key={stat.label}
+                      {...stat}
+                      compact
+                      onClick={searchFilter ? () => openSearchFilter(searchFilter) : undefined}
+                      onSubMetricClick={(dashboardFilter) => openSearchFilter(dashboardFilter)}
+                    />
+                  );
+                })}
               </div>
-              {summaryStats.map((stat) => (
-                <SummaryMetric
-                  key={stat.label}
-                  {...stat}
-                  onClick={
-                    stat.searchFilter ? () => openSearchFilter(stat.searchFilter) : undefined
-                  }
-                  onSubMetricClick={(dashboardFilter) => openSearchFilter(dashboardFilter)}
-                />
-              ))}
+              {summaryStats.map((stat) => {
+                const searchFilter = stat.searchFilter;
+                return (
+                  <SummaryMetric
+                    key={stat.label}
+                    {...stat}
+                    onClick={searchFilter ? () => openSearchFilter(searchFilter) : undefined}
+                    onSubMetricClick={(dashboardFilter) => openSearchFilter(dashboardFilter)}
+                  />
+                );
+              })}
             </div>
           </div>
           <div className="bg-card border border-border rounded-xl p-5 shadow-[var(--shadow-card)]">
@@ -369,6 +383,11 @@ export function Dashboard() {
                     label: "S.O. cancelled",
                     count: miscellaneousCounts.soCancelled,
                     onClick: () => openSearchFilter("miscSoCancelled"),
+                  },
+                  {
+                    label: "Multiple S.O.",
+                    count: miscellaneousCounts.multipleSupplyOrders,
+                    onClick: () => openSearchFilter("miscMultipleSupplyOrders"),
                   },
                 ]}
               />
@@ -573,11 +592,7 @@ function SummaryMetric({
   compact = false,
 }: {
   label: string;
-  value:
-    | number
-    | string
-    | { capital: string; revenue: string }
-    | Array<{ label: string; value: number | string; searchFilter?: string }>;
+  value: SummaryMetricValue;
   onClick?: () => void;
   onSubMetricClick?: (dashboardFilter: string) => void;
   titleClassName?: string;
@@ -599,12 +614,13 @@ function SummaryMetric({
               </>
             );
 
-            if (item.searchFilter && onSubMetricClick) {
+            const searchFilter = item.searchFilter;
+            if (searchFilter && onSubMetricClick) {
               return (
                 <button
                   key={item.label}
                   type="button"
-                  onClick={() => onSubMetricClick(item.searchFilter!)}
+                  onClick={() => onSubMetricClick(searchFilter)}
                   className="rounded-md border border-border bg-card px-2 py-2 text-left hover:bg-accent"
                 >
                   {subContent}
@@ -619,7 +635,7 @@ function SummaryMetric({
             );
           })}
         </div>
-      ) : typeof value === "object" ? (
+      ) : isFinanceSplitValue(value) ? (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="rounded-md border border-border bg-card px-2 py-2">
             <div className="text-xs font-medium text-muted-foreground">Capital</div>
@@ -638,7 +654,7 @@ function SummaryMetric({
               : "mt-3 text-2xl font-semibold tracking-tight"
           }
         >
-          {value}
+          {typeof value === "string" || typeof value === "number" ? value : ""}
         </div>
       )}
     </>
@@ -664,6 +680,10 @@ function SummaryMetric({
       {content}
     </div>
   );
+}
+
+function isFinanceSplitValue(value: SummaryMetricValue): value is FinanceSplitValue {
+  return !Array.isArray(value) && typeof value === "object" && value !== null;
 }
 
 function ManualMilestoneFlowNode({
@@ -967,7 +987,7 @@ function AnalyticsBarList({
   return (
     <div className="space-y-3">
       {items.map((item) => {
-        const width = Math.max(4, getPercent(item.count, total));
+        const width = Math.max(4, getPercent(item.count, total) ?? 0);
         const row = (
           <>
             <div className="flex items-center justify-between gap-3 text-sm">
@@ -1090,7 +1110,7 @@ function MilestoneFlowNode({
               <span className="block truncate text-sm font-semibold">{milestone.label}</span>
             </span>
           </span>
-          {milestone.key === "scrutiny" ? (
+          {milestone.key === "scrutiny" || milestone.key === "cfa" ? (
             <ScrutinyMetricGrid metrics={metrics} tone={tone} />
           ) : (
             <span className={metricGridClass}>
@@ -1257,7 +1277,7 @@ function getStatusMetrics({
     onClick: onPendingClick,
   };
 
-  if (milestone.key === "scrutiny") {
+  if (milestone.key === "scrutiny" || milestone.key === "cfa") {
     return [active, reviewed, pending, total, completed];
   }
 
@@ -1267,11 +1287,10 @@ function getStatusMetrics({
 
   if (milestone.key === "bidding") {
     return [
-      total,
       completed,
-      { label: "Live", count: milestone.liveBids ?? 0, onClick: onLiveBidsClick },
-      { label: "Overdue", count: milestone.overdueBids ?? 0, onClick: onBidOverdueClick },
       { label: "In process", count: milestone.inProcessBids ?? 0, onClick: onActiveClick },
+      { label: "Opening overdue", count: milestone.overdueBids ?? 0, onClick: onBidOverdueClick },
+      { label: "Live", count: milestone.liveBids ?? 0, onClick: onLiveBidsClick },
       { label: "At previous stages", count: milestone.underProcess, onClick: onUnderProcessClick },
     ];
   }
@@ -1540,6 +1559,7 @@ function getMiscellaneousCounts(files: ReturnType<typeof useAccessibleFiles>) {
     soCancelled: files.filter((file) =>
       fileSupplyOrders(file).some((order) => isYes(order.soCancelled)),
     ).length,
+    multipleSupplyOrders: files.filter((file) => fileSupplyOrders(file).length > 1).length,
   };
 }
 
@@ -1625,7 +1645,10 @@ function getAverageCycleMetric(
   getEndDate: (file: FileRecord) => string | undefined,
 ) {
   const durations = files
-    .map((file) => getDayDifference(file[startKey], getEndDate(file)))
+    .map((file) => {
+      const startDate = file[startKey];
+      return getDayDifference(typeof startDate === "string" ? startDate : undefined, getEndDate(file));
+    })
     .filter((value): value is number => value !== undefined && value >= 0);
   const average = durations.length
     ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
@@ -1717,7 +1740,13 @@ const milestoneDefinitions = [
     current: "ifaFinalDate",
     applies: (file) => isYes(file.ifa),
   },
-  { key: "cfa", label: "CFA", totalLabel: "Total files", current: "cfaDate" },
+  {
+    key: "cfa",
+    label: "CFA",
+    totalLabel: "Total files",
+    reviewed: "cfaSentDate",
+    current: "cfaDate",
+  },
   {
     key: "bidding",
     label: "Bidding",

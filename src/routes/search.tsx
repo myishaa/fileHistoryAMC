@@ -65,6 +65,10 @@ const tcecDisabledKeys: FileKey[] = [
 ];
 
 const gemDisabledKeys: FileKey[] = ["gemUndertakingDate", "gemSoNo"];
+const rfpVettingDisabledKeys: FileKey[] = [
+  "rfpVettingInitiationDate",
+  "rfpVettingApprovalDate",
+];
 const highValueDisabledKeys: FileKey[] = ["highValueMeetingDate", "highValueMinutesDate"];
 const rqaDisabledKeys: FileKey[] = ["rqaApprovalDate"];
 const ifaDisabledKeys: FileKey[] = ["ifaSentDate", "ifaFinalDate"];
@@ -80,9 +84,28 @@ const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
 const modeOptions = ["OBM", "PBM", "SBM", "LBM", "LPC"];
 const paymentModeOptions = ["Online", "Offline"];
+const defaultMilestones = [
+  "Scrutiny",
+  "High Value",
+  "Pre-TCEC",
+  "AD",
+  "R&QA",
+  "Controlled",
+  "IFA",
+  "CFA",
+  "Bidding",
+  "Post-TCEC",
+  "CNC",
+  "Supply Order",
+  "Delivery Period",
+  "Bank Guarantee",
+  "Delivery",
+  "Payment",
+];
 const defaultNoKeys: FileKey[] = [
   "dpExtension",
   "gte",
+  "rfpVetting",
   "tenderLive",
   "refloat",
   "rst",
@@ -136,7 +159,15 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "currency", label: "Currency" },
       { key: "exchangeRate", label: "Exchange rate", type: "number" },
       { key: "gte", label: "GTE", options: yesNo },
+      { key: "mode", label: "Mode", options: modeOptions },
       { key: "tcec", label: "TCEC (YES/NO)", options: yesNoCaps },
+      { key: "gem", label: "GeM (yes/no)", options: yesNo },
+      { key: "highValue", label: "High value (Yes/No)", options: yesNo },
+      { key: "rqa", label: "R&QA (Yes/No)", options: yesNo },
+      { key: "ifa", label: "IFA (Yes/No)", options: yesNo },
+      { key: "psb", label: "PSB (Yes/No)", options: yesNo },
+      { key: "bg", label: "BG (Yes/No)", options: yesNo },
+      { key: "rfpVetting", label: "RFP vetting", options: yesNo },
       { key: "fileDetailsRemark1", label: "File details Remark-1", type: "textarea" },
       { key: "fileDetailsRemark2", label: "File details Remark-2", type: "textarea" },
     ],
@@ -171,21 +202,15 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
   {
     title: "Approval block",
     fields: [
-      { key: "mode", label: "Mode", options: modeOptions },
-      { key: "gem", label: "GeM (yes/no)", options: yesNo },
-      { key: "highValue", label: "High value (Yes/No)", options: yesNo },
       { key: "ad", label: "AD (Yes/No)", options: yesNo },
-      { key: "rqa", label: "R&QA (Yes/No)", options: yesNo },
-      { key: "ifa", label: "IFA (Yes/No)", options: yesNo },
-      { key: "psb", label: "PSB (Yes/No)", options: yesNo },
-      { key: "bg", label: "BG (Yes/No)", options: yesNo },
       { key: "highValueMeetingDate", label: "High value meeting date", type: "date" },
       { key: "highValueMinutesDate", label: "High value minutes date", type: "date" },
       { key: "adVettingDate", label: "AD Vetting date", type: "date" },
       { key: "rqaApprovalDate", label: "R&QA approval date", type: "date" },
       { key: "ifaSentDate", label: "IFA sent date", type: "date" },
       { key: "ifaFinalDate", label: "IFA final date", type: "date" },
-      { key: "cfaDate", label: "CFA date", type: "date" },
+      { key: "cfaSentDate", label: "CFA sent date", type: "date" },
+      { key: "cfaDate", label: "CFA approval date", type: "date" },
       { key: "approvalRemark1", label: "Approval Remark-1", type: "textarea" },
       { key: "approvalRemark2", label: "Approval Remark-2", type: "textarea" },
     ],
@@ -194,6 +219,8 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
     title: "Bidding details",
     fields: [
       { key: "gemUndertakingDate", label: "GeM undertaking date", type: "date" },
+      { key: "rfpVettingInitiationDate", label: "RFP vetting initiation", type: "date" },
+      { key: "rfpVettingApprovalDate", label: "RFP vetting approval", type: "date" },
       { key: "tenderLive", label: "Tender Live (Yes/No)", options: yesNo },
       { key: "bidDate", label: "Bid date", type: "date" },
       { key: "bidOpeningDate", label: "Bid opening Date", type: "date" },
@@ -355,8 +382,6 @@ function SearchPage() {
   );
 
   const [yearFilter, setYearFilter] = useState("");
-  const [imms, setImms] = useState("");
-  const [immsFilled, setImmsFilled] = useState(false);
   const [indentor, setIndentor] = useState("");
   const [divisionFilter, setDivisionFilter] = useState(search.division ?? "");
   const [valueFrom, setValueFrom] = useState("");
@@ -365,21 +390,21 @@ function SearchPage() {
   const [revenueOnly, setRevenueOnly] = useState(false);
   const [description, setDescription] = useState("");
   const [firm, setFirm] = useState("");
-  const [invitedFirmCount, setInvitedFirmCount] = useState("");
-  const [bidderFirmCount, setBidderFirmCount] = useState("");
+  const [selectedModes, setSelectedModes] = useState<string[]>([]);
   const [highValue, setHighValue] = useState(false);
   const [gte, setGte] = useState(false);
   const [ad, setAd] = useState(false);
   const [rqa, setRqa] = useState(false);
+  const [ifaFilter, setIfaFilter] = useState(false);
+  const [psbFilter, setPsbFilter] = useState(false);
+  const [bgFilter, setBgFilter] = useState(false);
+  const [rfpVettingFilter, setRfpVettingFilter] = useState(false);
   const [refloat, setRefloat] = useState(false);
   const [cnc, setCnc] = useState(false);
   const [tcec, setTcec] = useState(false);
-  const [tenderLive, setTenderLive] = useState(false);
-  const [soNo, setSoNo] = useState("");
-  const [gemSoNo, setGemSoNo] = useState("");
   const [dpFrom, setDpFrom] = useState("");
   const [dpTo, setDpTo] = useState("");
-  const [dpExtension, setDpExtension] = useState(false);
+  const [rstFilter, setRstFilter] = useState(false);
   const [demandCancelledFilter, setDemandCancelledFilter] = useState(false);
   const [soCancelledFilter, setSoCancelledFilter] = useState(false);
   const [freeText, setFreeText] = useState("");
@@ -418,8 +443,6 @@ function SearchPage() {
 
   const hasFilters =
     yearFilter ||
-    imms ||
-    immsFilled ||
     indentor ||
     divisionFilter ||
     valueFrom ||
@@ -428,21 +451,21 @@ function SearchPage() {
     revenueOnly ||
     description ||
     firm ||
-    invitedFirmCount ||
-    bidderFirmCount ||
+    selectedModes.length > 0 ||
     highValue ||
     gte ||
     ad ||
     rqa ||
+    ifaFilter ||
+    psbFilter ||
+    bgFilter ||
+    rfpVettingFilter ||
     refloat ||
     cnc ||
     tcec ||
-    tenderLive ||
-    soNo ||
-    gemSoNo ||
     dpFrom ||
     dpTo ||
-    dpExtension ||
+    rstFilter ||
     demandCancelledFilter ||
     soCancelledFilter ||
     freeText ||
@@ -457,19 +480,24 @@ function SearchPage() {
       if (yearFilter && !includesText(file.year, yearFilter)) return false;
       if (search.dashboardFilter && !matchesDashboardFilter(file, search.dashboardFilter))
         return false;
-      if (imms && !includesText(file.imms, imms)) return false;
-      if (immsFilled && !hasAny(file, ["imms"])) return false;
       if (indentor && !includesText(file.indentor, indentor)) return false;
       if (divisionFilter && !includesText(file.division, divisionFilter)) return false;
       if (description && !includesText(file.demandDescription, description)) return false;
       if (firm && !fileSupplyOrders(file).some((order) => includesText(order.firm, firm)))
         return false;
-      if (invitedFirmCount && !matchesFirmCount(file.invitedFirms, invitedFirmCount)) return false;
-      if (bidderFirmCount && !matchesFirmCount(file.bidderFirms, bidderFirmCount)) return false;
+      if (
+        selectedModes.length > 0 &&
+        !selectedModes.includes((file.mode ?? "").trim().toUpperCase())
+      )
+        return false;
       if (highValue && !isYes(file.highValue)) return false;
       if (gte && !isYes(file.gte)) return false;
       if (ad && !isYes(file.ad)) return false;
       if (rqa && !isYes(file.rqa)) return false;
+      if (ifaFilter && !isYes(file.ifa)) return false;
+      if (psbFilter && !isYes(file.psb)) return false;
+      if (bgFilter && !isYes(file.bg)) return false;
+      if (rfpVettingFilter && !isYes(file.rfpVetting)) return false;
       if (
         refloat &&
         !isYes(file.refloat) &&
@@ -483,13 +511,7 @@ function SearchPage() {
         return false;
       if (cnc && !hasAny(file, ["cncDate", "cncApprovalDate"])) return false;
       if (tcec && !isTcecFile(file)) return false;
-      if (tenderLive && !isYes(file.tenderLive)) return false;
-      if (soNo && !fileSupplyOrders(file).some((order) => includesText(order.soNo, soNo)))
-        return false;
-      if (gemSoNo && !fileSupplyOrders(file).some((order) => includesText(order.gemSoNo, gemSoNo)))
-        return false;
-      if (dpExtension && !fileSupplyOrders(file).some((order) => isYes(order.dpExtension)))
-        return false;
+      if (rstFilter && !isYes(file.rst)) return false;
       if (
         demandCancelledFilter &&
         !fileSupplyOrders(file).some((order) => isYes(order.demandCancelled))
@@ -526,8 +548,6 @@ function SearchPage() {
     files,
     yearFilter,
     search.dashboardFilter,
-    imms,
-    immsFilled,
     indentor,
     divisionFilter,
     valueFrom,
@@ -536,21 +556,21 @@ function SearchPage() {
     revenueOnly,
     description,
     firm,
-    invitedFirmCount,
-    bidderFirmCount,
+    selectedModes,
     highValue,
     gte,
     ad,
     rqa,
+    ifaFilter,
+    psbFilter,
+    bgFilter,
+    rfpVettingFilter,
     refloat,
     cnc,
     tcec,
-    tenderLive,
-    soNo,
-    gemSoNo,
     dpFrom,
     dpTo,
-    dpExtension,
+    rstFilter,
     demandCancelledFilter,
     soCancelledFilter,
     freeText,
@@ -582,6 +602,11 @@ function SearchPage() {
       current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
     );
   };
+  const toggleModeFilter = (mode: string, checked: boolean) => {
+    setSelectedModes((current) =>
+      checked ? Array.from(new Set([...current, mode])) : current.filter((item) => item !== mode),
+    );
+  };
   const saveTableDefaultFields = () => {
     if (selectedTableColumnKeys.length === 0) {
       alert("Select at least one table field to save as default.");
@@ -608,8 +633,6 @@ function SearchPage() {
 
   const clearAll = () => {
     setYearFilter("");
-    setImms("");
-    setImmsFilled(false);
     setIndentor("");
     setDivisionFilter("");
     setValueFrom("");
@@ -618,21 +641,21 @@ function SearchPage() {
     setRevenueOnly(false);
     setDescription("");
     setFirm("");
-    setInvitedFirmCount("");
-    setBidderFirmCount("");
+    setSelectedModes([]);
     setHighValue(false);
     setGte(false);
     setAd(false);
     setRqa(false);
+    setIfaFilter(false);
+    setPsbFilter(false);
+    setBgFilter(false);
+    setRfpVettingFilter(false);
     setRefloat(false);
     setCnc(false);
     setTcec(false);
-    setTenderLive(false);
-    setSoNo("");
-    setGemSoNo("");
     setDpFrom("");
     setDpTo("");
-    setDpExtension(false);
+    setRstFilter(false);
     setDemandCancelledFilter(false);
     setSoCancelledFilter(false);
     setFreeText("");
@@ -709,13 +732,6 @@ function SearchPage() {
             </datalist>
           </FilterGroup>
 
-          <FilterGroup label="IMMS">
-            <FilterInput value={imms} onChange={setImms} placeholder="IMMS no." />
-            <div className="mt-2">
-              <CheckFilter label="IMMS" checked={immsFilled} onChange={setImmsFilled} />
-            </div>
-          </FilterGroup>
-
           <FilterGroup label="Indentor">
             <FilterInput value={indentor} onChange={setIndentor} placeholder="Indentor" />
           </FilterGroup>
@@ -762,22 +778,17 @@ function SearchPage() {
             <FilterInput value={firm} onChange={setFirm} placeholder="Firm" />
           </FilterGroup>
 
-          <FilterGroup label="Invited firms">
-            <FilterInput
-              type="number"
-              value={invitedFirmCount}
-              onChange={setInvitedFirmCount}
-              placeholder="No. of firms"
-            />
-          </FilterGroup>
-
-          <FilterGroup label="Bidders">
-            <FilterInput
-              type="number"
-              value={bidderFirmCount}
-              onChange={setBidderFirmCount}
-              placeholder="No. of bidders"
-            />
+          <FilterGroup label="Bidding mode">
+            <div className="grid grid-cols-2 gap-2">
+              {modeOptions.map((mode) => (
+                <CheckFilter
+                  key={mode}
+                  label={mode}
+                  checked={selectedModes.includes(mode)}
+                  onChange={(checked) => toggleModeFilter(mode, checked)}
+                />
+              ))}
+            </div>
           </FilterGroup>
 
           <div className="grid grid-cols-2 gap-2 border-t border-border pt-4">
@@ -785,20 +796,19 @@ function SearchPage() {
             <CheckFilter label="GTE" checked={gte} onChange={setGte} />
             <CheckFilter label="AD" checked={ad} onChange={setAd} />
             <CheckFilter label="R&QA" checked={rqa} onChange={setRqa} />
+            <CheckFilter label="IFA" checked={ifaFilter} onChange={setIfaFilter} />
+            <CheckFilter label="PSB" checked={psbFilter} onChange={setPsbFilter} />
+            <CheckFilter label="BG" checked={bgFilter} onChange={setBgFilter} />
+            <CheckFilter
+              label="RFP vetting"
+              checked={rfpVettingFilter}
+              onChange={setRfpVettingFilter}
+            />
             <CheckFilter label="Refloat" checked={refloat} onChange={setRefloat} />
             <CheckFilter label="CNC" checked={cnc} onChange={setCnc} />
             <CheckFilter label="TCEC" checked={tcec} onChange={setTcec} />
-            <CheckFilter label="Tender live" checked={tenderLive} onChange={setTenderLive} />
-            <CheckFilter label="DP extension" checked={dpExtension} onChange={setDpExtension} />
+            <CheckFilter label="RST" checked={rstFilter} onChange={setRstFilter} />
           </div>
-
-          <FilterGroup label="S.O. No.">
-            <FilterInput value={soNo} onChange={setSoNo} placeholder="S.O. No." />
-          </FilterGroup>
-
-          <FilterGroup label="GeM S.O. No.">
-            <FilterInput value={gemSoNo} onChange={setGemSoNo} placeholder="GeM S.O. No." />
-          </FilterGroup>
 
           <FilterGroup label="D.P. period">
             <div className="grid grid-cols-2 gap-2">
@@ -1239,6 +1249,7 @@ function EditModal({
   const rqaIsNo = isNo(formWithLockedYear.rqa);
   const ifaIsNo = isNo(formWithLockedYear.ifa);
   const bgIsNo = isNo(formWithLockedYear.bg);
+  const rfpVettingIsNo = isNo(formWithLockedYear.rfpVetting);
   const refloatIsNo = isNo(formWithLockedYear.refloat);
   const update = (key: FileKey, value: string) => {
     if (key === "year") return;
@@ -1325,6 +1336,7 @@ function EditModal({
                       (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
                       (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
                       (bgIsNo && bgDisabledKeys.includes(field.key)) ||
+                      (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
                       (refloatIsNo && refloatDisabledKeys.includes(field.key))
                     }
                     onChange={(value) => update(field.key, value)}
@@ -1591,6 +1603,13 @@ function applyConditionalRules(form: Record<FileKey, string>) {
       bgReturnDate: "",
     };
   }
+  if (isNo(next.rfpVetting)) {
+    next = {
+      ...next,
+      rfpVettingInitiationDate: "",
+      rfpVettingApprovalDate: "",
+    };
+  }
   if (isNo(next.refloat)) {
     next = {
       ...next,
@@ -1836,7 +1855,7 @@ const milestoneDefinitions = [
     current: "ifaFinalDate",
     applies: (file) => isYes(file.ifa),
   },
-  { key: "cfa", previous: "ifaFinalDate", current: "cfaDate" },
+  { key: "cfa", previous: "ifaFinalDate", reviewed: "cfaSentDate", current: "cfaDate" },
   { key: "bidding", previous: "cfaDate", current: "biddingStageOver" },
   {
     key: "postTcec",
@@ -1867,6 +1886,11 @@ const milestoneDefinitions = [
   current: FileKey | SupplyOrderKey;
   applies?: (file: FileRecord) => boolean;
 }>;
+
+function getConfiguredMilestones(milestones: string[] | undefined) {
+  const values = (milestones ?? []).map((item) => item.trim()).filter(Boolean);
+  return values.length ? values : defaultMilestones;
+}
 
 function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
   if (milestone.reviewed) {
@@ -2184,6 +2208,7 @@ function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter === "miscSoCancelled") {
     return fileSupplyOrders(file).some((order) => isYes(order.soCancelled));
   }
+  if (filter === "miscMultipleSupplyOrders") return fileSupplyOrders(file).length > 1;
   if (filter === "scrutinyCompleted") return hasAny(file, ["scrutinyCompletionDate"]);
   if (filter === "scrutinyUnderProgress") return !hasAny(file, ["scrutinyDate"]);
   if (filter === "preTcecCompleted")

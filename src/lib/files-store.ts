@@ -32,6 +32,7 @@ export type FileRecord = {
   ifa?: string;
   psb?: string;
   bg?: string;
+  rfpVetting?: string;
   highValueMeetingDate?: string;
   highValueMinutesDate?: string;
   preTcecDate?: string;
@@ -41,8 +42,11 @@ export type FileRecord = {
   rqaApprovalDate?: string;
   ifaSentDate?: string;
   ifaFinalDate?: string;
+  cfaSentDate?: string;
   cfaDate?: string;
   gemUndertakingDate?: string;
+  rfpVettingInitiationDate?: string;
+  rfpVettingApprovalDate?: string;
   tenderLive?: string;
   bidDate?: string;
   bidOpeningDate?: string;
