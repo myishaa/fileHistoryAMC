@@ -8,7 +8,7 @@ import {
   useSettings,
 } from "@/lib/files-store";
 import { formatThousandsAndLakhs, getInrAmount, hasAmount, parseAmount } from "@/lib/money";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, FileSpreadsheet, FileText, Search } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   beforeLoad: () => {
@@ -17,6 +17,7 @@ export const Route = createFileRoute("/")({
 });
 
 type DashboardTab = "snapshot" | "status" | "analytics" | "finance";
+type StatusActionMode = "pdf" | "excel" | "search";
 type SummarySubMetric = { label: string; value: number | string; searchFilter?: string };
 type FinanceSplitValue = { capital: string; revenue: string };
 type SummaryMetricValue = number | string | FinanceSplitValue | SummarySubMetric[];
@@ -27,6 +28,12 @@ type SummaryStat = {
   searchFilter?: string;
 };
 
+const statusActionModes = [
+  { key: "pdf", label: "PDF", icon: FileText },
+  { key: "excel", label: "Excel", icon: FileSpreadsheet },
+  { key: "search", label: "Search file", icon: Search },
+] satisfies Array<{ key: StatusActionMode; label: string; icon: typeof Search }>;
+
 export function Dashboard() {
   const files = useAccessibleFiles();
   const divisions = useAccessibleDivisions();
@@ -34,6 +41,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [selectedDivision, setSelectedDivision] = useState("all");
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTab>("status");
+  const [statusActionMode, setStatusActionMode] = useState<StatusActionMode>("search");
   const selectedDivisionIsAccessible =
     selectedDivision === "all" || divisions.some((division) => division.name === selectedDivision);
   const activeDivision = selectedDivisionIsAccessible ? selectedDivision : "all";
@@ -181,6 +189,22 @@ export function Dashboard() {
       },
     });
   };
+  const handleStatusFilter = (dashboardFilter: string) => {
+    if (statusActionMode === "search") {
+      openSearchFilter(dashboardFilter);
+      return;
+    }
+
+    const exportFiles = dashboardFiles.filter((file) =>
+      matchesDashboardFilter(file, dashboardFilter),
+    );
+    if (statusActionMode === "excel") {
+      exportStatusFilesToExcel(exportFiles, dashboardFilter);
+      return;
+    }
+
+    printStatusFilesToPdf(exportFiles, dashboardFilter);
+  };
 
   return (
     <div className="space-y-6">
@@ -310,9 +334,34 @@ export function Dashboard() {
                   Pending files at each clearance stage
                 </p>
               </div>
-              <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-right">
-                <div className="text-[11px] font-medium text-muted-foreground">Total files</div>
-                <div className="text-lg font-semibold tabular-nums">{dashboardFiles.length}</div>
+              <div className="flex flex-wrap items-end justify-end gap-2">
+                <div className="flex rounded-md border border-border bg-secondary/40 p-1">
+                  {statusActionModes.map((mode) => {
+                    const Icon = mode.icon;
+                    const selected = statusActionMode === mode.key;
+                    return (
+                      <button
+                        key={mode.key}
+                        type="button"
+                        onClick={() => setStatusActionMode(mode.key)}
+                        className={
+                          "flex h-8 items-center gap-1.5 rounded px-2 text-xs font-medium transition " +
+                          (selected
+                            ? "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:bg-accent hover:text-foreground")
+                        }
+                        aria-pressed={selected}
+                      >
+                        <Icon className="size-3.5" />
+                        {mode.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-right">
+                  <div className="text-[11px] font-medium text-muted-foreground">Total files</div>
+                  <div className="text-lg font-semibold tabular-nums">{dashboardFiles.length}</div>
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -324,9 +373,9 @@ export function Dashboard() {
                       milestone={milestone}
                       index={index}
                       isLast={false}
-                      onValidClick={() => openSearchFilter("deliveryPeriodValid")}
-                      onExpiredClick={() => openSearchFilter("deliveryPeriodExpired")}
-                      onExtendedClick={() => openSearchFilter("deliveryPeriodExtended")}
+                      onValidClick={() => handleStatusFilter("deliveryPeriodValid")}
+                      onExpiredClick={() => handleStatusFilter("deliveryPeriodExpired")}
+                      onExtendedClick={() => handleStatusFilter("deliveryPeriodExtended")}
                     />
                   );
                 }
@@ -338,8 +387,8 @@ export function Dashboard() {
                       milestone={milestone}
                       index={index}
                       isLast={false}
-                      onCompletedClick={() => openSearchFilter("deliveryCompleted")}
-                      onDueClick={() => openSearchFilter("deliveryDue")}
+                      onCompletedClick={() => handleStatusFilter("deliveryCompleted")}
+                      onDueClick={() => handleStatusFilter("deliveryDue")}
                     />
                   );
                 }
@@ -350,17 +399,17 @@ export function Dashboard() {
                     milestone={milestone}
                     index={index}
                     isLast={false}
-                    onTotalClick={() => openSearchFilter(`milestoneTotal:${milestone.key}`)}
+                    onTotalClick={() => handleStatusFilter(`milestoneTotal:${milestone.key}`)}
                     onUnderProcessClick={() =>
-                      openSearchFilter(`milestoneUnderProcess:${milestone.key}`)
+                      handleStatusFilter(`milestoneUnderProcess:${milestone.key}`)
                     }
-                    onActiveClick={() => openSearchFilter(`milestoneActive:${milestone.key}`)}
-                    onReviewedClick={() => openSearchFilter(`milestoneReviewed:${milestone.key}`)}
-                    onPendingClick={() => openSearchFilter(`milestonePending:${milestone.key}`)}
-                    onClearedClick={() => openSearchFilter(`milestoneCleared:${milestone.key}`)}
-                    onLiveBidsClick={() => openSearchFilter("liveBids")}
-                    onBidOverdueClick={() => openSearchFilter("bidOverdue")}
-                    onLiveSupplyOrdersClick={() => openSearchFilter("liveSupplyOrders")}
+                    onActiveClick={() => handleStatusFilter(`milestoneActive:${milestone.key}`)}
+                    onReviewedClick={() => handleStatusFilter(`milestoneReviewed:${milestone.key}`)}
+                    onPendingClick={() => handleStatusFilter(`milestonePending:${milestone.key}`)}
+                    onClearedClick={() => handleStatusFilter(`milestoneCleared:${milestone.key}`)}
+                    onLiveBidsClick={() => handleStatusFilter("liveBids")}
+                    onBidOverdueClick={() => handleStatusFilter("bidOverdue")}
+                    onLiveSupplyOrdersClick={() => handleStatusFilter("liveSupplyOrders")}
                   />
                 );
               })}
@@ -372,22 +421,22 @@ export function Dashboard() {
                   {
                     label: "LD",
                     count: miscellaneousCounts.ld,
-                    onClick: () => openSearchFilter("miscLd"),
+                    onClick: () => handleStatusFilter("miscLd"),
                   },
                   {
                     label: "Demand cancelled",
                     count: miscellaneousCounts.demandCancelled,
-                    onClick: () => openSearchFilter("miscDemandCancelled"),
+                    onClick: () => handleStatusFilter("miscDemandCancelled"),
                   },
                   {
                     label: "S.O. cancelled",
                     count: miscellaneousCounts.soCancelled,
-                    onClick: () => openSearchFilter("miscSoCancelled"),
+                    onClick: () => handleStatusFilter("miscSoCancelled"),
                   },
                   {
                     label: "Multiple S.O.",
                     count: miscellaneousCounts.multipleSupplyOrders,
-                    onClick: () => openSearchFilter("miscMultipleSupplyOrders"),
+                    onClick: () => handleStatusFilter("miscMultipleSupplyOrders"),
                   },
                 ]}
               />
@@ -1305,9 +1354,17 @@ function getStatusMetrics({
     ];
   }
 
-  if (milestone.key === "payment" || milestone.key === "bankGuarantee") {
+  if (milestone.key === "bankGuarantee") {
     return [
       total,
+      completed,
+      { label: milestone.pendingLabel, count: milestone.pending, onClick: onPendingClick },
+      previous,
+    ];
+  }
+
+  if (milestone.key === "payment") {
+    return [
       completed,
       { label: milestone.pendingLabel, count: milestone.pending, onClick: onPendingClick },
       previous,
@@ -1647,7 +1704,10 @@ function getAverageCycleMetric(
   const durations = files
     .map((file) => {
       const startDate = file[startKey];
-      return getDayDifference(typeof startDate === "string" ? startDate : undefined, getEndDate(file));
+      return getDayDifference(
+        typeof startDate === "string" ? startDate : undefined,
+        getEndDate(file),
+      );
     })
     .filter((value): value is number => value !== undefined && value >= 0);
   const average = durations.length
@@ -2204,8 +2264,356 @@ function hasSupplyOrderDate(order: SupplyOrderDetail) {
   return hasFilledString(order.soDate);
 }
 
+const statusExportHeaders = ["Division", "Indentor", "Demand description", "Last status", "Date"];
+
+const dashboardFilterTitles: Record<string, string> = {
+  deliveryCompleted: "Delivery - Completed",
+  deliveryDue: "Delivery - Due",
+  deliveryPeriodValid: "Delivery Period - Valid",
+  deliveryPeriodExpired: "Delivery Period - Expired",
+  deliveryPeriodExtended: "Delivery Period - Extended",
+  liveBids: "Bidding - Live",
+  bidOverdue: "Bidding - Opening overdue",
+  liveSupplyOrders: "Supply Order - Live",
+  miscLd: "Miscellaneous - LD",
+  miscDemandCancelled: "Miscellaneous - Demand cancelled",
+  miscSoCancelled: "Miscellaneous - S.O. cancelled",
+  miscMultipleSupplyOrders: "Miscellaneous - Multiple S.O.",
+};
+
+const fileDateFields = [
+  { key: "receivedDate", label: "Received" },
+  { key: "scrutinyDate", label: "Scrutiny" },
+  { key: "scrutinyResponseDate", label: "Scrutiny response" },
+  { key: "scrutinyCompletionDate", label: "Scrutiny completion" },
+  { key: "immsDate", label: "Controlling" },
+  { key: "highValueMeetingDate", label: "High Value meeting" },
+  { key: "highValueMinutesDate", label: "High Value minutes" },
+  { key: "preTcecDate", label: "Pre-TCEC" },
+  { key: "preTcecMinutesDate", label: "Pre-TCEC minutes" },
+  { key: "adVettingDate", label: "AD vetting" },
+  { key: "rqaApprovalDate", label: "R&QA approval" },
+  { key: "ifaSentDate", label: "IFA sent" },
+  { key: "ifaFinalDate", label: "IFA final" },
+  { key: "cfaSentDate", label: "CFA sent" },
+  { key: "cfaDate", label: "CFA" },
+  { key: "gemUndertakingDate", label: "GEM undertaking" },
+  { key: "rfpVettingInitiationDate", label: "RFP vetting initiation" },
+  { key: "rfpVettingApprovalDate", label: "RFP vetting approval" },
+  { key: "bidDate", label: "Bid" },
+  { key: "bidOpeningDate", label: "Bid opening" },
+  { key: "refloatBiddingDate", label: "Refloat bidding" },
+  { key: "refloatBidOpeningDate", label: "Refloat bid opening" },
+  { key: "postTcecDate", label: "Post-TCEC" },
+  { key: "postTcecMinutesDate", label: "Post-TCEC minutes" },
+  { key: "refloatPostTcecDate", label: "Refloat Post-TCEC" },
+  { key: "refloatPostTcecMinutesDate", label: "Refloat Post-TCEC minutes" },
+  { key: "cncDate", label: "CNC" },
+  { key: "cncApprovalDate", label: "CNC approval" },
+] satisfies Array<{ key: keyof FileRecord; label: string }>;
+
+const supplyOrderDateFields = [
+  { key: "soDate", label: "Supply Order" },
+  { key: "dpDate", label: "Delivery period" },
+  { key: "bgValidityDate", label: "BG validity" },
+  { key: "revisedDp", label: "Revised DP" },
+  { key: "materialReceiptDate", label: "Material receipt" },
+  { key: "paymentDate", label: "Payment" },
+  { key: "bgReturnDate", label: "BG return" },
+] satisfies Array<{ key: keyof SupplyOrderDetail; label: string }>;
+
 function isPaymentDue(file: FileRecord) {
-  return hasFilledField(file, "materialReceiptDate") && !hasFilledField(file, "paymentDate");
+  return fileSupplyOrders(file).some(
+    (order) => hasFilledString(order.materialReceiptDate) && !hasFilledString(order.paymentDate),
+  );
+}
+
+function matchesDashboardFilter(file: FileRecord, filter: string) {
+  if (filter.startsWith("mode:")) return (file.mode ?? "").trim().toUpperCase() === filter.slice(5);
+  if (filter.startsWith("manualMilestoneCurrent:")) {
+    return file.currentMilestone === filter.slice("manualMilestoneCurrent:".length);
+  }
+  if (filter.startsWith("manualMilestoneCompleted:")) {
+    return Boolean(
+      file.completedMilestones?.includes(filter.slice("manualMilestoneCompleted:".length)),
+    );
+  }
+  if (filter === "totalFiles") return true;
+  if (filter === "demandsControlled") return hasAny(file, ["imms"]);
+  if (filter === "tcecFiles") return isYes(file.tcec);
+  if (filter === "nonTcecFiles") return isNo(file.tcec);
+  if (filter === "highValueFiles") return isYes(file.highValue);
+  if (filter === "adYes") return isYes(file.ad);
+  if (filter === "rqaVetting") return isYes(file.rqa);
+  if (filter === "ifaConcurrence") return isYes(file.ifa);
+  if (filter === "liveBids") return isFileTenderLive(file);
+  if (filter === "bidOverdue") return isBidOverdue(file);
+  if (filter === "supplyOrders") return hasAny(file, ["soDate"]);
+  if (filter === "liveSupplyOrders") return isLiveSupplyOrder(file);
+  if (filter === "bgToBeReceived") return isBgToBeReceived(file);
+  if (filter === "bgToBeReturned") return isBgToBeReturned(file);
+  if (filter === "dpExtension") return isYes(file.dpExtension);
+  if (filter === "dpExpired") return isDpExpired(file);
+  if (filter === "deliveryOverdue") return isDeliveryOverdue(file);
+  if (filter === "deliveryCompleted") return isDeliveryCompleted(file);
+  if (filter === "deliveryDue") return isDeliveryDue(file);
+  if (filter === "deliveryPeriodValid") return isDeliveryPeriodValid(file);
+  if (filter === "deliveryPeriodExpired") return isDeliveryPeriodExpired(file);
+  if (filter === "deliveryPeriodExtended") return isDeliveryPeriodExtended(file);
+  if (filter === "paymentDue") return isPaymentDue(file);
+  if (filter === "miscLd") return fileSupplyOrders(file).some((order) => isYes(order.ld));
+  if (filter === "miscDemandCancelled") {
+    return fileSupplyOrders(file).some((order) => isYes(order.demandCancelled));
+  }
+  if (filter === "miscSoCancelled") {
+    return fileSupplyOrders(file).some((order) => isYes(order.soCancelled));
+  }
+  if (filter === "miscMultipleSupplyOrders") return fileSupplyOrders(file).length > 1;
+  if (filter === "scrutinyCompleted") return hasAny(file, ["scrutinyCompletionDate"]);
+  if (filter === "scrutinyUnderProgress") return !hasAny(file, ["scrutinyDate"]);
+  if (filter === "preTcecCompleted")
+    return isYes(file.tcec) && hasAny(file, ["preTcecMinutesDate"]);
+  if (filter === "preTcecRemaining")
+    return isYes(file.tcec) && !hasAny(file, ["preTcecMinutesDate"]);
+  if (filter === "highValueCompleted") return hasAny(file, ["highValueMinutesDate"]);
+  if (filter === "highValueRemaining") return hasAny(file, ["highValueMeetingDate"]);
+  if (filter === "adCompleted") return hasAny(file, ["adVettingDate"]);
+  if (filter === "adRemaining")
+    return hasAny(file, ["preTcecDate"]) && !hasAny(file, ["adVettingDate"]);
+  if (filter === "rqaCompleted") return hasAny(file, ["rqaApprovalDate"]);
+  if (filter === "rqaRemaining") return isYes(file.rqa) && !hasAny(file, ["rqaApprovalDate"]);
+  if (filter === "ifaCompleted") return hasAny(file, ["ifaFinalDate"]);
+  if (filter === "ifaRemaining") return hasAny(file, ["ifaSentDate"]);
+  if (filter === "cfaCompleted") return hasAny(file, ["cfaDate"]);
+  if (filter.startsWith("milestoneTotal:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(15));
+    if (!milestone) return true;
+    return milestone.key === "bankGuarantee"
+      ? isBankGuaranteeEligible(file)
+      : isMilestoneApplicable(file, milestone);
+  }
+  if (filter.startsWith("milestoneUnderProcess:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(22));
+    return milestone
+      ? isMilestoneApplicable(file, milestone) && !isEligibleMilestone(file, milestone)
+      : true;
+  }
+  if (filter.startsWith("milestoneActive:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(16));
+    if (!milestone) return true;
+    if (milestone.key === "bidding") {
+      return isManualActiveMilestone(file, milestone) && !isFileTenderLive(file);
+    }
+    return isManualActiveMilestone(file, milestone);
+  }
+  if (filter.startsWith("milestone:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(10));
+    return milestone ? isPendingMilestone(file, milestone) : true;
+  }
+  if (filter.startsWith("milestoneReviewed:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(18));
+    return milestone ? isMilestoneReviewed(file, milestone) : true;
+  }
+  if (filter.startsWith("milestonePending:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(17));
+    return milestone ? isPendingMilestone(file, milestone) : true;
+  }
+  if (filter.startsWith("milestoneCleared:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(17));
+    if (!milestone) return true;
+    return milestone.key === "bankGuarantee"
+      ? isBankGuaranteeEligible(file) && hasMilestoneDate(file, milestone.current)
+      : isClearedMilestone(file, milestone);
+  }
+  if (filter.startsWith("milestoneEligible:")) {
+    const milestone = milestoneDefinitions.find((item) => item.key === filter.slice(18));
+    return milestone ? isEligibleMilestone(file, milestone) : true;
+  }
+  if (filter === "soCompleted") return hasAny(file, ["soNo"]);
+  if (filter === "soRemaining") return !hasAny(file, ["soNo"]);
+  return true;
+}
+
+function exportStatusFilesToExcel(files: FileRecord[], dashboardFilter: string) {
+  const rows = getStatusExportRows(files);
+  const title = getDashboardFilterTitle(dashboardFilter);
+  const worksheet = `
+    <html>
+      <head><meta charset="utf-8" /></head>
+      <body>
+        <table>
+          <thead>
+            <tr><th colspan="5">${escapeHtml(title)}</th></tr>
+            <tr>${statusExportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) =>
+                  `<tr>${[
+                    row.division,
+                    row.indentor,
+                    row.demandDescription,
+                    row.lastDateDescription,
+                    row.lastDate,
+                  ]
+                    .map((value) => `<td>${escapeHtml(value)}</td>`)
+                    .join("")}</tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+  const blob = new Blob([worksheet], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${getExportFileName(title)}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function printStatusFilesToPdf(files: FileRecord[], dashboardFilter: string) {
+  const rows = getStatusExportRows(files);
+  const title = getDashboardFilterTitle(dashboardFilter);
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    window.alert("Please allow pop-ups to generate the PDF report.");
+    return;
+  }
+
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+          h1 { font-size: 18px; margin: 0 0 4px; }
+          p { margin: 0 0 16px; color: #4b5563; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; }
+          th, td { border: 1px solid #d1d5db; padding: 6px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; font-weight: 700; }
+          @media print { body { margin: 12mm; } }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title)}</h1>
+        <p>Total records: ${rows.length}</p>
+        <table>
+          <thead>
+            <tr>${statusExportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) =>
+                  `<tr>${[
+                    row.division,
+                    row.indentor,
+                    row.demandDescription,
+                    row.lastDateDescription,
+                    row.lastDate,
+                  ]
+                    .map((value) => `<td>${escapeHtml(value)}</td>`)
+                    .join("")}</tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
+function getStatusExportRows(files: FileRecord[]) {
+  return files.map((file) => {
+    const lastDate = getLastFilledDate(file);
+    return {
+      division: file.division ?? "",
+      indentor: file.indentor ?? "",
+      demandDescription: file.demandDescription ?? "",
+      lastDateDescription: lastDate?.label ?? "",
+      lastDate: lastDate?.value ?? "",
+    };
+  });
+}
+
+function getLastFilledDate(file: FileRecord) {
+  const fileDates = fileDateFields
+    .map((field) => ({ label: field.label, value: String(file[field.key] ?? "") }))
+    .filter((field) => hasDate(field.value));
+  const supplyOrderDates = fileSupplyOrders(file).flatMap((order, index) =>
+    supplyOrderDateFields
+      .map((field) => ({
+        label: `${field.label}${fileSupplyOrders(file).length > 1 ? ` (S.O. ${index + 1})` : ""}`,
+        value: String(order[field.key] ?? ""),
+      }))
+      .filter((field) => hasDate(field.value)),
+  );
+
+  return [...fileDates, ...supplyOrderDates].sort(
+    (a, b) => (parseLocalDateTime(b.value) ?? 0) - (parseLocalDateTime(a.value) ?? 0),
+  )[0];
+}
+
+function getDashboardFilterTitle(filter: string) {
+  if (filter.startsWith("milestoneTotal:")) {
+    return `${getMilestoneTitle(filter.slice(15))} - Total files`;
+  }
+  if (filter.startsWith("milestoneUnderProcess:")) {
+    return `${getMilestoneTitle(filter.slice(22))} - At previous stage`;
+  }
+  if (filter.startsWith("milestoneActive:")) {
+    return `${getMilestoneTitle(filter.slice(16))} - Active`;
+  }
+  if (filter.startsWith("milestoneReviewed:")) {
+    return `${getMilestoneTitle(filter.slice(18))} - Reviewed`;
+  }
+  if (filter.startsWith("milestonePending:")) {
+    return `${getMilestoneTitle(filter.slice(17))} - Pending`;
+  }
+  if (filter.startsWith("milestoneCleared:")) {
+    return `${getMilestoneTitle(filter.slice(17))} - Completed`;
+  }
+  return dashboardFilterTitles[filter] ?? "Status export";
+}
+
+function getMilestoneTitle(key: string) {
+  return milestoneDefinitions.find((milestone) => milestone.key === key)?.label ?? key;
+}
+
+function getExportFileName(title: string) {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function escapeHtml(value: string | number | undefined) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function isClearedMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  return isMilestoneApplicable(file, milestone) && isMilestoneComplete(file, milestone);
+}
+
+function hasAny(file: FileRecord, keys: Array<keyof FileRecord>) {
+  return keys.some((key) => hasFilledField(file, key));
 }
 
 function isDateInRangeToday(startDate: string | undefined, endDate: string | undefined) {
