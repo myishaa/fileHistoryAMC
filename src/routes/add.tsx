@@ -186,6 +186,33 @@ function normalizeCompletedMilestones(value: string[] | undefined) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
+function getAutoCompletedMilestones(
+  milestones: string[],
+  applicableMilestones: Set<string>,
+  form: FormState,
+) {
+  if (!isYes(form.biddingStageOver)) return [];
+  const biddingMilestone = milestones.find(
+    (milestone) =>
+      normalizeMilestoneName(milestone) === "bidding" && applicableMilestones.has(milestone),
+  );
+  return biddingMilestone ? [biddingMilestone] : [];
+}
+
+function getCompletedMilestonesForSave(
+  milestones: string[],
+  applicableMilestones: Set<string>,
+  completedMilestones: string[],
+  form: FormState,
+) {
+  const autoCompleted = getAutoCompletedMilestones(milestones, applicableMilestones, form);
+  return milestones.filter(
+    (milestone) =>
+      applicableMilestones.has(milestone) &&
+      (completedMilestones.includes(milestone) || autoCompleted.includes(milestone)),
+  );
+}
+
 function createSupplyOrdersFromFile(file: FileRecord | undefined): SupplyOrderDetail[] {
   const rows = normalizeSupplyOrderRows(file);
   if (!file) return resizeSupplyOrders(rows, clampSupplyOrderCount(empty.noOfSo));
@@ -782,6 +809,12 @@ function AddFilePage() {
     const cleanedSupplyOrders = cleanSupplyOrderRows(
       resizeSupplyOrders(supplyOrders, supplyOrderCount),
     );
+    const completedMilestonesForSave = getCompletedMilestonesForSave(
+      milestoneOptions,
+      applicableMilestones,
+      completedMilestones,
+      formWithLockedYear,
+    );
     const payload = {
       ...toFilePayload(
         clearDivisionDisabledFields(applyConditionalRules(formWithLockedYear), divisions),
@@ -792,7 +825,9 @@ function AddFilePage() {
       invitedFirms: cleanFirmRows(firmDetails.invitedFirms),
       bidderFirms: cleanFirmRows(firmDetails.bidderFirms),
       currentMilestone: currentMilestone || undefined,
-      completedMilestones: completedMilestones.length ? completedMilestones : undefined,
+      completedMilestones: completedMilestonesForSave.length
+        ? completedMilestonesForSave
+        : undefined,
     };
     const milestoneErrors = validateMilestoneCompletionConsistency(payload, milestoneOptions);
     if (milestoneErrors.length) {
@@ -930,6 +965,11 @@ function AddFilePage() {
               applicableMilestones={applicableMilestones}
               currentMilestone={currentMilestone}
               completedMilestones={completedMilestones}
+              autoCompletedMilestones={getAutoCompletedMilestones(
+                milestoneOptions,
+                applicableMilestones,
+                formWithLockedYear,
+              )}
               disabled={false}
               lockFilledFields={milestonesLocked}
               lockControl={renderSectionUnlockButton("Milestones")}
@@ -1574,6 +1614,7 @@ function MilestonesBlock({
   applicableMilestones,
   currentMilestone,
   completedMilestones,
+  autoCompletedMilestones,
   disabled,
   lockFilledFields,
   lockControl,
@@ -1584,13 +1625,15 @@ function MilestonesBlock({
   applicableMilestones: Set<string>;
   currentMilestone: string;
   completedMilestones: string[];
+  autoCompletedMilestones: string[];
   disabled: boolean;
   lockFilledFields: boolean;
   lockControl: ReactNode;
   onCurrentChange: (value: string) => void;
   onCompletedChange: (value: string[]) => void;
 }) {
-  const completedSet = new Set(completedMilestones);
+  const completedSet = new Set([...completedMilestones, ...autoCompletedMilestones]);
+  const autoCompletedSet = new Set(autoCompletedMilestones);
   const applicableMilestoneList = milestones.filter((milestone) =>
     applicableMilestones.has(milestone),
   );
@@ -1605,6 +1648,7 @@ function MilestonesBlock({
   const toggleCompleted = (milestone: string) => {
     if (disabled) return;
     if (!applicableMilestones.has(milestone)) return;
+    if (autoCompletedSet.has(milestone)) return;
     const next = new Set(completedSet);
     if (next.has(milestone)) {
       next.delete(milestone);
@@ -1643,7 +1687,7 @@ function MilestonesBlock({
             </p>
           </div>
           <span className="rounded-md border border-border bg-secondary/40 px-2 py-1 text-xs tabular-nums text-muted-foreground">
-            {completedMilestones.length}/{applicableCount}
+            {completedSet.size}/{applicableCount}
           </span>
         </div>
         <div className="overflow-hidden rounded-md border border-border bg-background">
@@ -1654,10 +1698,12 @@ function MilestonesBlock({
           </div>
           {applicableMilestoneList.map((milestone) => {
             const isCompleted = completedSet.has(milestone);
+            const isAutoCompleted = autoCompletedSet.has(milestone);
             const isCurrent = currentMilestone === milestone;
             const currentDisabled =
               disabled || isCompleted || (lockFilledFields && hasFilledValue(currentMilestone));
-            const completedDisabled = disabled || (lockFilledFields && isCompleted);
+            const completedDisabled =
+              disabled || isAutoCompleted || (lockFilledFields && isCompleted);
             return (
               <div
                 key={milestone}
