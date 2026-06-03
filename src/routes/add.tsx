@@ -45,6 +45,7 @@ const empty = {
   currency: "INR",
   exchangeRate: "1",
   gte: "No",
+  fileType: "",
   valueCapitalSelected: "",
   valueRevenueSelected: "",
   tcec: "",
@@ -231,10 +232,7 @@ const tcecDisabledKeys: FieldKey[] = [
 ];
 
 const gemDisabledKeys: FieldKey[] = ["gemUndertakingDate", "gemSoNo"];
-const rfpVettingDisabledKeys: FieldKey[] = [
-  "rfpVettingInitiationDate",
-  "rfpVettingApprovalDate",
-];
+const rfpVettingDisabledKeys: FieldKey[] = ["rfpVettingInitiationDate", "rfpVettingApprovalDate"];
 const highValueDisabledKeys: FieldKey[] = ["highValueMeetingDate", "highValueMinutesDate"];
 const rqaDisabledKeys: FieldKey[] = ["rqaApprovalDate"];
 const ifaDisabledKeys: FieldKey[] = ["ifaSentDate", "ifaFinalDate"];
@@ -250,6 +248,7 @@ const tcecCommitteeKeys: FieldKey[] = [
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
 const modeOptions = ["OBM", "PBM", "SBM", "LBM", "LPC"];
+const fileTypeOptions = ["General", "AMC", "MPC"];
 const paymentModeOptions = ["Online", "Offline"];
 type FirmDetailsState = {
   invitedFirms: FirmDetail[];
@@ -316,6 +315,7 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "gte", label: "GTE", options: yesNo },
       { key: "receivedDate", label: "Received date", type: "date" },
       { key: "mode", label: "Mode (OBM/PBM/SBM/LBM/LPC)", options: modeOptions },
+      { key: "fileType", label: "File type" },
       { key: "tcec", label: "TCEC (YES/NO)", options: yesNoCaps },
       { key: "gem", label: "GeM (yes/no)", options: yesNo },
       { key: "highValue", label: "High value (Yes/No)", options: yesNo },
@@ -692,6 +692,17 @@ function AddFilePage() {
           );
         }
 
+        if (field.key === "fileType") {
+          return (
+            <FileTypeField
+              key={field.key}
+              value={formWithLockedYear.fileType}
+              disabled={lockFilledFields && hasFilledValue(formWithLockedYear.fileType)}
+              onChange={(value) => update("fileType", value)}
+            />
+          );
+        }
+
         return (
           <DynamicField
             key={field.key}
@@ -777,7 +788,10 @@ function AddFilePage() {
           <button
             type="button"
             onClick={() =>
-              navigate({ to: "/search", search: { dashboardFilter: undefined, division: undefined } })
+              navigate({
+                to: "/search",
+                search: { dashboardFilter: undefined, division: undefined },
+              })
             }
             className="mt-4 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
           >
@@ -1063,70 +1077,68 @@ function FirmDetailsBlock({
       <div className="space-y-3">
         {rows.map((row, index) => {
           const rowHasValue =
-            hasFilledValue(row.firmName) ||
-            hasFilledValue(row.city) ||
-            hasFilledValue(row.emailId);
+            hasFilledValue(row.firmName) || hasFilledValue(row.city) || hasFilledValue(row.emailId);
           const firmNameDisabled = disabled || (lockFilledFields && hasFilledValue(row.firmName));
           const cityDisabled = disabled || (lockFilledFields && hasFilledValue(row.city));
           const emailDisabled = disabled || (lockFilledFields && hasFilledValue(row.emailId));
           const rowActionDisabled = disabled || (lockFilledFields && rowHasValue);
           return (
-          <div
-            key={index}
-            className="grid grid-cols-1 gap-3 rounded-md border border-border bg-secondary/20 p-3 md:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
-          >
-            <label className="flex items-center gap-2 md:pt-7">
-              <input
-                type="checkbox"
-                checked={selectedRows.has(index)}
-                onChange={(event) => toggleSelectedRow(index, event.target.checked)}
-                disabled={rowActionDisabled}
-                className="size-4 rounded border-border accent-primary"
-              />
-              <span className="text-xs text-muted-foreground md:sr-only">Select firm</span>
-            </label>
-            <label className="block">
-              <div className="mb-1.5 text-xs font-medium">Firm name</div>
-              <input
-                value={row.firmName ?? ""}
-                onChange={(event) => onChange(activeTab, index, "firmName", event.target.value)}
-                disabled={firmNameDisabled}
-                className={inputCls + disabledCls(firmNameDisabled)}
-              />
-            </label>
-            <label className="block">
-              <div className="mb-1.5 text-xs font-medium">City</div>
-              <input
-                value={row.city ?? ""}
-                onChange={(event) => onChange(activeTab, index, "city", event.target.value)}
-                disabled={cityDisabled}
-                className={inputCls + disabledCls(cityDisabled)}
-              />
-            </label>
-            <label className="block">
-              <div className="mb-1.5 text-xs font-medium">Email id</div>
-              <input
-                type="email"
-                value={row.emailId ?? ""}
-                onChange={(event) => onChange(activeTab, index, "emailId", event.target.value)}
-                disabled={emailDisabled}
-                className={inputCls + disabledCls(emailDisabled)}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => deleteFirm(index)}
-              disabled={rowActionDisabled}
-              aria-label="Delete firm"
-              title="Delete firm"
-              className={
-                "inline-flex size-9 items-center justify-center rounded-md border border-destructive/30 bg-background text-destructive hover:bg-destructive/10 md:self-end" +
-                disabledCls(rowActionDisabled)
-              }
+            <div
+              key={index}
+              className="grid grid-cols-1 gap-3 rounded-md border border-border bg-secondary/20 p-3 md:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
             >
-              <Trash2 className="size-4" />
-            </button>
-          </div>
+              <label className="flex items-center gap-2 md:pt-7">
+                <input
+                  type="checkbox"
+                  checked={selectedRows.has(index)}
+                  onChange={(event) => toggleSelectedRow(index, event.target.checked)}
+                  disabled={rowActionDisabled}
+                  className="size-4 rounded border-border accent-primary"
+                />
+                <span className="text-xs text-muted-foreground md:sr-only">Select firm</span>
+              </label>
+              <label className="block">
+                <div className="mb-1.5 text-xs font-medium">Firm name</div>
+                <input
+                  value={row.firmName ?? ""}
+                  onChange={(event) => onChange(activeTab, index, "firmName", event.target.value)}
+                  disabled={firmNameDisabled}
+                  className={inputCls + disabledCls(firmNameDisabled)}
+                />
+              </label>
+              <label className="block">
+                <div className="mb-1.5 text-xs font-medium">City</div>
+                <input
+                  value={row.city ?? ""}
+                  onChange={(event) => onChange(activeTab, index, "city", event.target.value)}
+                  disabled={cityDisabled}
+                  className={inputCls + disabledCls(cityDisabled)}
+                />
+              </label>
+              <label className="block">
+                <div className="mb-1.5 text-xs font-medium">Email id</div>
+                <input
+                  type="email"
+                  value={row.emailId ?? ""}
+                  onChange={(event) => onChange(activeTab, index, "emailId", event.target.value)}
+                  disabled={emailDisabled}
+                  className={inputCls + disabledCls(emailDisabled)}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => deleteFirm(index)}
+                disabled={rowActionDisabled}
+                aria-label="Delete firm"
+                title="Delete firm"
+                className={
+                  "inline-flex size-9 items-center justify-center rounded-md border border-destructive/30 bg-background text-destructive hover:bg-destructive/10 md:self-end" +
+                  disabledCls(rowActionDisabled)
+                }
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
           );
         })}
       </div>
@@ -2358,6 +2370,38 @@ function SoValueField({
           }
           className={inputCls + disabledCls(fieldDisabled)}
         />
+      </div>
+    </Field>
+  );
+}
+
+function FileTypeField({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Field label="File type">
+      <div className={`grid max-w-md grid-cols-1 gap-2 sm:grid-cols-3 ${disabledCls(disabled)}`}>
+        {fileTypeOptions.map((option) => (
+          <label
+            key={option}
+            className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <input
+              type="checkbox"
+              checked={value === option}
+              disabled={disabled}
+              onChange={(event) => onChange(event.target.checked ? option : "")}
+              className="size-4 rounded border-input"
+            />
+            {option}
+          </label>
+        ))}
       </div>
     </Field>
   );

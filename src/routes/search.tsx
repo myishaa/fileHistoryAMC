@@ -65,10 +65,7 @@ const tcecDisabledKeys: FileKey[] = [
 ];
 
 const gemDisabledKeys: FileKey[] = ["gemUndertakingDate", "gemSoNo"];
-const rfpVettingDisabledKeys: FileKey[] = [
-  "rfpVettingInitiationDate",
-  "rfpVettingApprovalDate",
-];
+const rfpVettingDisabledKeys: FileKey[] = ["rfpVettingInitiationDate", "rfpVettingApprovalDate"];
 const highValueDisabledKeys: FileKey[] = ["highValueMeetingDate", "highValueMinutesDate"];
 const rqaDisabledKeys: FileKey[] = ["rqaApprovalDate"];
 const ifaDisabledKeys: FileKey[] = ["ifaSentDate", "ifaFinalDate"];
@@ -83,6 +80,7 @@ const tcecCommitteeKeys: FileKey[] = [
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
 const modeOptions = ["OBM", "PBM", "SBM", "LBM", "LPC"];
+const fileTypeOptions = ["General", "AMC", "MPC"];
 const paymentModeOptions = ["Online", "Offline"];
 const defaultMilestones = [
   "Scrutiny",
@@ -160,6 +158,7 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "exchangeRate", label: "Exchange rate", type: "number" },
       { key: "gte", label: "GTE", options: yesNo },
       { key: "mode", label: "Mode", options: modeOptions },
+      { key: "fileType", label: "File type", options: fileTypeOptions },
       { key: "tcec", label: "TCEC (YES/NO)", options: yesNoCaps },
       { key: "gem", label: "GeM (yes/no)", options: yesNo },
       { key: "highValue", label: "High value (Yes/No)", options: yesNo },
@@ -391,6 +390,7 @@ function SearchPage() {
   const [description, setDescription] = useState("");
   const [firm, setFirm] = useState("");
   const [selectedModes, setSelectedModes] = useState<string[]>([]);
+  const [selectedFileTypes, setSelectedFileTypes] = useState<string[]>([]);
   const [highValue, setHighValue] = useState(false);
   const [gte, setGte] = useState(false);
   const [ad, setAd] = useState(false);
@@ -452,6 +452,7 @@ function SearchPage() {
     description ||
     firm ||
     selectedModes.length > 0 ||
+    selectedFileTypes.length > 0 ||
     highValue ||
     gte ||
     ad ||
@@ -489,6 +490,8 @@ function SearchPage() {
         selectedModes.length > 0 &&
         !selectedModes.includes((file.mode ?? "").trim().toUpperCase())
       )
+        return false;
+      if (selectedFileTypes.length > 0 && !selectedFileTypes.includes((file.fileType ?? "").trim()))
         return false;
       if (highValue && !isYes(file.highValue)) return false;
       if (gte && !isYes(file.gte)) return false;
@@ -557,6 +560,7 @@ function SearchPage() {
     description,
     firm,
     selectedModes,
+    selectedFileTypes,
     highValue,
     gte,
     ad,
@@ -607,6 +611,13 @@ function SearchPage() {
       checked ? Array.from(new Set([...current, mode])) : current.filter((item) => item !== mode),
     );
   };
+  const toggleFileTypeFilter = (fileType: string, checked: boolean) => {
+    setSelectedFileTypes((current) =>
+      checked
+        ? Array.from(new Set([...current, fileType]))
+        : current.filter((item) => item !== fileType),
+    );
+  };
   const saveTableDefaultFields = () => {
     if (selectedTableColumnKeys.length === 0) {
       alert("Select at least one table field to save as default.");
@@ -642,6 +653,7 @@ function SearchPage() {
     setDescription("");
     setFirm("");
     setSelectedModes([]);
+    setSelectedFileTypes([]);
     setHighValue(false);
     setGte(false);
     setAd(false);
@@ -786,6 +798,19 @@ function SearchPage() {
                   label={mode}
                   checked={selectedModes.includes(mode)}
                   onChange={(checked) => toggleModeFilter(mode, checked)}
+                />
+              ))}
+            </div>
+          </FilterGroup>
+
+          <FilterGroup label="File type">
+            <div className="grid grid-cols-2 gap-2">
+              {fileTypeOptions.map((fileType) => (
+                <CheckFilter
+                  key={fileType}
+                  label={fileType}
+                  checked={selectedFileTypes.includes(fileType)}
+                  onChange={(checked) => toggleFileTypeFilter(fileType, checked)}
                 />
               ))}
             </div>
@@ -2169,6 +2194,12 @@ function isDateAfterToday(date: string | undefined) {
 }
 
 function matchesDashboardFilter(file: FileRecord, filter: string) {
+  if (filter.startsWith("attribute:")) {
+    const [, key, value] = filter.split(":");
+    const fieldValue = String(file[key as keyof FileRecord] ?? "");
+    if (value === "yes") return isYes(fieldValue);
+    if (value === "no") return isNo(fieldValue);
+  }
   if (filter.startsWith("mode:")) return (file.mode ?? "").trim().toUpperCase() === filter.slice(5);
   if (filter.startsWith("manualMilestoneCurrent:")) {
     return file.currentMilestone === filter.slice("manualMilestoneCurrent:".length);

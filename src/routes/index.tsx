@@ -19,6 +19,7 @@ import {
   type SupplyOrderDetail,
   useAccessibleDivisions,
   useAccessibleFiles,
+  useActiveUser,
   useSettings,
 } from "@/lib/files-store";
 import { formatThousandsAndLakhs, getInrAmount, hasAmount, parseAmount } from "@/lib/money";
@@ -63,6 +64,7 @@ export function Dashboard() {
   const files = useAccessibleFiles();
   const divisions = useAccessibleDivisions();
   const settings = useSettings();
+  const activeUser = useActiveUser();
   const navigate = useNavigate();
   const [selectedDivision, setSelectedDivision] = useState("all");
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTab>("status");
@@ -90,6 +92,17 @@ export function Dashboard() {
   );
   const statusFlow = getMilestoneFlow(dashboardFiles);
   const miscellaneousCounts = getMiscellaneousCounts(dashboardFiles);
+  const statusPageExportTitle =
+    activeUser?.role === "admin"
+      ? "ASL Buildup"
+      : activeDivision === "all"
+        ? dashboardDivisions.map((division) => division.name).join(", ") || "Status"
+        : activeDivision;
+  const statusPageExportRows = getStatusPageExportRows(
+    statusFlow,
+    miscellaneousCounts,
+    dashboardFiles.length,
+  );
   const analytics = getAnalyticsSummary(dashboardFiles);
   const financeTotals = {
     allocatedCapital: dashboardDivisions.reduce(
@@ -154,24 +167,7 @@ export function Dashboard() {
     financeTotals.allocatedRevenue,
   );
 
-  const topSummaryStats: SummaryStat[] = [
-    {
-      label: "TCEC",
-      value: [
-        {
-          label: "TCEC",
-          value: dashboardFiles.filter((file) => isYes(file.tcec)).length,
-          searchFilter: "tcecFiles",
-        },
-        {
-          label: "Non TCEC",
-          value: dashboardFiles.filter((file) => isNo(file.tcec)).length,
-          searchFilter: "nonTcecFiles",
-        },
-      ],
-      hint: "TCEC and non TCEC files",
-    },
-  ];
+  const topSummaryStats: SummaryStat[] = getAttributeSummaryStats(dashboardFiles);
 
   const compactSummaryStats: SummaryStat[] = [];
 
@@ -204,6 +200,42 @@ export function Dashboard() {
     },
   ];
   const financeBoxTitleClass = "text-sm font-extrabold text-foreground";
+  const financeExportTitle =
+    activeDivision === "all"
+      ? "Finance summary - All divisions"
+      : `Finance summary - ${activeDivision}`;
+  const financeExportRows = [
+    {
+      category: "Allocated",
+      capital: formatCurrency(financeTotals.allocatedCapital),
+      revenue: formatCurrency(financeTotals.allocatedRevenue),
+      notes: "Allocated amount",
+    },
+    {
+      category: "Projected",
+      capital: formatCurrency(financeTotals.projectedCapital),
+      revenue: formatCurrency(financeTotals.projectedRevenue),
+      notes: `Against allocation: Capital ${formatPercent(capitalProjectedPercent)}, Revenue ${formatPercent(
+        revenueProjectedPercent,
+      )}`,
+    },
+    {
+      category: "Booked",
+      capital: formatCurrency(financeTotals.bookedCapital),
+      revenue: formatCurrency(financeTotals.bookedRevenue),
+      notes: `Against allocation: Capital ${formatPercent(capitalBookedPercent)}, Revenue ${formatPercent(
+        revenueBookedPercent,
+      )}`,
+    },
+    {
+      category: "Committed",
+      capital: formatCurrency(financeTotals.spentCapital),
+      revenue: formatCurrency(financeTotals.spentRevenue),
+      notes: `Against allocation: Capital ${formatPercent(capitalSpentPercent)}, Revenue ${formatPercent(
+        revenueSpentPercent,
+      )}`,
+    },
+  ];
 
   const openSearchFilter = (dashboardFilter: string) => {
     navigate({
@@ -360,6 +392,28 @@ export function Dashboard() {
                 </p>
               </div>
               <div className="flex flex-wrap items-end justify-end gap-2">
+                <div className="flex rounded-md border border-border bg-secondary/40 p-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      printStatusPageRowsToPdf(statusPageExportRows, statusPageExportTitle)
+                    }
+                    className="flex h-8 items-center gap-1.5 rounded px-2 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  >
+                    <FileText className="size-3.5" />
+                    Export PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      exportStatusPageRowsToExcel(statusPageExportRows, statusPageExportTitle)
+                    }
+                    className="flex h-8 items-center gap-1.5 rounded px-2 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  >
+                    <FileSpreadsheet className="size-3.5" />
+                    Export Excel
+                  </button>
+                </div>
                 <div className="flex rounded-md border border-border bg-secondary/40 p-1">
                   {statusActionModes.map((mode) => {
                     const Icon = mode.icon;
@@ -602,6 +656,24 @@ export function Dashboard() {
               <div>
                 <h2 className="text-sm font-bold">Finance</h2>
                 <p className="text-xs text-muted-foreground">Allocated and booked amounts</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => printFinanceRowsToPdf(financeExportRows, financeExportTitle)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium hover:bg-accent"
+                >
+                  <FileText className="size-3.5" />
+                  PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportFinanceRowsToExcel(financeExportRows, financeExportTitle)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium hover:bg-accent"
+                >
+                  <FileSpreadsheet className="size-3.5" />
+                  Excel
+                </button>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1882,6 +1954,50 @@ function getModeCounts(files: ReturnType<typeof useAccessibleFiles>) {
   return modes.map((name) => ({ name, count: counts[name] ?? 0 }));
 }
 
+const snapshotAttributeDefinitions = [
+  { key: "tcec", label: "TCEC", yesLabel: "TCEC", noLabel: "Non TCEC" },
+  { key: "gte", label: "GTE", yesLabel: "GTE", noLabel: "Non GTE" },
+  { key: "gem", label: "GeM", yesLabel: "GeM", noLabel: "Non GeM" },
+  { key: "highValue", label: "High Value", yesLabel: "High Value", noLabel: "Non High Value" },
+  { key: "ad", label: "AD", yesLabel: "AD", noLabel: "Non AD" },
+  { key: "rqa", label: "R&QA", yesLabel: "R&QA", noLabel: "Non R&QA" },
+  { key: "ifa", label: "IFA", yesLabel: "IFA", noLabel: "Non IFA" },
+  { key: "psb", label: "PSB", yesLabel: "PSB", noLabel: "Non PSB" },
+  { key: "bg", label: "BG", yesLabel: "BG", noLabel: "Non BG" },
+  {
+    key: "rfpVetting",
+    label: "RFP vetting",
+    yesLabel: "RFP vetting",
+    noLabel: "Non RFP vetting",
+  },
+  { key: "refloat", label: "Refloat", yesLabel: "Refloat", noLabel: "Non Refloat" },
+  { key: "rst", label: "RST", yesLabel: "RST", noLabel: "Non RST" },
+] satisfies Array<{
+  key: keyof FileRecord;
+  label: string;
+  yesLabel: string;
+  noLabel: string;
+}>;
+
+function getAttributeSummaryStats(files: ReturnType<typeof useAccessibleFiles>): SummaryStat[] {
+  return snapshotAttributeDefinitions.map((attribute) => ({
+    label: attribute.label,
+    value: [
+      {
+        label: attribute.yesLabel,
+        value: files.filter((file) => isYes(String(file[attribute.key] ?? ""))).length,
+        searchFilter: `attribute:${attribute.key}:yes`,
+      },
+      {
+        label: attribute.noLabel,
+        value: files.filter((file) => isNo(String(file[attribute.key] ?? ""))).length,
+        searchFilter: `attribute:${attribute.key}:no`,
+      },
+    ],
+    hint: `${attribute.yesLabel} and ${attribute.noLabel} files`,
+  }));
+}
+
 function getMiscellaneousCounts(files: ReturnType<typeof useAccessibleFiles>) {
   return {
     ld: files.filter((file) => fileSupplyOrders(file).some((order) => isYes(order.ld))).length,
@@ -2737,6 +2853,21 @@ function hasSupplyOrderDate(order: SupplyOrderDetail) {
 }
 
 const statusExportHeaders = ["Division", "Indentor", "Demand description", "Last status", "Date"];
+const statusPageExportHeaders = ["Section", "Metric", "Count"];
+const financeExportHeaders = ["Category", "Capital", "Revenue", "Notes"];
+
+type StatusPageExportRow = {
+  section: string;
+  metric: string;
+  count: number;
+};
+
+type FinanceExportRow = {
+  category: string;
+  capital: string;
+  revenue: string;
+  notes: string;
+};
 
 const dashboardFilterTitles: Record<string, string> = {
   deliveryCompleted: "Delivery - Completed",
@@ -2906,6 +3037,151 @@ function matchesDashboardFilter(file: FileRecord, filter: string) {
   return true;
 }
 
+function getStatusPageExportRows(
+  statusFlow: ReturnType<typeof getMilestoneFlow>,
+  miscellaneousCounts: ReturnType<typeof getMiscellaneousCounts>,
+  totalFiles: number,
+): StatusPageExportRow[] {
+  const noop = () => undefined;
+  const rows: StatusPageExportRow[] = [
+    { section: "Overall", metric: "Total files", count: totalFiles },
+  ];
+
+  statusFlow.forEach((milestone) => {
+    if ("valid" in milestone) {
+      rows.push(
+        { section: milestone.label, metric: "Valid", count: milestone.valid },
+        { section: milestone.label, metric: "Expired", count: milestone.expired },
+        { section: milestone.label, metric: "Extended", count: milestone.extended },
+      );
+      return;
+    }
+
+    if ("due" in milestone) {
+      rows.push(
+        { section: milestone.label, metric: "Completed", count: milestone.completed },
+        { section: milestone.label, metric: "Pending", count: milestone.due },
+      );
+      return;
+    }
+
+    getStatusMetrics({
+      milestone,
+      onTotalClick: noop,
+      onUnderProcessClick: noop,
+      onActiveClick: noop,
+      onReviewedClick: noop,
+      onPendingClick: noop,
+      onClearedClick: noop,
+      onLiveBidsClick: noop,
+      onBidOverdueClick: noop,
+      onLiveSupplyOrdersClick: noop,
+    }).forEach((metric) => {
+      rows.push({ section: milestone.label, metric: metric.label, count: metric.count });
+    });
+  });
+
+  rows.push(
+    { section: "Miscellaneous", metric: "LD", count: miscellaneousCounts.ld },
+    {
+      section: "Miscellaneous",
+      metric: "Demand cancelled",
+      count: miscellaneousCounts.demandCancelled,
+    },
+    { section: "Miscellaneous", metric: "S.O. cancelled", count: miscellaneousCounts.soCancelled },
+    {
+      section: "Miscellaneous",
+      metric: "Multiple S.O.",
+      count: miscellaneousCounts.multipleSupplyOrders,
+    },
+  );
+
+  return rows;
+}
+
+function exportStatusPageRowsToExcel(rows: StatusPageExportRow[], title: string) {
+  const worksheet = `
+    <html>
+      <head><meta charset="utf-8" /></head>
+      <body>
+        <table>
+          <thead>
+            <tr><th colspan="3">${escapeHtml(title)}</th></tr>
+            <tr>${statusPageExportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) =>
+                  `<tr>${[row.section, row.metric, row.count]
+                    .map((value) => `<td>${escapeHtml(value)}</td>`)
+                    .join("")}</tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+  const blob = new Blob([worksheet], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${getExportFileName(title)}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function printStatusPageRowsToPdf(rows: StatusPageExportRow[], title: string) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    window.alert("Please allow pop-ups to generate the PDF report.");
+    return;
+  }
+
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+          h1 { font-size: 18px; margin: 0 0 16px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #d1d5db; padding: 7px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; font-weight: 700; }
+          td:nth-child(3), th:nth-child(3) { text-align: right; }
+          @media print { body { margin: 12mm; } }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title)}</h1>
+        <table>
+          <thead>
+            <tr>${statusPageExportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) =>
+                  `<tr>${[row.section, row.metric, row.count]
+                    .map((value) => `<td>${escapeHtml(value)}</td>`)
+                    .join("")}</tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
 function exportStatusFilesToExcel(files: FileRecord[], dashboardFilter: string) {
   const rows = getStatusExportRows(files);
   const title = getDashboardFilterTitle(dashboardFilter);
@@ -2929,6 +3205,41 @@ function exportStatusFilesToExcel(files: FileRecord[], dashboardFilter: string) 
                     row.lastDateDescription,
                     row.lastDate,
                   ]
+                    .map((value) => `<td>${escapeHtml(value)}</td>`)
+                    .join("")}</tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+  const blob = new Blob([worksheet], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${getExportFileName(title)}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportFinanceRowsToExcel(rows: FinanceExportRow[], title: string) {
+  const worksheet = `
+    <html>
+      <head><meta charset="utf-8" /></head>
+      <body>
+        <table>
+          <thead>
+            <tr><th colspan="4">${escapeHtml(title)}</th></tr>
+            <tr>${financeExportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) =>
+                  `<tr>${[row.category, row.capital, row.revenue, row.notes]
                     .map((value) => `<td>${escapeHtml(value)}</td>`)
                     .join("")}</tr>`,
               )
@@ -2992,6 +3303,54 @@ function printStatusFilesToPdf(files: FileRecord[], dashboardFilter: string) {
                     row.lastDateDescription,
                     row.lastDate,
                   ]
+                    .map((value) => `<td>${escapeHtml(value)}</td>`)
+                    .join("")}</tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
+function printFinanceRowsToPdf(rows: FinanceExportRow[], title: string) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    window.alert("Please allow pop-ups to generate the PDF report.");
+    return;
+  }
+
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+          h1 { font-size: 18px; margin: 0 0 16px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #d1d5db; padding: 7px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; font-weight: 700; }
+          td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { text-align: right; }
+          @media print { body { margin: 12mm; } }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title)}</h1>
+        <table>
+          <thead>
+            <tr>${financeExportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) =>
+                  `<tr>${[row.category, row.capital, row.revenue, row.notes]
                     .map((value) => `<td>${escapeHtml(value)}</td>`)
                     .join("")}</tr>`,
               )
