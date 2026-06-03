@@ -104,7 +104,10 @@ export function validateMilestoneCompletionConsistency(
     ? configuredMilestones
     : milestoneCompletionRules.flatMap((rule) => rule.aliases.slice(0, 1));
   const completed = new Set((file.completedMilestones ?? []).map(normalizeMilestoneName));
+  const currentMilestone = normalizeMilestoneName(file.currentMilestone ?? "");
   const errors: string[] = [];
+  let hasAnyCompletionValue = false;
+  let hasIncompleteApplicableStage = false;
 
   for (const milestone of configured) {
     const rule = getMilestoneCompletionRule(milestone);
@@ -115,6 +118,8 @@ export function validateMilestoneCompletionConsistency(
       completed.has(normalizeMilestoneName(alias)),
     );
     const hasCompletionValue = rule.isComplete(file);
+    hasAnyCompletionValue ||= hasCompletionValue;
+    hasIncompleteApplicableStage ||= !hasCompletionValue;
 
     if (hasCompletionValue && !manuallyCompleted) {
       errors.push(
@@ -126,6 +131,10 @@ export function validateMilestoneCompletionConsistency(
         `${stageLabel} is marked completed manually, but ${rule.completionLabel} is missing.`,
       );
     }
+  }
+
+  if (hasAnyCompletionValue && hasIncompleteApplicableStage && !currentMilestone) {
+    errors.push("Current milestone is not selected manually.");
   }
 
   return errors;

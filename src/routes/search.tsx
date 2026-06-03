@@ -78,6 +78,10 @@ const tcecCommitteeKeys: FileKey[] = [
   "refloatPostTcecCommitteeNo",
 ];
 
+function isRemarkFieldKey(key: string) {
+  return key.toLowerCase().includes("remark");
+}
+
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
 const modeOptions = ["OBM", "PBM", "SBM", "LBM", "LPC"];
@@ -1423,14 +1427,15 @@ function EditModal({
                     disabled={
                       field.key === "year" ||
                       field.key === "tenderLive" ||
-                      (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
-                      (gemIsNo && gemDisabledKeys.includes(field.key)) ||
-                      (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
-                      (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
-                      (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
-                      (bgIsNo && bgDisabledKeys.includes(field.key)) ||
-                      (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
-                      (refloatIsNo && refloatDisabledKeys.includes(field.key))
+                      (!isRemarkFieldKey(field.key) &&
+                        ((tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
+                          (gemIsNo && gemDisabledKeys.includes(field.key)) ||
+                          (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
+                          (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
+                          (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
+                          (bgIsNo && bgDisabledKeys.includes(field.key)) ||
+                          (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
+                          (refloatIsNo && refloatDisabledKeys.includes(field.key))))
                     }
                     onChange={(value) => update(field.key, value)}
                   />

@@ -246,6 +246,10 @@ const tcecCommitteeKeys: FieldKey[] = [
   "refloatPostTcecCommitteeNo",
 ];
 
+function isRemarkFieldKey(key: string) {
+  return key.toLowerCase().includes("remark");
+}
+
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
 const modeOptions = ["OBM", "PBM", "SBM", "LBM", "LPC"];
@@ -529,19 +533,24 @@ function AddFilePage() {
 
     const focusKey = `${editingFile.id}:${activeSection.title}`;
     if (quickFocusAppliedRef.current === focusKey) return;
-    quickFocusAppliedRef.current = focusKey;
 
     window.setTimeout(() => {
-      const firstUnfilledField = getUnfilledFieldKeys(activeSection, formWithLockedYear).find(
-        (fieldKey) => quickFieldRefs.current[fieldKey],
-      );
+      const firstUnfilledField = getUnfilledFieldKeys(
+        activeSection,
+        formWithLockedYear,
+        divisions,
+      ).find((fieldKey) => {
+        const element = quickFieldRefs.current[fieldKey];
+        return element && !("disabled" in element && element.disabled);
+      });
       const target = firstUnfilledField ? quickFieldRefs.current[firstUnfilledField] : undefined;
       if (target) {
+        quickFocusAppliedRef.current = focusKey;
         target.focus();
         if ("select" in target && typeof target.select === "function") target.select();
       }
     }, 100);
-  }, [activeSection, editingFile, formWithLockedYear, quickFocus, unlockedSections]);
+  }, [activeSection, divisions, editingFile, formWithLockedYear, quickFocus, unlockedSections]);
 
   const update = (k: keyof typeof form, v: string) => {
     if (k === "year") return;
@@ -746,16 +755,17 @@ function AddFilePage() {
               field.key === "year" ||
               field.key === "uniqueCode" ||
               field.key === "tenderLive" ||
-              (lockFilledFields && hasFilledValue(formWithLockedYear[field.key])) ||
-              (field.key === "adVettingDate" && adVettingDisabled) ||
-              (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
-              (gemIsNo && gemDisabledKeys.includes(field.key)) ||
-              (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
-              (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
-              (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
-              (bgIsNo && bgDisabledKeys.includes(field.key)) ||
-              (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
-              (refloatIsNo && refloatDisabledKeys.includes(field.key))
+              (!isRemarkFieldKey(field.key) &&
+                ((lockFilledFields && hasFilledValue(formWithLockedYear[field.key])) ||
+                  (field.key === "adVettingDate" && adVettingDisabled) ||
+                  (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
+                  (gemIsNo && gemDisabledKeys.includes(field.key)) ||
+                  (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
+                  (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
+                  (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
+                  (bgIsNo && bgDisabledKeys.includes(field.key)) ||
+                  (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
+                  (refloatIsNo && refloatDisabledKeys.includes(field.key))))
             }
             onChange={(value) => update(field.key, value)}
             inputRef={(element) => {
@@ -786,6 +796,22 @@ function AddFilePage() {
     };
     const milestoneErrors = validateMilestoneCompletionConsistency(payload, milestoneOptions);
     if (milestoneErrors.length) {
+      if (options?.returnToQuickEntry) {
+        setActiveBoardSection("Milestones");
+        setUnlockedSections((current) => new Set([...current, "Milestones"]));
+        window.setTimeout(() => {
+          alert(
+            [
+              "Milestone status needs to be updated before this Quick Entry can be saved.",
+              "",
+              ...milestoneErrors,
+              "",
+              "Please update the Milestones section, then click Update.",
+            ].join("\n"),
+          );
+        }, 100);
+        return;
+      }
       alert(["Please fix milestone status before saving:", ...milestoneErrors].join("\n"));
       return;
     }
@@ -832,6 +858,11 @@ function AddFilePage() {
     }
 
     event.preventDefault();
+    const confirmed = window.confirm(
+      "Please verify the entry before saving.\n\nDo you want to save this update?",
+    );
+    if (!confirmed) return;
+
     save({ returnToQuickEntry: true });
   };
 
@@ -982,7 +1013,11 @@ function AddFilePage() {
             )}
             <button
               type="button"
-              onClick={() => save()}
+              onClick={() =>
+                save({
+                  returnToQuickEntry: Boolean(quickFocus && activeBoardSection === "Milestones"),
+                })
+              }
               className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
             >
               <Save className="size-4" /> {saved ? "Saved" : isEditing ? "Update" : "Save"}
@@ -1055,6 +1090,7 @@ function FirmDetailsBlock({
   const [selectedRows, setSelectedRows] = useState<Set<number>>(() => new Set());
   const firmInputRefs = useRef<Record<string, HTMLInputElement | HTMLButtonElement | null>>({});
   const firmQuickFocusAppliedRef = useRef("");
+  const latestFirmRowsRef = useRef(rows);
   const tabs: { key: keyof FirmDetailsState; label: string }[] = [
     { key: "invitedFirms", label: "Invited" },
     { key: "bidderFirms", label: "Bidders" },
@@ -1071,29 +1107,33 @@ function FirmDetailsBlock({
   }, [activeTab, rows.length]);
 
   useEffect(() => {
+    latestFirmRowsRef.current = rows;
+  });
+
+  useEffect(() => {
     if (!quickFocus) return;
-    const focusKey = `${activeTab}:${rows.length}:${rows
-      .map((row) => [row.firmName, row.city, row.emailId].join("|"))
-      .join("::")}`;
+    const focusKey = `firm-details:${activeTab}`;
     if (firmQuickFocusAppliedRef.current === focusKey) return;
-    firmQuickFocusAppliedRef.current = focusKey;
 
     window.setTimeout(() => {
-      if (rows.length === 0) {
+      const currentRows = latestFirmRowsRef.current;
+      if (currentRows.length === 0) {
         firmInputRefs.current.addFirm?.focus();
+        firmQuickFocusAppliedRef.current = focusKey;
         return;
       }
 
-      for (const [index, row] of rows.entries()) {
+      for (const [index, row] of currentRows.entries()) {
         for (const key of ["firmName", "city", "emailId"] as const) {
           if (!hasFilledValue(row[key])) {
             firmInputRefs.current[`${index}:${key}`]?.focus();
+            firmQuickFocusAppliedRef.current = focusKey;
             return;
           }
         }
       }
     }, 100);
-  }, [activeTab, quickFocus, rows]);
+  }, [activeTab, quickFocus, rows.length]);
 
   const toggleSelectedRow = (index: number, checked: boolean) => {
     setSelectedRows((current) => {
@@ -1293,22 +1333,25 @@ function SupplyOrdersBlock({
 }) {
   const orderFieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const orderQuickFocusAppliedRef = useRef("");
+  const latestOrdersRef = useRef(orders);
+
+  useEffect(() => {
+    latestOrdersRef.current = orders;
+  });
 
   useEffect(() => {
     if (!quickFocus) return;
-    const focusKey = orders
-      .map((order) => supplyOrderFields.map((field) => String(order[field.key] ?? "")).join("|"))
-      .join("::");
+    const focusKey = "supply-order-and-payment";
     if (orderQuickFocusAppliedRef.current === focusKey) return;
-    orderQuickFocusAppliedRef.current = focusKey;
 
     window.setTimeout(() => {
       if (!hasFilledValue(form.noOfSo)) {
         orderFieldRefs.current.noOfSo?.focus();
+        orderQuickFocusAppliedRef.current = focusKey;
         return;
       }
 
-      for (const [index, order] of orders.entries()) {
+      for (const [index, order] of latestOrdersRef.current.entries()) {
         for (const field of supplyOrderFields) {
           if (field.key === "soValueCapital") continue;
           const key = field.key as SupplyOrderKey;
@@ -1320,12 +1363,13 @@ function SupplyOrdersBlock({
           }
           if (!hasFilledValue(String(order[key] ?? ""))) {
             orderFieldRefs.current[`${index}:${key}`]?.focus();
+            orderQuickFocusAppliedRef.current = focusKey;
             return;
           }
         }
       }
     }, 100);
-  }, [bgDisabled, form.noOfSo, gemDisabled, orders, quickFocus]);
+  }, [bgDisabled, form.noOfSo, gemDisabled, orders.length, quickFocus]);
 
   return (
     <div className="space-y-5">
@@ -1377,9 +1421,10 @@ function SupplyOrdersBlock({
                   value={String(order[key] ?? "")}
                   disabled={
                     disabled ||
-                    (lockFilledFields && hasFilledValue(String(order[key] ?? ""))) ||
-                    (gemDisabled && key === "gemSoNo") ||
-                    (bgDisabled && supplyOrderBgDisabledKeys.includes(key))
+                    (!isRemarkFieldKey(key) &&
+                      ((lockFilledFields && hasFilledValue(String(order[key] ?? ""))) ||
+                        (gemDisabled && key === "gemSoNo") ||
+                        (bgDisabled && supplyOrderBgDisabledKeys.includes(key))))
                   }
                   onChange={(value) => onOrderChange(index, key, value)}
                   inputRef={(element) => {
@@ -2325,6 +2370,8 @@ function isTimelineFieldDisabled(
   form: FormState,
   divisions: ReturnType<typeof useDivisions>,
 ) {
+  if (isRemarkFieldKey(key)) return false;
+
   return (
     (key === "adVettingDate" && isDivisionAdNo(form.division, divisions)) ||
     (isNo(form.tcec) && tcecDisabledKeys.includes(key)) ||
@@ -2681,9 +2728,19 @@ function hasFilledValue(value: string | undefined) {
   return Boolean(value?.trim());
 }
 
-function getUnfilledFieldKeys(section: (typeof extraSections)[number], form: FormState) {
+function getUnfilledFieldKeys(
+  section: (typeof extraSections)[number],
+  form: FormState,
+  divisions: ReturnType<typeof useDivisions>,
+) {
   return section.fields
-    .filter((field) => !hasFilledValue(String(form[field.key] ?? "")))
+    .filter(
+      (field) =>
+        !["uniqueCode", "tenderLive"].includes(field.key) &&
+        !isRemarkFieldKey(field.key) &&
+        !isTimelineFieldDisabled(field.key, form, divisions) &&
+        !hasFilledValue(String(form[field.key] ?? "")),
+    )
     .map((field) => field.key);
 }
 
