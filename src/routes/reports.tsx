@@ -549,7 +549,6 @@ function getMilestoneStatusRows(
       isManualActiveMilestone(file, milestone),
     );
     return [
-      base("Total files", eligibleBgFiles.length),
       base(
         "Received",
         eligibleBgFiles.filter((file) => hasMilestoneDate(file, milestone.current)).length,

@@ -1,20 +1,7 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useState } from "react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
+  type Division,
   type FileRecord,
   type SupplyOrderDetail,
   useAccessibleDivisions,
@@ -48,6 +35,21 @@ type AnalyticsPanelKey =
   | "riskLoad"
   | "paymentPending"
   | "milestoneClearingTable";
+type AnalyticsTableColumn = {
+  key: string;
+  label: string;
+  group?: string;
+  align?: "left" | "right";
+  format?: (value: number | string, row: Record<string, number | string>) => string;
+  render?: (value: number | string, row: Record<string, number | string>) => ReactNode;
+};
+type AnalyticsPanel = {
+  key: AnalyticsPanelKey;
+  title: string;
+  subtitle: string;
+  columns: AnalyticsTableColumn[];
+  rows: Array<Record<string, number | string>>;
+};
 type SummarySubMetric = { label: string; value: number | string; searchFilter?: string };
 type FinanceSplitValue = { capital: string; revenue: string };
 type SummaryMetricValue = number | string | FinanceSplitValue | SummarySubMetric[];
@@ -57,17 +59,6 @@ type SummaryStat = {
   hint?: string;
   searchFilter?: string;
 };
-
-const chartColors = [
-  "hsl(var(--primary))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-  "hsl(var(--success))",
-  "hsl(var(--warning))",
-  "hsl(var(--destructive))",
-];
 
 const statusActionModes = [
   { key: "pdf", label: "PDF", icon: FileText },
@@ -120,7 +111,7 @@ export function Dashboard() {
     miscellaneousCounts,
     dashboardFiles.length,
   );
-  const analytics = getAnalyticsSummary(dashboardFiles);
+  const analytics = getAnalyticsSummary(dashboardFiles, dashboardDivisions);
   const financeTotals = {
     allocatedCapital: dashboardDivisions.reduce(
       (sum, division) => sum + (parseAmount(division.allocatedCapital) ?? 0),
@@ -210,12 +201,12 @@ export function Dashboard() {
 
   const financePercentStats = [
     {
-      label: "Projected",
+      label: "Intended",
       value: {
         capital: formatPercent(capitalProjectedPercent),
         revenue: formatPercent(revenueProjectedPercent),
       },
-      hint: "Capital / Revenue projected against allocation",
+      hint: "Capital / Revenue intended against allocation",
     },
     {
       label: "Booked",
@@ -247,7 +238,7 @@ export function Dashboard() {
       notes: "Allocated amount",
     },
     {
-      category: "Projected",
+      category: "Intended",
       capital: formatCurrency(financeTotals.projectedCapital),
       revenue: formatCurrency(financeTotals.projectedRevenue),
       notes: `Against allocation: Capital ${formatPercent(capitalProjectedPercent)}, Revenue ${formatPercent(
@@ -271,133 +262,104 @@ export function Dashboard() {
       )}`,
     },
   ];
-  const analyticsPanels: Array<{
-    key: AnalyticsPanelKey;
-    title: string;
-    subtitle: string;
-    content: ReactNode;
-  }> = [
+  const analyticsPanels: AnalyticsPanel[] = [
     {
       key: "divisionFiles",
       title: "Division ranking by files",
       subtitle: "Number of files, descending",
-      content: <AnalyticsBarChart data={analytics.divisionFileRanking} valueKey="count" />,
+      columns: getCountAnalyticsColumns("Division"),
+      rows: analytics.divisionFileRanking,
     },
     {
       key: "divisionValue",
       title: "Division ranking by value",
-      subtitle: "Total demand value",
-      content: (
-        <AnalyticsBarChart
-          data={analytics.divisionValueRanking}
-          valueKey="value"
-          valueFormatter={formatCompactCurrency}
-        />
-      ),
+      subtitle: "Intended, booked, and committed value with capital/revenue breakup",
+      columns: getDivisionValueAnalyticsColumns(),
+      rows: analytics.divisionValueRanking,
     },
     {
       key: "divisionTurnaround",
       title: "Division turnaround ranking",
       subtitle: "Average days from received date to first S.O.",
-      content: (
-        <AnalyticsBarChart
-          data={analytics.divisionTurnaroundRanking}
-          valueKey="averageDays"
-          valueFormatter={(value) => `${value}d`}
-        />
-      ),
+      columns: getAverageDaysAnalyticsColumns("Division"),
+      rows: analytics.divisionTurnaroundRanking,
     },
     {
       key: "fileDistribution",
       title: "File distribution",
       subtitle: "Share by division",
-      content: <AnalyticsPieChart data={analytics.divisionFileRanking.slice(0, 8)} />,
+      columns: getCountAnalyticsColumns("Division"),
+      rows: analytics.divisionFileRanking.slice(0, 8),
     },
     {
       key: "topFirms",
       title: "Top 20 firms by S.O. value",
       subtitle: "Supply order value, capital plus revenue",
-      content: (
-        <AnalyticsBarChart
-          data={analytics.topFirmSupplyOrders}
-          valueKey="value"
-          valueFormatter={formatCompactCurrency}
-          height={420}
-        />
-      ),
+      columns: getValueAnalyticsColumns("Firm", "S.O. value"),
+      rows: analytics.topFirmSupplyOrders,
     },
     {
       key: "indentorsByFiles",
       title: "Top 10 indentors by files",
       subtitle: "Number of files raised",
-      content: <AnalyticsBarChart data={analytics.topIndentorsByFiles} valueKey="count" />,
+      columns: getCountAnalyticsColumns("Indentor"),
+      rows: analytics.topIndentorsByFiles,
     },
     {
       key: "indentorsByValue",
       title: "Top 10 indentors by value",
       subtitle: "Total demand value",
-      content: (
-        <AnalyticsBarChart
-          data={analytics.topIndentorsByValue}
-          valueKey="value"
-          valueFormatter={formatCompactCurrency}
-        />
-      ),
+      columns: getValueAnalyticsColumns("Indentor", "Total value"),
+      rows: analytics.topIndentorsByValue,
     },
     {
       key: "milestoneClearing",
       title: "Milestones by clearing time",
       subtitle: "Average clearing time in days",
-      content: (
-        <AnalyticsLineChart data={analytics.milestoneClearingRanking} valueKey="averageDays" />
-      ),
+      columns: getAverageDaysAnalyticsColumns("Milestone"),
+      rows: analytics.milestoneClearingRanking,
     },
     {
       key: "monthlyInflow",
       title: "Monthly file inflow",
       subtitle: "Files received by month",
-      content: <AnalyticsLineChart data={analytics.monthlyFileInflow} valueKey="count" />,
+      columns: getCountAnalyticsColumns("Month"),
+      rows: analytics.monthlyFileInflow,
     },
     {
       key: "biddingMode",
       title: "Bidding mode mix",
       subtitle: "Distribution by mode",
-      content: <AnalyticsPieChart data={analytics.biddingModeMix} />,
+      columns: getCountAnalyticsColumns("Mode"),
+      rows: analytics.biddingModeMix,
     },
     {
       key: "fileValueThresholds",
       title: "File value thresholds",
       subtitle: "Number of files by total demand value",
-      content: <AnalyticsBarChart data={analytics.fileValueThresholds} valueKey="count" />,
+      columns: getCountAnalyticsColumns("Value range"),
+      rows: analytics.fileValueThresholds,
     },
     {
       key: "riskLoad",
       title: "Risk load by division",
       subtitle: "Delivery pending, expired DP, LD, or cancelled S.O.",
-      content: <AnalyticsBarChart data={analytics.divisionRiskRanking} valueKey="count" />,
+      columns: getCountAnalyticsColumns("Division"),
+      rows: analytics.divisionRiskRanking,
     },
     {
       key: "paymentPending",
       title: "Payment pending by division",
       subtitle: "Material received but payment not completed",
-      content: (
-        <AnalyticsBarChart data={analytics.divisionPaymentPendingRanking} valueKey="count" />
-      ),
+      columns: getCountAnalyticsColumns("Division"),
+      rows: analytics.divisionPaymentPendingRanking,
     },
     {
       key: "milestoneClearingTable",
       title: "Milestone clearing ranking",
       subtitle: "Slowest milestones by average clearing time",
-      content: (
-        <AnalyticsRankingTable
-          columns={[
-            { key: "name", label: "Milestone", align: "left" },
-            { key: "averageDays", label: "Avg days", format: (value) => `${value}d` },
-            { key: "sampleSize", label: "Files" },
-          ]}
-          rows={analytics.milestoneClearingRanking}
-        />
-      ),
+      columns: getAverageDaysAnalyticsColumns("Milestone"),
+      rows: analytics.milestoneClearingRanking,
     },
   ];
   const selectedAnalyticsPanel =
@@ -702,8 +664,29 @@ export function Dashboard() {
               <AnalyticsChartCard
                 title={selectedAnalyticsPanel.title}
                 subtitle={selectedAnalyticsPanel.subtitle}
+                actions={
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => printAnalyticsPanelToPdf(selectedAnalyticsPanel)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium hover:bg-accent"
+                    >
+                      Export PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportAnalyticsPanelToExcel(selectedAnalyticsPanel)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium hover:bg-accent"
+                    >
+                      Export Excel
+                    </button>
+                  </>
+                }
               >
-                {selectedAnalyticsPanel.content}
+                <AnalyticsRankingTable
+                  columns={selectedAnalyticsPanel.columns}
+                  rows={selectedAnalyticsPanel.rows}
+                />
               </AnalyticsChartCard>
             </div>
           </div>
@@ -756,7 +739,7 @@ export function Dashboard() {
                 </div>
               </div>
               <div className="rounded-lg border border-border bg-secondary/35 p-4">
-                <div className={financeBoxTitleClass}>Projected</div>
+                <div className={financeBoxTitleClass}>Intended</div>
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="rounded-md border border-border bg-card px-3 py-2.5">
                     <div className="text-[11px] text-muted-foreground">Capital</div>
@@ -1138,200 +1121,140 @@ function StatusMetricBox({
 function AnalyticsChartCard({
   title,
   subtitle,
+  actions,
   children,
 }: {
   title: string;
   subtitle: string;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
-      <div className="mb-4">
-        <h3 className="text-sm font-bold">{title}</h3>
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold">{title}</h3>
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
+        </div>
+        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
       {children}
     </div>
   );
 }
 
-function AnalyticsBarChart({
-  data,
-  valueKey,
-  valueFormatter = formatNumber,
-  height = 320,
-}: {
-  data: Array<{ name: string } & Record<string, number | string>>;
-  valueKey: string;
-  valueFormatter?: (value: number) => string;
-  height?: number;
-}) {
-  if (!data.length) {
-    return <div className="text-sm text-muted-foreground">No data available.</div>;
-  }
-
-  return (
-    <div style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 18, left: 8, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
-          <XAxis
-            type="number"
-            tickFormatter={(value) => valueFormatter(Number(value))}
-            tick={{ fontSize: 11 }}
-            stroke="hsl(var(--muted-foreground))"
-          />
-          <YAxis
-            type="category"
-            dataKey="name"
-            width={118}
-            tick={{ fontSize: 11 }}
-            stroke="hsl(var(--muted-foreground))"
-          />
-          <Tooltip
-            formatter={(value) => valueFormatter(Number(value))}
-            contentStyle={{
-              background: "hsl(var(--card))",
-              border: "1px solid hsl(var(--border))",
-              borderRadius: 6,
-              fontSize: 12,
-            }}
-          />
-          <Bar dataKey={valueKey} radius={[0, 4, 4, 0]} fill="hsl(var(--primary))" />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
+function getCountAnalyticsColumns(nameLabel: string): AnalyticsTableColumn[] {
+  return [
+    { key: "name", label: nameLabel, align: "left" },
+    { key: "count", label: "Count" },
+  ];
 }
 
-function AnalyticsPieChart({ data }: { data: Array<{ name: string; count: number }> }) {
-  if (!data.length) {
-    return <div className="text-sm text-muted-foreground">No data available.</div>;
-  }
-
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_0.9fr]">
-      <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie data={data} dataKey="count" nameKey="name" innerRadius={52} outerRadius={88}>
-              {data.map((item, index) => (
-                <Cell key={item.name} fill={chartColors[index % chartColors.length]} />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={(value) => formatNumber(Number(value))}
-              contentStyle={{
-                background: "hsl(var(--card))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: 6,
-                fontSize: 12,
-              }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="space-y-2 self-center">
-        {data.map((item, index) => (
-          <div key={item.name} className="flex items-center justify-between gap-3 text-xs">
-            <span className="flex min-w-0 items-center gap-2">
-              <span
-                className="size-2.5 shrink-0 rounded-sm"
-                style={{ backgroundColor: chartColors[index % chartColors.length] }}
-              />
-              <span className="truncate">{item.name}</span>
-            </span>
-            <span className="font-semibold tabular-nums">{item.count}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function getValueAnalyticsColumns(nameLabel: string, valueLabel: string): AnalyticsTableColumn[] {
+  return [
+    { key: "name", label: nameLabel, align: "left" },
+    { key: "value", label: valueLabel, format: (value) => formatCurrency(Number(value)) },
+  ];
 }
 
-function AnalyticsLineChart({
-  data,
-  valueKey,
-}: {
-  data: Array<{ name: string } & Record<string, number | string>>;
-  valueKey: string;
-}) {
-  if (!data.length) {
-    return <div className="text-sm text-muted-foreground">No data available.</div>;
-  }
+function getDivisionValueAnalyticsColumns(): AnalyticsTableColumn[] {
+  const currencyColumn = (
+    key: string,
+    group: string,
+    label: string,
+    allocationKey: "allocatedCapital" | "allocatedRevenue",
+    showPercent = true,
+  ): AnalyticsTableColumn => ({
+    key,
+    group,
+    label,
+    format: (value, row) =>
+      showPercent
+        ? formatLakhsValueWithPercent(Number(value), Number(row[allocationKey]))
+        : formatLakhsValue(Number(value)),
+    render: (value, row) =>
+      showPercent
+        ? renderLakhsValueWithPercent(Number(value), Number(row[allocationKey]))
+        : formatLakhsValue(Number(value)),
+  });
+  return [
+    { key: "name", label: "Division", align: "left" },
+    currencyColumn("allocatedCapital", "Total value (Lakhs)", "Capital", "allocatedCapital", false),
+    currencyColumn("allocatedRevenue", "Total value (Lakhs)", "Revenue", "allocatedRevenue", false),
+    currencyColumn("intendedCapital", "Intended (Lakhs)", "Capital", "allocatedCapital"),
+    currencyColumn("intendedRevenue", "Intended (Lakhs)", "Revenue", "allocatedRevenue"),
+    currencyColumn("bookedCapital", "Booked (Lakhs)", "Capital", "allocatedCapital"),
+    currencyColumn("bookedRevenue", "Booked (Lakhs)", "Revenue", "allocatedRevenue"),
+    currencyColumn("committedCapital", "Committed (Lakhs)", "Capital", "allocatedCapital"),
+    currencyColumn("committedRevenue", "Committed (Lakhs)", "Revenue", "allocatedRevenue"),
+  ];
+}
 
-  return (
-    <div className="h-80">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 8, right: 18, left: 4, bottom: 64 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis
-            dataKey="name"
-            interval={0}
-            angle={-35}
-            textAnchor="end"
-            tick={{ fontSize: 10 }}
-            stroke="hsl(var(--muted-foreground))"
-          />
-          <YAxis
-            tickFormatter={(value) => `${value}d`}
-            tick={{ fontSize: 11 }}
-            stroke="hsl(var(--muted-foreground))"
-          />
-          <Tooltip
-            formatter={(value) => `${formatNumber(Number(value))}d`}
-            contentStyle={{
-              background: "hsl(var(--card))",
-              border: "1px solid hsl(var(--border))",
-              borderRadius: 6,
-              fontSize: 12,
-            }}
-          />
-          <Line
-            type="monotone"
-            dataKey={valueKey}
-            stroke="hsl(var(--primary))"
-            strokeWidth={2}
-            dot={{ r: 3 }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
+function getAverageDaysAnalyticsColumns(nameLabel: string): AnalyticsTableColumn[] {
+  return [
+    { key: "name", label: nameLabel, align: "left" },
+    { key: "averageDays", label: "Avg days", format: (value) => `${value}d` },
+    { key: "sampleSize", label: "Files" },
+  ];
 }
 
 function AnalyticsRankingTable({
   columns,
   rows,
 }: {
-  columns: Array<{
-    key: string;
-    label: string;
-    align?: "left" | "right";
-    format?: (value: number | string) => string;
-  }>;
+  columns: AnalyticsTableColumn[];
   rows: Array<Record<string, number | string>>;
 }) {
   if (!rows.length) {
     return <div className="text-sm text-muted-foreground">No data available.</div>;
   }
+  const groupedHeaders = getAnalyticsGroupedHeaders(columns);
+  const hasGroupedHeaders = groupedHeaders.some((header) => header.group);
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[520px] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-border text-xs uppercase text-muted-foreground">
-            {columns.map((column) => (
-              <th
-                key={column.key}
-                className={
-                  "py-2 font-medium " + (column.align === "left" ? "text-left" : "text-right")
-                }
-              >
-                {column.label}
-              </th>
-            ))}
-          </tr>
+          {hasGroupedHeaders ? (
+            <>
+              <tr className="border-b border-border text-xs uppercase text-muted-foreground">
+                {groupedHeaders.map((header) => (
+                  <th
+                    key={header.key}
+                    colSpan={header.colSpan}
+                    rowSpan={header.group ? 1 : 2}
+                    className={
+                      "py-2 font-medium " + (header.align === "left" ? "text-left" : "text-center")
+                    }
+                  >
+                    {header.label}
+                  </th>
+                ))}
+              </tr>
+              <tr className="border-b border-border text-xs uppercase text-muted-foreground">
+                {columns
+                  .filter((column) => column.group)
+                  .map((column) => (
+                    <th key={column.key} className="py-2 text-center font-medium">
+                      {column.label}
+                    </th>
+                  ))}
+              </tr>
+            </>
+          ) : (
+            <tr className="border-b border-border text-xs uppercase text-muted-foreground">
+              {columns.map((column) => (
+                <th
+                  key={column.key}
+                  className={
+                    "py-2 font-medium " + (column.align === "left" ? "text-left" : "text-right")
+                  }
+                >
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          )}
         </thead>
         <tbody>
           {rows.map((row) => (
@@ -1340,13 +1263,15 @@ function AnalyticsRankingTable({
                 <td
                   key={column.key}
                   className={
-                    "py-2 tabular-nums " +
+                    "whitespace-pre-line py-2 tabular-nums " +
                     (column.align === "left" ? "text-left font-medium" : "text-right")
                   }
                 >
-                  {column.format
-                    ? column.format(row[column.key] ?? "")
-                    : String(row[column.key] ?? "")}
+                  {column.render
+                    ? column.render(row[column.key] ?? "", row)
+                    : column.format
+                      ? column.format(row[column.key] ?? "", row)
+                      : String(row[column.key] ?? "")}
                 </td>
               ))}
             </tr>
@@ -1355,6 +1280,43 @@ function AnalyticsRankingTable({
       </table>
     </div>
   );
+}
+
+function getAnalyticsGroupedHeaders(columns: AnalyticsTableColumn[]) {
+  const headers: Array<{
+    key: string;
+    label: string;
+    group?: string;
+    colSpan: number;
+    align?: "left" | "right";
+  }> = [];
+
+  columns.forEach((column) => {
+    if (!column.group) {
+      headers.push({
+        key: column.key,
+        label: column.label,
+        colSpan: 1,
+        align: column.align,
+      });
+      return;
+    }
+
+    const previous = headers[headers.length - 1];
+    if (previous?.group === column.group) {
+      previous.colSpan += 1;
+      return;
+    }
+
+    headers.push({
+      key: column.group,
+      label: column.group,
+      group: column.group,
+      colSpan: 1,
+    });
+  });
+
+  return headers;
 }
 
 function AnalyticsMetric({
@@ -2090,10 +2052,10 @@ function getMiscellaneousCounts(files: ReturnType<typeof useAccessibleFiles>) {
   };
 }
 
-function getAnalyticsSummary(files: ReturnType<typeof useAccessibleFiles>) {
+function getAnalyticsSummary(files: ReturnType<typeof useAccessibleFiles>, divisions: Division[]) {
   return {
     divisionFileRanking: getDivisionFileRanking(files),
-    divisionValueRanking: getDivisionValueRanking(files),
+    divisionValueRanking: getDivisionValueRanking(files, divisions),
     divisionTurnaroundRanking: getDivisionTurnaroundRanking(files),
     topFirmSupplyOrders: getTopFirmSupplyOrders(files),
     topIndentorsByFiles: getTopIndentorsByFiles(files),
@@ -2116,13 +2078,77 @@ function getDivisionFileRanking(files: FileRecord[]) {
   return mapEntriesToSortedRows(counts, "count");
 }
 
-function getDivisionValueRanking(files: FileRecord[]) {
-  const totals = new Map<string, number>();
+function getDivisionValueRanking(files: FileRecord[], divisions: Division[]) {
+  const totals = new Map<
+    string,
+    {
+      allocatedCapital: number;
+      allocatedRevenue: number;
+      intendedCapital: number;
+      intendedRevenue: number;
+      bookedCapital: number;
+      bookedRevenue: number;
+      committedCapital: number;
+      committedRevenue: number;
+    }
+  >();
+  const getCurrent = (name: string) =>
+    totals.get(name) ?? {
+      allocatedCapital: 0,
+      allocatedRevenue: 0,
+      intendedCapital: 0,
+      intendedRevenue: 0,
+      bookedCapital: 0,
+      bookedRevenue: 0,
+      committedCapital: 0,
+      committedRevenue: 0,
+    };
+
+  divisions.forEach((division) => {
+    const name = getAnalyticsName(division.name, "Unassigned");
+    const current = getCurrent(name);
+    totals.set(name, {
+      ...current,
+      allocatedCapital: current.allocatedCapital + (parseAmount(division.allocatedCapital) ?? 0),
+      allocatedRevenue: current.allocatedRevenue + (parseAmount(division.allocatedRevenue) ?? 0),
+    });
+  });
+
   files.forEach((file) => {
     const name = getAnalyticsName(file.division, "Unassigned");
-    totals.set(name, (totals.get(name) ?? 0) + getFileTotalValue(file));
+    const current = getCurrent(name);
+    const demandCapital = getInrAmount(file.valueCapital, file) ?? 0;
+    const demandRevenue = getInrAmount(file.valueRevenue, file) ?? 0;
+    const committedCapital = getFileCommittedCapitalValue(file);
+    const committedRevenue = getFileCommittedRevenueValue(file);
+    totals.set(name, {
+      allocatedCapital: current.allocatedCapital,
+      allocatedRevenue: current.allocatedRevenue,
+      intendedCapital:
+        current.intendedCapital + (!hasFilledField(file, "imms") ? demandCapital : 0),
+      intendedRevenue:
+        current.intendedRevenue + (!hasFilledField(file, "imms") ? demandRevenue : 0),
+      bookedCapital: current.bookedCapital + (committedCapital > 0 ? 0 : demandCapital),
+      bookedRevenue: current.bookedRevenue + (committedRevenue > 0 ? 0 : demandRevenue),
+      committedCapital: current.committedCapital + committedCapital,
+      committedRevenue: current.committedRevenue + committedRevenue,
+    });
   });
-  return mapEntriesToSortedRows(totals, "value");
+  return Array.from(totals.entries())
+    .map(([name, values]) => ({
+      name,
+      allocatedCapital: Math.round(values.allocatedCapital),
+      allocatedRevenue: Math.round(values.allocatedRevenue),
+      intendedCapital: Math.round(values.intendedCapital),
+      intendedRevenue: Math.round(values.intendedRevenue),
+      bookedCapital: Math.round(values.bookedCapital),
+      bookedRevenue: Math.round(values.bookedRevenue),
+      committedCapital: Math.round(values.committedCapital),
+      committedRevenue: Math.round(values.committedRevenue),
+    }))
+    .sort(
+      (a, b) => b.allocatedCapital + b.allocatedRevenue - (a.allocatedCapital + a.allocatedRevenue),
+    );
 }
 
 function getDivisionTurnaroundRanking(files: FileRecord[]) {
@@ -2330,6 +2356,26 @@ function getFileTotalValue(file: FileRecord) {
   return (
     (getInrAmount(file.valueCapital, file) ?? 0) + (getInrAmount(file.valueRevenue, file) ?? 0)
   );
+}
+
+function getFileCommittedCapitalValue(file: FileRecord) {
+  const orders = file.supplyOrders?.filter((order) =>
+    Object.values(order).some((value) => Boolean(String(value ?? "").trim())),
+  );
+  if (orders?.length) {
+    return orders.reduce((sum, order) => sum + (getInrAmount(order.soValueCapital, file) ?? 0), 0);
+  }
+  return getInrAmount(file.soValueCapital, file) ?? 0;
+}
+
+function getFileCommittedRevenueValue(file: FileRecord) {
+  const orders = file.supplyOrders?.filter((order) =>
+    Object.values(order).some((value) => Boolean(String(value ?? "").trim())),
+  );
+  if (orders?.length) {
+    return orders.reduce((sum, order) => sum + (getInrAmount(order.soValueRevenue, file) ?? 0), 0);
+  }
+  return getInrAmount(file.soValueRevenue, file) ?? 0;
 }
 
 function getSupplyOrderTotalValue(file: FileRecord, order: SupplyOrderDetail) {
@@ -3343,6 +3389,77 @@ function exportFinanceRowsToExcel(rows: FinanceExportRow[], title: string) {
   URL.revokeObjectURL(url);
 }
 
+function exportAnalyticsPanelToExcel(panel: AnalyticsPanel) {
+  const worksheet = `
+    <html>
+      <head><meta charset="utf-8" /></head>
+      <body>
+        <table>
+          <thead>
+            <tr><th colspan="${panel.columns.length}">${escapeHtml(panel.title)}</th></tr>
+            <tr><th colspan="${panel.columns.length}">${escapeHtml(panel.subtitle)}</th></tr>
+            ${getAnalyticsHeaderHtml(panel.columns)}
+          </thead>
+          <tbody>
+            ${panel.rows
+              .map(
+                (row) =>
+                  `<tr>${panel.columns
+                    .map(
+                      (column) =>
+                        `<td>${escapeHtml(getAnalyticsCellValue(row, column)).replace(/\n/g, "<br />")}</td>`,
+                    )
+                    .join("")}</tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+  const blob = new Blob([worksheet], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${getExportFileName(panel.title)}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function getAnalyticsCellValue(row: Record<string, number | string>, column: AnalyticsTableColumn) {
+  const value = row[column.key] ?? "";
+  return column.format ? column.format(value, row) : String(value);
+}
+
+function getAnalyticsHeaderHtml(columns: AnalyticsTableColumn[]) {
+  const groupedHeaders = getAnalyticsGroupedHeaders(columns);
+  const hasGroupedHeaders = groupedHeaders.some((header) => header.group);
+
+  if (!hasGroupedHeaders) {
+    return `<tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>`;
+  }
+
+  return `
+    <tr>
+      ${groupedHeaders
+        .map((header) =>
+          header.group
+            ? `<th colspan="${header.colSpan}">${escapeHtml(header.label)}</th>`
+            : `<th rowspan="2">${escapeHtml(header.label)}</th>`,
+        )
+        .join("")}
+    </tr>
+    <tr>
+      ${columns
+        .filter((column) => column.group)
+        .map((column) => `<th>${escapeHtml(column.label)}</th>`)
+        .join("")}
+    </tr>
+  `;
+}
+
 function printStatusFilesToPdf(files: FileRecord[], dashboardFilter: string) {
   const rows = getStatusExportRows(files);
   const title = getDashboardFilterTitle(dashboardFilter);
@@ -3387,6 +3504,58 @@ function printStatusFilesToPdf(files: FileRecord[], dashboardFilter: string) {
                     row.lastDate,
                   ]
                     .map((value) => `<td>${escapeHtml(value)}</td>`)
+                    .join("")}</tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
+function printAnalyticsPanelToPdf(panel: AnalyticsPanel) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    window.alert("Please allow pop-ups to generate the PDF report.");
+    return;
+  }
+
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(panel.title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+          h1 { font-size: 18px; margin: 0 0 4px; }
+          p { margin: 0 0 16px; color: #4b5563; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #d1d5db; padding: 7px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; font-weight: 700; }
+          td:not(:first-child), th:not(:first-child) { text-align: right; }
+          @media print { body { margin: 12mm; } }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(panel.title)}</h1>
+        <table>
+          <thead>
+            ${getAnalyticsHeaderHtml(panel.columns)}
+          </thead>
+          <tbody>
+            ${panel.rows
+              .map(
+                (row) =>
+                  `<tr>${panel.columns
+                    .map(
+                      (column) =>
+                        `<td>${escapeHtml(getAnalyticsCellValue(row, column)).replace(/\n/g, "<br />")}</td>`,
+                    )
                     .join("")}</tr>`,
               )
               .join("")}
@@ -3595,21 +3764,32 @@ function formatPercent(value: number | undefined) {
 }
 
 function formatCurrency(value: number) {
-  return formatThousandsAndLakhs(value);
+  return `${formatThousandsAndLakhs(value / 100_000, 2)} Lakh`;
+}
+
+function formatLakhsValue(value: number) {
+  return formatThousandsAndLakhs(value / 100_000, 2);
+}
+
+function formatLakhsValueWithPercent(value: number, allocatedValue: number) {
+  const percent = getPercent(value, allocatedValue);
+  return `${formatLakhsValue(value)}\n${percent === undefined ? "-" : `(${formatPercent(percent)})`}`;
+}
+
+function renderLakhsValueWithPercent(value: number, allocatedValue: number) {
+  const percent = getPercent(value, allocatedValue);
+  return (
+    <span className="flex items-center justify-between gap-2">
+      <span className="text-muted-foreground">
+        {percent === undefined ? "-" : `(${formatPercent(percent)})`}
+      </span>
+      <span>{formatLakhsValue(value)}</span>
+    </span>
+  );
 }
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-IN", {
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function formatCompactCurrency(value: number) {
-  if (Math.abs(value) >= 10_000_000) {
-    return `${formatThousandsAndLakhs(value / 10_000_000, 1)} Cr`;
-  }
-  if (Math.abs(value) >= 100_000) {
-    return `${formatThousandsAndLakhs(value / 100_000, 1)} L`;
-  }
-  return formatThousandsAndLakhs(value, 0);
 }
