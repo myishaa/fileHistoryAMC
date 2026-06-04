@@ -4,6 +4,7 @@ import {
   store,
   type Division,
   type FileRecord,
+  type FileRemark,
   type FirmDetail,
   type SupplyOrderDetail,
   useAccessibleDivisions,
@@ -12,7 +13,7 @@ import {
   useFiles,
   useSettings,
 } from "@/lib/files-store";
-import { Save, Eraser, Lock, Printer, Trash2, Unlock } from "lucide-react";
+import { Save, Eraser, Lock, Plus, Printer, Trash2, Unlock } from "lucide-react";
 import { requestDeletionPassword } from "@/lib/delete-password";
 import { validateMilestoneCompletionConsistency } from "@/lib/milestone-validation";
 
@@ -109,27 +110,6 @@ const empty = {
   bgReturnDate: "",
   demandCancelled: "No",
   soCancelled: "No",
-  fileDetailsRemark1: "",
-  fileDetailsRemark2: "",
-  scrutinyRemark1: "",
-  scrutinyRemark2: "",
-  tcecRemark1: "",
-  tcecRemark2: "",
-  approvalRemark1: "",
-  approvalRemark2: "",
-  biddingRemark1: "",
-  biddingRemark2: "",
-  supplyOrderRemark1: "",
-  supplyOrderRemark2: "",
-  remark1: "",
-  remark2: "",
-  remark3: "",
-  remark4: "",
-  remark5: "",
-  remark6: "",
-  remark7: "",
-  remark8: "",
-  remark9: "",
 };
 
 const defaultMilestones = [
@@ -273,10 +253,6 @@ const tcecCommitteeKeys: FieldKey[] = [
   "refloatPostTcecCommitteeNo",
 ];
 
-function isRemarkFieldKey(key: string) {
-  return key.toLowerCase().includes("remark");
-}
-
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
 const modeOptions = ["OBM", "PBM", "SBM", "LBM", "LPC"];
@@ -307,8 +283,6 @@ const emptySupplyOrder: Required<SupplyOrderDetail> = {
   bgReturnDate: "",
   demandCancelled: "No",
   soCancelled: "No",
-  supplyOrderRemark1: "",
-  supplyOrderRemark2: "",
 };
 
 const supplyOrderFields: ExtraField[] = [
@@ -329,8 +303,6 @@ const supplyOrderFields: ExtraField[] = [
   { key: "bgReturnDate", label: "BG return date", type: "date" },
   { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
   { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
-  { key: "supplyOrderRemark1", label: "Remark-1", type: "textarea" },
-  { key: "supplyOrderRemark2", label: "Remark-2", type: "textarea" },
 ];
 
 const extraSections: { title: string; fields: ExtraField[] }[] = [
@@ -356,8 +328,6 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "psb", label: "PSB (Yes/No)", options: yesNo },
       { key: "bg", label: "BG (Yes/No)", options: yesNo },
       { key: "rfpVetting", label: "RFP vetting", options: yesNo },
-      { key: "fileDetailsRemark1", label: "Remark-1", type: "textarea" },
-      { key: "fileDetailsRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -369,8 +339,6 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "imms", label: "Control number" },
       { key: "immsDate", label: "Control date", type: "date" },
       { key: "fileNo", label: "File Number" },
-      { key: "scrutinyRemark1", label: "Remark-1", type: "textarea" },
-      { key: "scrutinyRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -389,8 +357,6 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
         label: "Refloat Post-TCEC minutes date",
         type: "date",
       },
-      { key: "tcecRemark1", label: "Remark-1", type: "textarea" },
-      { key: "tcecRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -404,8 +370,6 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "ifaFinalDate", label: "IFA final date", type: "date" },
       { key: "cfaSentDate", label: "CFA sent date", type: "date" },
       { key: "cfaDate", label: "CFA approval date", type: "date" },
-      { key: "approvalRemark1", label: "Remark-1", type: "textarea" },
-      { key: "approvalRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -425,8 +389,6 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "biddingStageOver", label: "Bidding stage over", options: yesNo },
       { key: "cncDate", label: "CNC date", type: "date" },
       { key: "cncApprovalDate", label: "CNC approval date", type: "date" },
-      { key: "biddingRemark1", label: "Remark-1", type: "textarea" },
-      { key: "biddingRemark2", label: "Remark-2", type: "textarea" },
     ],
   },
   {
@@ -473,6 +435,9 @@ function AddFilePage() {
   const [supplyOrders, setSupplyOrders] = useState<SupplyOrderDetail[]>(() =>
     createSupplyOrdersFromFile(editingFile),
   );
+  const [fileRemarks, setFileRemarks] = useState<FileRemark[]>(() =>
+    createRemarksFromFile(editingFile),
+  );
   const [currentMilestone, setCurrentMilestone] = useState(editingFile?.currentMilestone ?? "");
   const [completedMilestones, setCompletedMilestones] = useState<string[]>(() =>
     normalizeCompletedMilestones(editingFile?.completedMilestones),
@@ -493,6 +458,7 @@ function AddFilePage() {
     );
     setFirmDetails(createFirmDetailsFromFile(editingFile));
     setSupplyOrders(createSupplyOrdersFromFile(editingFile));
+    setFileRemarks(createRemarksFromFile(editingFile));
     setCurrentMilestone(editingFile?.currentMilestone ?? "");
     setCompletedMilestones(normalizeCompletedMilestones(editingFile?.completedMilestones));
     setUnlockedSections(new Set());
@@ -601,6 +567,22 @@ function AddFilePage() {
         current.map((order) => ({ ...order, bgValidityDate: "", bgReturnDate: "" })),
       );
     }
+    if (k === "biddingStageOver" && isYes(v)) {
+      const currentIsBidding = normalizeMilestoneName(currentMilestone) === "bidding";
+      const currentNeedsSelection = !currentMilestone || currentIsBidding;
+      if (currentIsBidding) {
+        setCurrentMilestone("");
+      }
+      if (currentNeedsSelection) {
+        setActiveBoardSection("Milestones");
+        setUnlockedSections((current) => new Set([...current, "Milestones"]));
+        window.setTimeout(() => {
+          alert(
+            "Bidding is now marked completed. Please select the next current status in Milestones.",
+          );
+        }, 100);
+      }
+    }
     setForm((f) => {
       const patch: Partial<FormState> = { [k]: v };
       if (k === "currency" && isInr(v)) {
@@ -664,6 +646,30 @@ function AddFilePage() {
       ...current,
       [group]: current[group].filter((_, rowIndex) => !selected.has(rowIndex)),
     }));
+  };
+  const addRemark = (sectionTitle: string) => {
+    setFileRemarks((current) => [
+      ...current,
+      {
+        id: createRemarkId(),
+        section: sectionTitle,
+        text: "",
+        createdAt: formatLocalDate(new Date()),
+      },
+    ]);
+  };
+  const updateRemark = (remarkId: string, text: string) => {
+    setFileRemarks((current) =>
+      current.map((remark) => (remark.id === remarkId ? { ...remark, text } : remark)),
+    );
+  };
+  const updateRemarkDate = (remarkId: string, date: string) => {
+    setFileRemarks((current) =>
+      current.map((remark) => (remark.id === remarkId ? { ...remark, createdAt: date } : remark)),
+    );
+  };
+  const deleteRemark = (remarkId: string) => {
+    setFileRemarks((current) => current.filter((remark) => remark.id !== remarkId));
   };
   const firmDetailsLocked = isEditing && !unlockedSections.has("Firm details");
   const supplyOrdersLocked = isEditing && !unlockedSections.has("Supply order and payment");
@@ -782,17 +788,16 @@ function AddFilePage() {
               field.key === "year" ||
               field.key === "uniqueCode" ||
               field.key === "tenderLive" ||
-              (!isRemarkFieldKey(field.key) &&
-                ((lockFilledFields && hasFilledValue(formWithLockedYear[field.key])) ||
-                  (field.key === "adVettingDate" && adVettingDisabled) ||
-                  (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
-                  (gemIsNo && gemDisabledKeys.includes(field.key)) ||
-                  (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
-                  (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
-                  (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
-                  (bgIsNo && bgDisabledKeys.includes(field.key)) ||
-                  (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
-                  (refloatIsNo && refloatDisabledKeys.includes(field.key))))
+              (lockFilledFields && hasFilledValue(formWithLockedYear[field.key])) ||
+              (field.key === "adVettingDate" && adVettingDisabled) ||
+              (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
+              (gemIsNo && gemDisabledKeys.includes(field.key)) ||
+              (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
+              (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
+              (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
+              (bgIsNo && bgDisabledKeys.includes(field.key)) ||
+              (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
+              (refloatIsNo && refloatDisabledKeys.includes(field.key))
             }
             onChange={(value) => update(field.key, value)}
             inputRef={(element) => {
@@ -822,6 +827,7 @@ function AddFilePage() {
       ...legacySupplyOrderPatch(cleanedSupplyOrders),
       noOfSo: String(supplyOrderCount),
       supplyOrders: cleanedSupplyOrders,
+      remarks: cleanFileRemarks(fileRemarks),
       invitedFirms: cleanFirmRows(firmDetails.invitedFirms),
       bidderFirms: cleanFirmRows(firmDetails.bidderFirms),
       currentMilestone: currentMilestone || undefined,
@@ -959,6 +965,9 @@ function AddFilePage() {
               divisions={divisions}
             />
           )}
+          {activeBoardSection === "Remarks Summary" && (
+            <RemarksSummaryBlock form={formWithLockedYear} remarks={fileRemarks} />
+          )}
           {activeBoardSection === "Milestones" && (
             <MilestonesBlock
               milestones={milestoneOptions}
@@ -1021,6 +1030,14 @@ function AddFilePage() {
               ) : (
                 renderSectionFields(activeSection)
               )}
+              <SectionRemarks
+                sectionTitle={activeSection.title}
+                remarks={fileRemarks.filter((remark) => remark.section === activeSection.title)}
+                onAdd={() => addRemark(activeSection.title)}
+                onChange={updateRemark}
+                onDateChange={updateRemarkDate}
+                onDelete={deleteRemark}
+              />
             </section>
           )}
         </div>
@@ -1043,6 +1060,7 @@ function AddFilePage() {
                 type="button"
                 onClick={() => {
                   setForm(applyConditionalRules(createEmptyForm(settings.financialYear)));
+                  setFileRemarks([]);
                   setCurrentMilestone("");
                   setCompletedMilestones([]);
                 }}
@@ -1055,7 +1073,7 @@ function AddFilePage() {
               type="button"
               onClick={() =>
                 save({
-                  returnToQuickEntry: Boolean(quickFocus && activeBoardSection === "Milestones"),
+                  returnToQuickEntry: Boolean(quickFocus),
                 })
               }
               className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
@@ -1076,7 +1094,12 @@ function SectionBoard({
   active: string;
   onOpen: (sectionTitle: string) => void;
 }) {
-  const links = ["Timeline", "Milestones", ...extraSections.map((section) => section.title)];
+  const links = [
+    "Timeline",
+    "Remarks Summary",
+    "Milestones",
+    ...extraSections.map((section) => section.title),
+  ];
 
   return (
     <div className="border-b border-border bg-card px-5 py-3">
@@ -1098,6 +1121,74 @@ function SectionBoard({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function SectionRemarks({
+  sectionTitle,
+  remarks,
+  onAdd,
+  onChange,
+  onDateChange,
+  onDelete,
+}: {
+  sectionTitle: string;
+  remarks: FileRemark[];
+  onAdd: () => void;
+  onChange: (remarkId: string, text: string) => void;
+  onDateChange: (remarkId: string, date: string) => void;
+  onDelete: (remarkId: string) => void;
+}) {
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-medium text-muted-foreground">
+          {remarks.length ? `${remarks.length} remark${remarks.length === 1 ? "" : "s"}` : ""}
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium hover:bg-accent"
+        >
+          <Plus className="size-3.5" /> Add remark
+        </button>
+      </div>
+
+      {remarks.length ? (
+        <div className="space-y-3">
+          {remarks.map((remark) => (
+            <div key={remark.id} className="rounded-md border border-border bg-secondary/20 p-3">
+              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                <label className="block">
+                  <div className="mb-1.5 text-xs font-medium text-muted-foreground">Date</div>
+                  <input
+                    type="date"
+                    value={getRemarkDateInputValue(remark.createdAt)}
+                    onChange={(event) => onDateChange(remark.id, event.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => onDelete(remark.id)}
+                  aria-label={`Delete remark from ${sectionTitle}`}
+                  title="Delete remark"
+                  className="inline-flex size-8 items-center justify-center rounded-md border border-destructive/30 bg-background text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+              <textarea
+                value={remark.text}
+                onChange={(event) => onChange(remark.id, event.target.value)}
+                placeholder="Type remark"
+                className={textareaCls}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1128,14 +1219,14 @@ function FirmDetailsBlock({
 }) {
   const [activeTab, setActiveTab] = useState<keyof FirmDetailsState>("invitedFirms");
   const [selectedRows, setSelectedRows] = useState<Set<number>>(() => new Set());
-  const firmInputRefs = useRef<Record<string, HTMLInputElement | HTMLButtonElement | null>>({});
-  const firmQuickFocusAppliedRef = useRef("");
-  const latestFirmRowsRef = useRef(rows);
   const tabs: { key: keyof FirmDetailsState; label: string }[] = [
     { key: "invitedFirms", label: "Invited" },
     { key: "bidderFirms", label: "Bidders" },
   ];
   const rows = details[activeTab];
+  const firmInputRefs = useRef<Record<string, HTMLInputElement | HTMLButtonElement | null>>({});
+  const firmQuickFocusAppliedRef = useRef("");
+  const latestFirmRowsRef = useRef(rows);
   const firmCounts = {
     invitedFirms: details.invitedFirms.length,
     bidderFirms: details.bidderFirms.length,
@@ -1461,10 +1552,9 @@ function SupplyOrdersBlock({
                   value={String(order[key] ?? "")}
                   disabled={
                     disabled ||
-                    (!isRemarkFieldKey(key) &&
-                      ((lockFilledFields && hasFilledValue(String(order[key] ?? ""))) ||
-                        (gemDisabled && key === "gemSoNo") ||
-                        (bgDisabled && supplyOrderBgDisabledKeys.includes(key))))
+                    (lockFilledFields && hasFilledValue(String(order[key] ?? ""))) ||
+                    (gemDisabled && key === "gemSoNo") ||
+                    (bgDisabled && supplyOrderBgDisabledKeys.includes(key))
                   }
                   onChange={(value) => onOrderChange(index, key, value)}
                   inputRef={(element) => {
@@ -1477,6 +1567,103 @@ function SupplyOrdersBlock({
         </div>
       ))}
     </div>
+  );
+}
+
+function RemarksSummaryBlock({ form, remarks }: { form: FormState; remarks: FileRemark[] }) {
+  const [stageFilter, setStageFilter] = useState("All");
+  const [sortOrder, setSortOrder] = useState<"latest" | "oldest">("latest");
+  const stageOptions = [
+    "All",
+    ...Array.from(new Set(remarks.map((remark) => remark.section).filter(Boolean))).sort(),
+  ];
+  const visibleRemarks = remarks
+    .filter((remark) => remark.text.trim())
+    .filter((remark) => stageFilter === "All" || remark.section === stageFilter)
+    .sort((a, b) => {
+      const direction = sortOrder === "latest" ? -1 : 1;
+      return direction * compareRemarkDates(a.createdAt, b.createdAt);
+    });
+
+  return (
+    <section
+      id={sectionId("Remarks Summary")}
+      className="md:col-span-2 scroll-mt-24 rounded-md border border-border bg-secondary/25 p-4"
+    >
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+        <div>
+          <h3 className="text-sm font-semibold">Remarks Summary</h3>
+          <span className="text-xs text-muted-foreground">
+            {visibleRemarks.length} of {remarks.filter((remark) => remark.text.trim()).length}{" "}
+            remarks shown
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => printRemarksReport(form, visibleRemarks, stageFilter)}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground hover:bg-accent"
+        >
+          <Printer className="size-3.5" /> Export PDF
+        </button>
+      </div>
+
+      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label className="block">
+          <div className="mb-1.5 text-xs font-medium">Stage</div>
+          <select
+            value={stageFilter}
+            onChange={(event) => setStageFilter(event.target.value)}
+            className={inputCls}
+          >
+            {stageOptions.map((stage) => (
+              <option key={stage} value={stage}>
+                {stage}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <div className="mb-1.5 text-xs font-medium">Sort</div>
+          <select
+            value={sortOrder}
+            onChange={(event) => setSortOrder(event.target.value as "latest" | "oldest")}
+            className={inputCls}
+          >
+            <option value="latest">Latest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+        </label>
+      </div>
+
+      {visibleRemarks.length ? (
+        <div className="overflow-x-auto rounded-md border border-border bg-card">
+          <table className="min-w-full text-sm">
+            <thead className="bg-secondary/70 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="w-40 px-3 py-2 text-left font-semibold">Date</th>
+                <th className="w-56 px-3 py-2 text-left font-semibold">Stage</th>
+                <th className="px-3 py-2 text-left font-semibold">Remark</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRemarks.map((remark) => (
+                <tr key={remark.id} className="border-t border-border">
+                  <td className="px-3 py-2 align-top text-muted-foreground">
+                    {formatRemarkDate(remark.createdAt)}
+                  </td>
+                  <td className="px-3 py-2 align-top font-medium">{remark.section}</td>
+                  <td className="whitespace-pre-wrap px-3 py-2 align-top">{remark.text}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Remarks added through stage-wise Add remark buttons will appear here.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -1812,6 +1999,18 @@ function getTimelineItemKey(item: TimelineItem) {
   return `${item.label}-${item.date}`;
 }
 
+function compareRemarkDates(a: string, b: string) {
+  return getRemarkTime(a) - getRemarkTime(b);
+}
+
+function getRemarkTime(value: string) {
+  const dateValue = getRemarkDateInputValue(value);
+  const localTime = parseLocalDateTime(dateValue);
+  if (localTime !== undefined) return localTime;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function printTimelineReport(form: FormState, filledItems: TimelineItem[]) {
   const printWindow = window.open("", "_blank", "width=900,height=720");
   if (!printWindow) {
@@ -1952,6 +2151,137 @@ function printTimelineReport(form: FormState, filledItems: TimelineItem[]) {
   printWindow.document.close();
 }
 
+function printRemarksReport(form: FormState, remarks: FileRemark[], stageFilter: string) {
+  const printWindow = window.open("", "_blank", "width=900,height=720");
+  if (!printWindow) {
+    alert("Allow pop-ups to export remarks.");
+    return;
+  }
+
+  const details = [
+    { label: "Unique code", value: form.uniqueCode },
+    { label: "Control number", value: form.imms },
+    { label: "Division", value: form.division },
+    { label: "Indentor", value: form.indentor },
+    { label: "Description", value: form.demandDescription },
+  ];
+  const detailRows = details
+    .map(
+      (detail) => `
+        <tr>
+          <th>${escapeHtml(detail.label)}</th>
+          <td>${escapeHtml(detail.value || "Not set")}</td>
+        </tr>
+      `,
+    )
+    .join("");
+  const remarkRows = remarks
+    .map(
+      (remark) => `
+        <tr>
+          <td>${escapeHtml(formatRemarkDate(remark.createdAt))}</td>
+          <td>${escapeHtml(remark.section)}</td>
+          <td>${escapeHtml(remark.text).replace(/\n/g, "<br />")}</td>
+        </tr>
+      `,
+    )
+    .join("");
+
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <title>${escapeHtml(form.imms || form.uniqueCode || "Remarks Summary")}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            font-family: Arial, sans-serif;
+            color: #111;
+            margin: 22px;
+          }
+          header {
+            border-bottom: 2px solid #111;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+          }
+          h1 {
+            font-size: 18px;
+            margin: 0 0 5px;
+          }
+          h2 {
+            font-size: 14px;
+            margin: 18px 0 8px;
+          }
+          .subtle {
+            color: #555;
+            font-size: 12px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+          }
+          th, td {
+            border: 1px solid #bbb;
+            padding: 7px 8px;
+            text-align: left;
+            vertical-align: top;
+          }
+          th {
+            background: #f3f3f3;
+            font-weight: 600;
+          }
+          .detail-table th {
+            width: 28%;
+          }
+          .remarks-table th:nth-child(1) {
+            width: 18%;
+          }
+          .remarks-table th:nth-child(2) {
+            width: 24%;
+          }
+          @media print {
+            body { margin: 10mm; }
+            tr { break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <header>
+          <h1>Remarks Summary</h1>
+          <div class="subtle">Printed: ${escapeHtml(new Date().toLocaleString())}</div>
+          <div class="subtle">Stage: ${escapeHtml(stageFilter)}</div>
+        </header>
+        <h2>File details</h2>
+        <table class="detail-table">
+          <tbody>${detailRows}</tbody>
+        </table>
+        <h2>Remarks</h2>
+        ${
+          remarks.length
+            ? `<table class="remarks-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Stage</th>
+                    <th>Remark</th>
+                  </tr>
+                </thead>
+                <tbody>${remarkRows}</tbody>
+              </table>`
+            : `<p class="subtle">No remarks are available for the selected filter.</p>`
+        }
+        <script>
+          window.onload = () => {
+            window.print();
+          };
+        </script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -2015,6 +2345,55 @@ function cleanFirmRows(rows: FirmDetail[]) {
     }))
     .filter((row) => row.firmName || row.city || row.emailId);
   return cleaned.length ? cleaned : undefined;
+}
+
+function createRemarksFromFile(file: FileRecord | undefined) {
+  return (
+    file?.remarks
+      ?.map((remark) => ({
+        id: remark.id || createRemarkId(),
+        section: remark.section || "File details",
+        text: remark.text ?? "",
+        createdAt: getRemarkDateInputValue(remark.createdAt) || formatLocalDate(new Date()),
+      }))
+      .filter((remark) => remark.section) ?? []
+  );
+}
+
+function cleanFileRemarks(remarks: FileRemark[]) {
+  const cleaned = remarks
+    .map((remark) => ({
+      id: remark.id || createRemarkId(),
+      section: remark.section,
+      text: remark.text.trim(),
+      createdAt: getRemarkDateInputValue(remark.createdAt) || formatLocalDate(new Date()),
+    }))
+    .filter((remark) => remark.section && remark.text);
+  return cleaned.length ? cleaned : undefined;
+}
+
+function createRemarkId() {
+  return globalThis.crypto?.randomUUID?.() ?? `remark-${Date.now()}-${Math.random()}`;
+}
+
+function formatRemarkDate(value: string) {
+  if (!value) return "";
+  const dateValue = getRemarkDateInputValue(value);
+  const date = dateValue ? new Date(`${dateValue}T00:00:00`) : new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getRemarkDateInputValue(value: string) {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return formatLocalDate(date);
 }
 
 function getTcecCommitteeOptions(committees: string[] | undefined, currentValue: string) {
@@ -2083,8 +2462,6 @@ function cleanSupplyOrderRows(rows: SupplyOrderDetail[]) {
     bgReturnDate: row.bgReturnDate || undefined,
     demandCancelled: row.demandCancelled || undefined,
     soCancelled: row.soCancelled || undefined,
-    supplyOrderRemark1: row.supplyOrderRemark1?.trim() || undefined,
-    supplyOrderRemark2: row.supplyOrderRemark2?.trim() || undefined,
   }));
 }
 
@@ -2116,8 +2493,6 @@ function normalizeSupplyOrderRows(file: FileRecord | undefined) {
       bgReturnDate: file.bgReturnDate ?? "",
       demandCancelled: file.demandCancelled ?? "No",
       soCancelled: file.soCancelled ?? "No",
-      supplyOrderRemark1: file.supplyOrderRemark1 ?? "",
-      supplyOrderRemark2: file.supplyOrderRemark2 ?? "",
     },
     undefined,
   );
@@ -2145,8 +2520,6 @@ function legacySupplyOrderPatch(rows: SupplyOrderDetail[]) {
     bgReturnDate: first.bgReturnDate || undefined,
     demandCancelled: first.demandCancelled || undefined,
     soCancelled: first.soCancelled || undefined,
-    supplyOrderRemark1: first.supplyOrderRemark1 || undefined,
-    supplyOrderRemark2: first.supplyOrderRemark2 || undefined,
   };
 }
 
@@ -2416,8 +2789,6 @@ function isTimelineFieldDisabled(
   form: FormState,
   divisions: ReturnType<typeof useDivisions>,
 ) {
-  if (isRemarkFieldKey(key)) return false;
-
   return (
     (key === "adVettingDate" && isDivisionAdNo(form.division, divisions)) ||
     (isNo(form.tcec) && tcecDisabledKeys.includes(key)) ||
@@ -2783,7 +3154,6 @@ function getUnfilledFieldKeys(
     .filter(
       (field) =>
         !["uniqueCode", "tenderLive"].includes(field.key) &&
-        !isRemarkFieldKey(field.key) &&
         !isTimelineFieldDisabled(field.key, form, divisions) &&
         !hasFilledValue(String(form[field.key] ?? "")),
     )

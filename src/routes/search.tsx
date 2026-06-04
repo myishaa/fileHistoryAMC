@@ -35,7 +35,13 @@ export const Route = createFileRoute("/search")({
 
 type FileKey = Exclude<
   keyof FileRecord,
-  "id" | "createdAt" | "invitedFirms" | "bidderFirms" | "supplyOrders" | "completedMilestones"
+  | "id"
+  | "createdAt"
+  | "invitedFirms"
+  | "bidderFirms"
+  | "supplyOrders"
+  | "remarks"
+  | "completedMilestones"
 >;
 
 type FieldDef = {
@@ -59,8 +65,6 @@ const tcecDisabledKeys: FileKey[] = [
   "refloatPostTcecDate",
   "refloatPostTcecMinutesDate",
   "refloatPostTcecCommitteeNo",
-  "tcecRemark1",
-  "tcecRemark2",
   "cncDate",
   "cncApprovalDate",
 ];
@@ -77,10 +81,6 @@ const tcecCommitteeKeys: FileKey[] = [
   "postTcecCommitteeNumber",
   "refloatPostTcecCommitteeNo",
 ];
-
-function isRemarkFieldKey(key: string) {
-  return key.toLowerCase().includes("remark");
-}
 
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
@@ -137,8 +137,6 @@ const supplyOrderKeys: FileKey[] = [
   "bgReturnDate",
   "demandCancelled",
   "soCancelled",
-  "supplyOrderRemark1",
-  "supplyOrderRemark2",
 ];
 
 const fieldSections: { title: string; fields: FieldDef[] }[] = [
@@ -172,15 +170,6 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "psb", label: "PSB (Yes/No)", options: yesNo },
       { key: "bg", label: "BG (Yes/No)", options: yesNo },
       { key: "rfpVetting", label: "RFP vetting", options: yesNo },
-      { key: "fileDetailsRemark1", label: "File details Remark-1", type: "textarea" },
-      { key: "fileDetailsRemark2", label: "File details Remark-2", type: "textarea" },
-    ],
-  },
-  {
-    title: "Scrutiny and control",
-    fields: [
-      { key: "scrutinyRemark1", label: "Scrutiny Remark-1", type: "textarea" },
-      { key: "scrutinyRemark2", label: "Scrutiny Remark-2", type: "textarea" },
     ],
   },
   {
@@ -189,8 +178,6 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "preTcecDate", label: "Pre-TCEC Date", type: "date" },
       { key: "preTcecMinutesDate", label: "Pre-TCEC minutes date", type: "date" },
       { key: "preTcecCommitteeNo", label: "Pre-TCEC" },
-      { key: "tcecRemark1", label: "TCEC Remark-1", type: "textarea" },
-      { key: "tcecRemark2", label: "TCEC Remark-2", type: "textarea" },
       { key: "postTcecDate", label: "Post-TCEC date", type: "date" },
       { key: "postTcecMinutesDate", label: "Post-TCEC minutes date", type: "date" },
       { key: "postTcecCommitteeNumber", label: "Post-TCEC committee" },
@@ -215,8 +202,6 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "ifaFinalDate", label: "IFA final date", type: "date" },
       { key: "cfaSentDate", label: "CFA sent date", type: "date" },
       { key: "cfaDate", label: "CFA approval date", type: "date" },
-      { key: "approvalRemark1", label: "Approval Remark-1", type: "textarea" },
-      { key: "approvalRemark2", label: "Approval Remark-2", type: "textarea" },
     ],
   },
   {
@@ -236,8 +221,6 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "biddingStageOver", label: "Bidding stage over", options: yesNo },
       { key: "cncDate", label: "CNC date", type: "date" },
       { key: "cncApprovalDate", label: "CNC approval date", type: "date" },
-      { key: "biddingRemark1", label: "Bidding Remark-1", type: "textarea" },
-      { key: "biddingRemark2", label: "Bidding Remark-2", type: "textarea" },
     ],
   },
   {
@@ -262,37 +245,11 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "bgReturnDate", label: "BG return date", type: "date" },
       { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
       { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
-      { key: "supplyOrderRemark1", label: "Supply order Remark-1", type: "textarea" },
-      { key: "supplyOrderRemark2", label: "Supply order Remark-2", type: "textarea" },
     ],
   },
 ];
 
 const editableFields = fieldSections.flatMap((section) => section.fields);
-
-const remarkFields: { key: FileKey; label: string }[] = [
-  { key: "remark1", label: "Old Remark-1" },
-  { key: "remark2", label: "Old Remark-2" },
-  { key: "remark3", label: "Old Remark-3" },
-  { key: "remark4", label: "Old Remark-4" },
-  { key: "remark5", label: "Old Remark-5" },
-  { key: "remark6", label: "Old Remark-6" },
-  { key: "remark7", label: "Old Remark-7" },
-  { key: "remark8", label: "Old Remark-8" },
-  { key: "remark9", label: "Old Remark-9" },
-  { key: "fileDetailsRemark1", label: "File details Remark-1" },
-  { key: "fileDetailsRemark2", label: "File details Remark-2" },
-  { key: "scrutinyRemark1", label: "Scrutiny Remark-1" },
-  { key: "scrutinyRemark2", label: "Scrutiny Remark-2" },
-  { key: "tcecRemark1", label: "TCEC Remark-1" },
-  { key: "tcecRemark2", label: "TCEC Remark-2" },
-  { key: "approvalRemark1", label: "Approval Remark-1" },
-  { key: "approvalRemark2", label: "Approval Remark-2" },
-  { key: "biddingRemark1", label: "Bidding Remark-1" },
-  { key: "biddingRemark2", label: "Bidding Remark-2" },
-  { key: "supplyOrderRemark1", label: "Supply order Remark-1" },
-  { key: "supplyOrderRemark2", label: "Supply order Remark-2" },
-];
 
 type PrintColumn = {
   key: string;
@@ -1427,15 +1384,14 @@ function EditModal({
                     disabled={
                       field.key === "year" ||
                       field.key === "tenderLive" ||
-                      (!isRemarkFieldKey(field.key) &&
-                        ((tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
-                          (gemIsNo && gemDisabledKeys.includes(field.key)) ||
-                          (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
-                          (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
-                          (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
-                          (bgIsNo && bgDisabledKeys.includes(field.key)) ||
-                          (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
-                          (refloatIsNo && refloatDisabledKeys.includes(field.key))))
+                      (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
+                      (gemIsNo && gemDisabledKeys.includes(field.key)) ||
+                      (highValueIsNo && highValueDisabledKeys.includes(field.key)) ||
+                      (rqaIsNo && rqaDisabledKeys.includes(field.key)) ||
+                      (ifaIsNo && ifaDisabledKeys.includes(field.key)) ||
+                      (bgIsNo && bgDisabledKeys.includes(field.key)) ||
+                      (rfpVettingIsNo && rfpVettingDisabledKeys.includes(field.key)) ||
+                      (refloatIsNo && refloatDisabledKeys.includes(field.key))
                     }
                     onChange={(value) => update(field.key, value)}
                   />
@@ -1875,8 +1831,6 @@ function fileSupplyOrders(file: FileRecord) {
     bgReturnDate: file.bgReturnDate,
     demandCancelled: file.demandCancelled,
     soCancelled: file.soCancelled,
-    supplyOrderRemark1: file.supplyOrderRemark1,
-    supplyOrderRemark2: file.supplyOrderRemark2,
   };
   return Object.values(legacy).some((value) => Boolean(String(value ?? "").trim())) ? [legacy] : [];
 }
@@ -2529,21 +2483,38 @@ function allSearchText(file: FileRecord) {
     .flatMap((order) => Object.values(order))
     .filter(Boolean)
     .join(" ");
+  const newRemarkText =
+    file.remarks?.map((remark) => `${remark.section} ${remark.text}`).join(" ") ?? "";
   const firmText = [getFirmCount(file.invitedFirms), getFirmCount(file.bidderFirms)].join(" ");
-  return `${directText} ${supplyOrderText} ${firmText}`.toLowerCase();
+  return `${directText} ${supplyOrderText} ${newRemarkText} ${firmText}`.toLowerCase();
 }
 
 function getRecentRemarks(file: FileRecord) {
-  return remarkFields
-    .map((field) => ({
-      label: field.label,
-      value: supplyOrderKeys.includes(field.key)
-        ? getSupplyOrderFieldValue(file, field.key as SupplyOrderKey)
-        : file[field.key],
-    }))
-    .filter((remark): remark is { label: string; value: string } => Boolean(remark.value?.trim()))
+  const datedRemarks =
+    file.remarks
+      ?.map((remark) => ({
+        label: `${remark.section} remark`,
+        createdAt: remark.createdAt,
+        value: remark.text,
+      }))
+      .filter((remark) => remark.value.trim()) ?? [];
+  return datedRemarks
     .slice(-2)
-    .reverse();
+    .reverse()
+    .map((remark) => ({
+      label: `${remark.label} (${formatRemarkDate(remark.createdAt)})`,
+      value: remark.value,
+    }));
+}
+
+function formatRemarkDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function printFile(file: FileRecord) {

@@ -1764,10 +1764,8 @@ function getStatusMetrics({
 
   if (milestone.key === "bankGuarantee") {
     return [
-      total,
       completed,
       { label: milestone.pendingLabel, count: milestone.pending, onClick: onPendingClick },
-      previous,
     ];
   }
 
@@ -1775,7 +1773,6 @@ function getStatusMetrics({
     return [
       completed,
       { label: milestone.pendingLabel, count: milestone.pending, onClick: onPendingClick },
-      previous,
     ];
   }
 

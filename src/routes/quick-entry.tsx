@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowRight, ScanLine } from "lucide-react";
 import { type FileRecord, useAccessibleFiles } from "@/lib/files-store";
 
@@ -7,97 +7,41 @@ export const Route = createFileRoute("/quick-entry")({
   component: QuickEntryPage,
 });
 
-const quickEntryStages = [
+const quickEntryStageSections = [
   {
-    number: "1",
     title: "Scrutiny and control",
-    fields: [
-      "scrutinyDate",
-      "scrutinyResponseDate",
-      "scrutinyCompletionDate",
-      "imms",
-      "immsDate",
-      "fileNo",
-      "scrutinyRemark1",
-      "scrutinyRemark2",
-    ],
+    milestones: ["Scrutiny", "Controlled", "Control", "Controlling"],
   },
   {
-    number: "2",
     title: "TCEC block",
-    fields: [
-      "preTcecCommitteeNo",
-      "preTcecDate",
-      "preTcecMinutesDate",
-      "postTcecCommitteeNumber",
-      "postTcecDate",
-      "postTcecMinutesDate",
-      "refloatPostTcecCommitteeNo",
-      "refloatPostTcecDate",
-      "refloatPostTcecMinutesDate",
-      "tcecRemark1",
-      "tcecRemark2",
-    ],
+    milestones: ["Pre-TCEC", "Post-TCEC", "Refloat Post-TCEC"],
   },
   {
-    number: "3",
     title: "Approval block",
-    fields: [
-      "highValueMeetingDate",
-      "highValueMinutesDate",
-      "adVettingDate",
-      "rqaApprovalDate",
-      "ifaSentDate",
-      "ifaFinalDate",
-      "cfaSentDate",
-      "cfaDate",
-      "approvalRemark1",
-      "approvalRemark2",
-    ],
+    milestones: ["High Value", "AD", "R&QA", "RQA", "IFA", "CFA"],
   },
   {
-    number: "4",
     title: "Bidding details",
-    fields: [
-      "gemUndertakingDate",
-      "rfpVettingInitiationDate",
-      "rfpVettingApprovalDate",
-      "tenderLive",
-      "bidDate",
-      "bidOpeningDate",
-      "bidOpened",
-      "refloat",
-      "refloatBiddingDate",
-      "refloatBidOpeningDate",
-      "rst",
-      "biddingStageOver",
-      "cncDate",
-      "cncApprovalDate",
-      "biddingRemark1",
-      "biddingRemark2",
-    ],
+    milestones: ["Bidding", "CNC", "RFP Vetting", "Refloat", "RST"],
   },
   {
-    number: "5",
     title: "Supply order and payment",
-    fields: ["noOfSo", "soNo", "soDate", "firm", "dpDate", "materialReceiptDate", "paymentDate"],
+    milestones: ["Supply Order", "Delivery Period", "Bank Guarantee", "Delivery", "Payment"],
   },
   {
-    number: "6",
     title: "Firm details",
-    fields: [],
+    milestones: ["Firm details", "Firm Detail", "Firm"],
   },
 ];
 
-type QuickEntryError = { tone: "error" | "warning"; text: string };
+type QuickEntryError = { tone: "error"; text: string };
 
 function QuickEntryPage() {
   const files = useAccessibleFiles();
   const navigate = useNavigate();
   const [uniqueCode, setUniqueCode] = useState("");
-  const [stageNumber, setStageNumber] = useState("");
   const [message, setMessage] = useState<QuickEntryError | null>(null);
-  const stageInputRef = useRef<HTMLInputElement>(null);
+  const [milestoneFileId, setMilestoneFileId] = useState("");
 
   const filesByUniqueCode = useMemo(() => {
     const map = new Map<string, FileRecord[]>();
@@ -134,24 +78,23 @@ function QuickEntryPage() {
     return matches[0];
   };
 
-  const continueToStage = (allowCompletedSection = false) => {
+  const continueToCurrentStage = () => {
     const file = findFile();
     if (!file) return;
 
-    const stage = quickEntryStages.find((item) => item.number === stageNumber.trim());
+    const stage = getQuickEntryStageForCurrentMilestone(file);
     if (!stage) {
-      setMessage({ tone: "error", text: "Enter a valid stage number from 1 to 6." });
-      return;
-    }
-
-    if (!allowCompletedSection && isQuickEntryStageComplete(file, stage)) {
+      setMilestoneFileId(file.id);
       setMessage({
-        tone: "warning",
-        text: `${stage.title} appears fully completed for this file. Press Open anyway if you still want to review it.`,
+        tone: "error",
+        text: file.currentMilestone
+          ? `The current milestone "${file.currentMilestone}" is not linked to a Quick Entry stage. Please update the current status under Milestones.`
+          : "Current status is not selected for this file. Please select it under Milestones.",
       });
       return;
     }
 
+    setMilestoneFileId("");
     navigate({
       to: "/add",
       search: { fileId: file.id, section: stage.title, quickFocus: true },
@@ -168,12 +111,13 @@ function QuickEntryPage() {
           <div>
             <h2 className="text-base font-semibold">Quick Entry</h2>
             <p className="text-xs text-muted-foreground">
-              Scan the file barcode, enter a stage number, and jump to the first unfilled field.
+              Scan the file barcode to open the currently running stage and focus the first unfilled
+              field.
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_180px_auto]">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto]">
           <label className="block">
             <div className="mb-1.5 text-xs font-medium">Unique code</div>
             <input
@@ -181,11 +125,12 @@ function QuickEntryPage() {
               onChange={(event) => {
                 setUniqueCode(event.target.value);
                 setMessage(null);
+                setMilestoneFileId("");
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  stageInputRef.current?.focus();
+                  continueToCurrentStage();
                 }
               }}
               autoFocus
@@ -193,32 +138,12 @@ function QuickEntryPage() {
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
             />
           </label>
-          <label className="block">
-            <div className="mb-1.5 text-xs font-medium">Stage number</div>
-            <input
-              ref={stageInputRef}
-              value={stageNumber}
-              onChange={(event) => {
-                setStageNumber(event.target.value.replace(/\D/g, "").slice(0, 1));
-                setMessage(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  continueToStage();
-                }
-              }}
-              inputMode="numeric"
-              placeholder="1 to 6"
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
-            />
-          </label>
           <button
             type="button"
-            onClick={() => continueToStage()}
+            onClick={() => continueToCurrentStage()}
             className="inline-flex h-10 items-center justify-center gap-1.5 self-end rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
           >
-            Open <ArrowRight className="size-4" />
+            Open current stage <ArrowRight className="size-4" />
           </button>
         </div>
 
@@ -226,51 +151,26 @@ function QuickEntryPage() {
           <div
             className={
               "mt-4 rounded-md border px-3 py-2 text-sm " +
-              (message.tone === "warning"
-                ? "border-warning/40 bg-warning/10 text-foreground"
-                : "border-destructive/40 bg-destructive/10 text-destructive")
+              "border-destructive/40 bg-destructive/10 text-destructive"
             }
           >
             <div>{message.text}</div>
-            {message.tone === "warning" ? (
+            {milestoneFileId ? (
               <button
                 type="button"
-                onClick={() => continueToStage(true)}
+                onClick={() =>
+                  navigate({
+                    to: "/add",
+                    search: { fileId: milestoneFileId, section: "Milestones", quickFocus: true },
+                  })
+                }
                 className="mt-2 h-8 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground hover:bg-accent"
               >
-                Open anyway
+                Open Milestones
               </button>
             ) : null}
           </div>
         ) : null}
-      </section>
-
-      <section className="rounded-md border border-border bg-card p-5 shadow-[var(--shadow-card)]">
-        <h3 className="mb-3 text-sm font-semibold">Stages</h3>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {quickEntryStages.map((stage) => (
-            <button
-              key={stage.number}
-              type="button"
-              onClick={() => {
-                setStageNumber(stage.number);
-                setMessage(null);
-                stageInputRef.current?.focus();
-              }}
-              className={
-                "flex items-center gap-3 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent " +
-                (stageNumber === stage.number
-                  ? "border-primary bg-primary/10"
-                  : "border-border bg-secondary/25")
-              }
-            >
-              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-                {stage.number}
-              </span>
-              <span className="font-medium">{stage.title}</span>
-            </button>
-          ))}
-        </div>
       </section>
     </div>
   );
@@ -280,25 +180,19 @@ function normalizeQuickEntryCode(value: string | undefined) {
   return value?.trim().toLowerCase() ?? "";
 }
 
-function isQuickEntryStageComplete(file: FileRecord, stage: (typeof quickEntryStages)[number]) {
-  if (stage.title === "Firm details") {
-    return Boolean(file.invitedFirms?.length || file.bidderFirms?.length);
-  }
+function getQuickEntryStageForCurrentMilestone(file: FileRecord) {
+  const current = normalizeQuickEntryMilestone(file.currentMilestone);
+  if (!current) return undefined;
+  return quickEntryStageSections.find((stage) =>
+    stage.milestones.some((milestone) => normalizeQuickEntryMilestone(milestone) === current),
+  );
+}
 
-  if (stage.title === "Supply order and payment") {
-    const orders = file.supplyOrders?.length
-      ? file.supplyOrders
-      : file.soNo || file.soDate || file.firm || file.paymentDate
-        ? [file]
-        : [];
-    return Boolean(
-      file.noOfSo &&
-      orders.length > 0 &&
-      orders.every((order) => order.soNo && order.soDate && order.firm && order.paymentDate),
-    );
-  }
-
-  return stage.fields.every((field) =>
-    Boolean(String((file as Record<string, unknown>)[field] ?? "").trim()),
+function normalizeQuickEntryMilestone(value: string | undefined) {
+  return (
+    value
+      ?.trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "") ?? ""
   );
 }

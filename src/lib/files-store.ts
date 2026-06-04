@@ -85,32 +85,19 @@ export type FileRecord = {
   bgReturnDate?: string;
   demandCancelled?: string;
   soCancelled?: string;
-  fileDetailsRemark1?: string;
-  fileDetailsRemark2?: string;
-  scrutinyRemark1?: string;
-  scrutinyRemark2?: string;
-  tcecRemark1?: string;
-  tcecRemark2?: string;
-  approvalRemark1?: string;
-  approvalRemark2?: string;
-  biddingRemark1?: string;
-  biddingRemark2?: string;
-  supplyOrderRemark1?: string;
-  supplyOrderRemark2?: string;
-  remark1?: string;
-  remark2?: string;
-  remark3?: string;
-  remark4?: string;
-  remark5?: string;
-  remark6?: string;
-  remark7?: string;
-  remark8?: string;
-  remark9?: string;
   invitedFirms?: FirmDetail[];
   bidderFirms?: FirmDetail[];
   supplyOrders?: SupplyOrderDetail[];
+  remarks?: FileRemark[];
   currentMilestone?: string;
   completedMilestones?: string[];
+  createdAt: string;
+};
+
+export type FileRemark = {
+  id: string;
+  section: string;
+  text: string;
   createdAt: string;
 };
 
@@ -133,8 +120,6 @@ export type SupplyOrderDetail = {
   bgReturnDate?: string;
   demandCancelled?: string;
   soCancelled?: string;
-  supplyOrderRemark1?: string;
-  supplyOrderRemark2?: string;
 };
 
 export type FirmDetail = {
