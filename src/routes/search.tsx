@@ -132,10 +132,12 @@ const supplyOrderKeys: FileKey[] = [
   "ld",
   "revisedDp",
   "materialReceiptDate",
+  "billSentForPaymentDate",
   "paymentDate",
   "paymentMode",
   "bgReturnDate",
   "demandCancelled",
+  "soCancelledDate",
   "soCancelled",
 ];
 
@@ -240,10 +242,12 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "ld", label: "LD", options: yesNo },
       { key: "revisedDp", label: "Revised D.P.", type: "date" },
       { key: "materialReceiptDate", label: "Material receipt date", type: "date" },
+      { key: "billSentForPaymentDate", label: "Bill sent for payment", type: "date" },
       { key: "paymentDate", label: "Payment Date", type: "date" },
       { key: "paymentMode", label: "Payment mode(Online/Offline)", options: paymentModeOptions },
       { key: "bgReturnDate", label: "BG return date", type: "date" },
       { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
+      { key: "soCancelledDate", label: "S.O. cancelled date", type: "date" },
       { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
     ],
   },
@@ -1826,10 +1830,12 @@ function fileSupplyOrders(file: FileRecord) {
     ld: file.ld,
     revisedDp: file.revisedDp,
     materialReceiptDate: file.materialReceiptDate,
+    billSentForPaymentDate: file.billSentForPaymentDate,
     paymentDate: file.paymentDate,
     paymentMode: file.paymentMode,
     bgReturnDate: file.bgReturnDate,
     demandCancelled: file.demandCancelled,
+    soCancelledDate: file.soCancelledDate,
     soCancelled: file.soCancelled,
   };
   return Object.values(legacy).some((value) => Boolean(String(value ?? "").trim())) ? [legacy] : [];
@@ -2049,7 +2055,12 @@ function hasMilestoneDate(file: FileRecord, key: FileKey | SupplyOrderKey) {
     : hasFilledString(file[key as FileKey]);
 }
 
-const supplyOrderDateKeys = new Set<SupplyOrderKey>(["soDate", "bgValidityDate", "paymentDate"]);
+const supplyOrderDateKeys = new Set<SupplyOrderKey>([
+  "soDate",
+  "bgValidityDate",
+  "billSentForPaymentDate",
+  "paymentDate",
+]);
 
 function hasFilledString(value: string | undefined) {
   return Boolean(value?.trim());

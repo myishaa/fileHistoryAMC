@@ -80,10 +80,12 @@ export type FileRecord = {
   ld?: string;
   revisedDp?: string;
   materialReceiptDate?: string;
+  billSentForPaymentDate?: string;
   paymentDate?: string;
   paymentMode?: string;
   bgReturnDate?: string;
   demandCancelled?: string;
+  soCancelledDate?: string;
   soCancelled?: string;
   invitedFirms?: FirmDetail[];
   bidderFirms?: FirmDetail[];
@@ -115,10 +117,12 @@ export type SupplyOrderDetail = {
   ld?: string;
   revisedDp?: string;
   materialReceiptDate?: string;
+  billSentForPaymentDate?: string;
   paymentDate?: string;
   paymentMode?: string;
   bgReturnDate?: string;
   demandCancelled?: string;
+  soCancelledDate?: string;
   soCancelled?: string;
 };
 

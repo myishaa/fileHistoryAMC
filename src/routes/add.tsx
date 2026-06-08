@@ -105,10 +105,12 @@ const empty = {
   ld: "No",
   revisedDp: "",
   materialReceiptDate: "",
+  billSentForPaymentDate: "",
   paymentDate: "",
   paymentMode: "",
   bgReturnDate: "",
   demandCancelled: "No",
+  soCancelledDate: "",
   soCancelled: "No",
 };
 
@@ -278,10 +280,12 @@ const emptySupplyOrder: Required<SupplyOrderDetail> = {
   ld: "No",
   revisedDp: "",
   materialReceiptDate: "",
+  billSentForPaymentDate: "",
   paymentDate: "",
   paymentMode: "",
   bgReturnDate: "",
   demandCancelled: "No",
+  soCancelledDate: "",
   soCancelled: "No",
 };
 
@@ -298,10 +302,12 @@ const supplyOrderFields: ExtraField[] = [
   { key: "ld", label: "LD", options: yesNo },
   { key: "revisedDp", label: "Revised D.P.", type: "date" },
   { key: "materialReceiptDate", label: "Material receipt date", type: "date" },
+  { key: "billSentForPaymentDate", label: "Bill sent for payment", type: "date" },
   { key: "paymentDate", label: "Payment Date", type: "date" },
   { key: "paymentMode", label: "Payment mode(Online/Offline)", options: paymentModeOptions },
   { key: "bgReturnDate", label: "BG return date", type: "date" },
   { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
+  { key: "soCancelledDate", label: "S.O. cancelled date", type: "date" },
   { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
 ];
 
@@ -2471,10 +2477,12 @@ function cleanSupplyOrderRows(rows: SupplyOrderDetail[]) {
     ld: row.ld || undefined,
     revisedDp: row.revisedDp || undefined,
     materialReceiptDate: row.materialReceiptDate || undefined,
+    billSentForPaymentDate: row.billSentForPaymentDate || undefined,
     paymentDate: row.paymentDate || undefined,
     paymentMode: row.paymentMode || undefined,
     bgReturnDate: row.bgReturnDate || undefined,
     demandCancelled: row.demandCancelled || undefined,
+    soCancelledDate: row.soCancelledDate || undefined,
     soCancelled: row.soCancelled || undefined,
   }));
 }
@@ -2502,10 +2510,12 @@ function normalizeSupplyOrderRows(file: FileRecord | undefined) {
       ld: file.ld ?? "",
       revisedDp: file.revisedDp ?? "",
       materialReceiptDate: file.materialReceiptDate ?? "",
+      billSentForPaymentDate: file.billSentForPaymentDate ?? "",
       paymentDate: file.paymentDate ?? "",
       paymentMode: file.paymentMode ?? "",
       bgReturnDate: file.bgReturnDate ?? "",
       demandCancelled: file.demandCancelled ?? "No",
+      soCancelledDate: file.soCancelledDate ?? "",
       soCancelled: file.soCancelled ?? "No",
     },
     undefined,
@@ -2529,10 +2539,12 @@ function legacySupplyOrderPatch(rows: SupplyOrderDetail[]) {
     ld: first.ld || undefined,
     revisedDp: first.revisedDp || undefined,
     materialReceiptDate: first.materialReceiptDate || undefined,
+    billSentForPaymentDate: first.billSentForPaymentDate || undefined,
     paymentDate: first.paymentDate || undefined,
     paymentMode: first.paymentMode || undefined,
     bgReturnDate: first.bgReturnDate || undefined,
     demandCancelled: first.demandCancelled || undefined,
+    soCancelledDate: first.soCancelledDate || undefined,
     soCancelled: first.soCancelled || undefined,
   };
 }
@@ -2696,6 +2708,9 @@ function applySupplyOrderRules(
   }
   if (isNo(next.dpExtension ?? "")) {
     next = { ...next, dpExtensionCount: "" };
+  }
+  if (hasFilledString(next.soCancelledDate)) {
+    next = { ...next, soCancelled: "Yes" };
   }
   return next;
 }

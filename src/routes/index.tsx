@@ -2885,6 +2885,7 @@ function hasMilestoneDate(file: FileRecord, key: keyof FileRecord | keyof Supply
 const supplyOrderDateKeys = new Set<keyof SupplyOrderDetail>([
   "soDate",
   "bgValidityDate",
+  "billSentForPaymentDate",
   "paymentDate",
 ]);
 
@@ -2903,6 +2904,7 @@ function fileSupplyOrders(file: FileRecord) {
     dpExtension: file.dpExtension,
     revisedDp: file.revisedDp,
     materialReceiptDate: file.materialReceiptDate,
+    billSentForPaymentDate: file.billSentForPaymentDate,
     paymentDate: file.paymentDate,
     bgReturnDate: file.bgReturnDate,
     soCancelled: file.soCancelled,
@@ -3145,6 +3147,7 @@ const supplyOrderDateFields = [
   { key: "bgValidityDate", label: "BG validity" },
   { key: "revisedDp", label: "Revised DP" },
   { key: "materialReceiptDate", label: "Material receipt" },
+  { key: "billSentForPaymentDate", label: "Bill sent for payment" },
   { key: "paymentDate", label: "Payment" },
   { key: "bgReturnDate", label: "BG return" },
 ] satisfies Array<{ key: keyof SupplyOrderDetail; label: string }>;
