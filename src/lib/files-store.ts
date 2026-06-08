@@ -85,7 +85,6 @@ export type FileRecord = {
   paymentMode?: string;
   bgReturnDate?: string;
   demandCancelled?: string;
-  soCancelledDate?: string;
   soCancelled?: string;
   invitedFirms?: FirmDetail[];
   bidderFirms?: FirmDetail[];
@@ -122,7 +121,6 @@ export type SupplyOrderDetail = {
   paymentMode?: string;
   bgReturnDate?: string;
   demandCancelled?: string;
-  soCancelledDate?: string;
   soCancelled?: string;
 };
 

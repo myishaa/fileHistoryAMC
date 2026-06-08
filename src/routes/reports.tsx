@@ -28,7 +28,6 @@ function ReportsPage() {
   );
   const statusSummaryGroups = getStatusSummaryTableGroups(reportFiles);
   const cashOutgoRows = getExpectedCashOutgoRows(reportFiles);
-  const actualCashOutgoRows = getActualCashOutgoRows(reportFiles);
   const statusReportTitle =
     activeDivision === "all"
       ? "Status summary - All divisions"
@@ -37,16 +36,7 @@ function ReportsPage() {
     activeDivision === "all"
       ? "Expected cash outgo monthly - All divisions"
       : `Expected cash outgo monthly - ${activeDivision}`;
-  const actualCashOutgoReportTitle =
-    activeDivision === "all"
-      ? "Actual cash outgo monthly - All divisions"
-      : `Actual cash outgo monthly - ${activeDivision}`;
-  const reportTitle =
-    reportMode === "status"
-      ? statusReportTitle
-      : reportMode === "cashOutgo"
-        ? cashOutgoReportTitle
-        : actualCashOutgoReportTitle;
+  const reportTitle = reportMode === "status" ? statusReportTitle : cashOutgoReportTitle;
 
   return (
     <div className="space-y-6">
@@ -74,9 +64,7 @@ function ReportsPage() {
             onClick={() =>
               reportMode === "status"
                 ? printStatusSummaryGroupsToPdf(statusSummaryGroups, reportTitle)
-                : reportMode === "cashOutgo"
-                  ? printExpectedCashOutgoToPdf(cashOutgoRows, reportTitle)
-                  : printActualCashOutgoToPdf(actualCashOutgoRows, reportTitle)
+                : printExpectedCashOutgoToPdf(cashOutgoRows, reportTitle)
             }
             className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
           >
@@ -88,9 +76,7 @@ function ReportsPage() {
             onClick={() =>
               reportMode === "status"
                 ? exportStatusSummaryGroupsToExcel(statusSummaryGroups, reportTitle)
-                : reportMode === "cashOutgo"
-                  ? exportExpectedCashOutgoToExcel(cashOutgoRows, reportTitle)
-                  : exportActualCashOutgoToExcel(actualCashOutgoRows, reportTitle)
+                : exportExpectedCashOutgoToExcel(cashOutgoRows, reportTitle)
             }
             className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
           >
@@ -117,21 +103,18 @@ function ReportsPage() {
 
       {reportMode === "status" ? (
         <StatusSummaryReport groups={statusSummaryGroups} />
-      ) : reportMode === "cashOutgo" ? (
-        <ExpectedCashOutgoReport rows={cashOutgoRows} />
       ) : (
-        <ActualCashOutgoReport rows={actualCashOutgoRows} />
+        <ExpectedCashOutgoReport rows={cashOutgoRows} />
       )}
     </div>
   );
 }
 
-type ReportMode = "status" | "cashOutgo" | "actualCashOutgo";
+type ReportMode = "status" | "cashOutgo";
 
 const reportModes = [
   { key: "status", label: "Status summary" },
   { key: "cashOutgo", label: "Expected cash outgo" },
-  { key: "actualCashOutgo", label: "Actual cash outgo" },
 ] satisfies Array<{ key: ReportMode; label: string }>;
 
 function StatusSummaryReport({ groups }: { groups: StatusSummaryTableGroup[] }) {
@@ -275,39 +258,6 @@ function ExpectedCashOutgoReport({ rows }: { rows: ExpectedCashOutgoRow[] }) {
           </table>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ActualCashOutgoReport({ rows }: { rows: ExpectedCashOutgoRow[] }) {
-  const totals = getExpectedCashOutgoTotals(rows);
-
-  return (
-    <div className="bg-card border border-border rounded-xl p-6 shadow-[var(--shadow-card)]">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold">Actual cash outgo monthly</h2>
-          <p className="text-xs text-muted-foreground">
-            Uses the bill sent for payment date from each supply order.
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-2 text-right text-xs">
-          <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
-            <div className="text-muted-foreground">Capital</div>
-            <div className="font-semibold tabular-nums">{formatCurrency(totals.capital)}</div>
-          </div>
-          <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
-            <div className="text-muted-foreground">Revenue</div>
-            <div className="font-semibold tabular-nums">{formatCurrency(totals.revenue)}</div>
-          </div>
-          <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
-            <div className="text-muted-foreground">Total</div>
-            <div className="font-semibold tabular-nums">{formatCurrency(totals.total)}</div>
-          </div>
-        </div>
-      </div>
-
-      <CashOutgoTable rows={rows} emptyMessage="No actual cash outgo rows found." />
     </div>
   );
 }
@@ -498,10 +448,6 @@ function exportExpectedCashOutgoToExcel(rows: ExpectedCashOutgoRow[], title: str
   exportCashOutgoToExcel(rows, title, "No expected cash outgo rows found.");
 }
 
-function exportActualCashOutgoToExcel(rows: ExpectedCashOutgoRow[], title: string) {
-  exportCashOutgoToExcel(rows, title, "No actual cash outgo rows found.");
-}
-
 function exportCashOutgoToExcel(rows: ExpectedCashOutgoRow[], title: string, emptyMessage: string) {
   const worksheet = `
     <html>
@@ -537,15 +483,6 @@ function printExpectedCashOutgoToPdf(rows: ExpectedCashOutgoRow[], title: string
     title,
     "Base date is material receipt date if available, otherwise DP date. Cash outgo month is base date plus 10 days.",
     "No expected cash outgo rows found.",
-  );
-}
-
-function printActualCashOutgoToPdf(rows: ExpectedCashOutgoRow[], title: string) {
-  printCashOutgoToPdf(
-    rows,
-    title,
-    "Cash outgo month is based on the bill sent for payment date.",
-    "No actual cash outgo rows found.",
   );
 }
 
@@ -665,40 +602,6 @@ function getExpectedCashOutgoRows(files: FileRecord[]): ExpectedCashOutgoRow[] {
       const current = totals.get(monthKey) ?? {
         monthKey,
         month: formatMonthLabel(cashOutgoDate),
-        capital: 0,
-        revenue: 0,
-        total: 0,
-      };
-      const capital = getInrAmount(order.soValueCapital, file) ?? 0;
-      const revenue = getInrAmount(order.soValueRevenue, file) ?? 0;
-      current.capital += capital;
-      current.revenue += revenue;
-      current.total += capital + revenue;
-      totals.set(monthKey, current);
-    });
-  });
-
-  return Array.from(totals.values())
-    .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
-    .map((row) => ({
-      ...row,
-      capital: Math.round(row.capital),
-      revenue: Math.round(row.revenue),
-      total: Math.round(row.total),
-    }));
-}
-
-function getActualCashOutgoRows(files: FileRecord[]): ExpectedCashOutgoRow[] {
-  const totals = new Map<string, ExpectedCashOutgoRow>();
-
-  files.forEach((file) => {
-    fileSupplyOrders(file).forEach((order) => {
-      if (isSupplyOrderCancelled(order) || !hasFilledString(order.billSentForPaymentDate)) return;
-
-      const monthKey = order.billSentForPaymentDate.slice(0, 7);
-      const current = totals.get(monthKey) ?? {
-        monthKey,
-        month: formatMonthLabel(order.billSentForPaymentDate),
         capital: 0,
         revenue: 0,
         total: 0,
@@ -1247,7 +1150,6 @@ function fileSupplyOrders(file: FileRecord) {
     paymentMode: file.paymentMode,
     bgReturnDate: file.bgReturnDate,
     demandCancelled: file.demandCancelled,
-    soCancelledDate: file.soCancelledDate,
     soCancelled: file.soCancelled,
   };
   return Object.values(legacy).some((value) => Boolean(String(value ?? "").trim())) ? [legacy] : [];
@@ -1361,10 +1263,6 @@ function hasFilledString(value: string | undefined) {
 
 function isYes(value: string | undefined) {
   return value?.trim().toLowerCase() === "yes";
-}
-
-function isSupplyOrderCancelled(order: SupplyOrderDetail) {
-  return isYes(order.soCancelled) || hasFilledString(order.soCancelledDate);
 }
 
 function isNo(value: string | undefined) {

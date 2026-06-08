@@ -137,7 +137,6 @@ const supplyOrderKeys: FileKey[] = [
   "paymentMode",
   "bgReturnDate",
   "demandCancelled",
-  "soCancelledDate",
   "soCancelled",
 ];
 
@@ -247,7 +246,6 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "paymentMode", label: "Payment mode(Online/Offline)", options: paymentModeOptions },
       { key: "bgReturnDate", label: "BG return date", type: "date" },
       { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
-      { key: "soCancelledDate", label: "S.O. cancelled date", type: "date" },
       { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
     ],
   },
@@ -1835,7 +1833,6 @@ function fileSupplyOrders(file: FileRecord) {
     paymentMode: file.paymentMode,
     bgReturnDate: file.bgReturnDate,
     demandCancelled: file.demandCancelled,
-    soCancelledDate: file.soCancelledDate,
     soCancelled: file.soCancelled,
   };
   return Object.values(legacy).some((value) => Boolean(String(value ?? "").trim())) ? [legacy] : [];

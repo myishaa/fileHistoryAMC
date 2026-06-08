@@ -110,7 +110,6 @@ const empty = {
   paymentMode: "",
   bgReturnDate: "",
   demandCancelled: "No",
-  soCancelledDate: "",
   soCancelled: "No",
 };
 
@@ -285,7 +284,6 @@ const emptySupplyOrder: Required<SupplyOrderDetail> = {
   paymentMode: "",
   bgReturnDate: "",
   demandCancelled: "No",
-  soCancelledDate: "",
   soCancelled: "No",
 };
 
@@ -307,7 +305,6 @@ const supplyOrderFields: ExtraField[] = [
   { key: "paymentMode", label: "Payment mode(Online/Offline)", options: paymentModeOptions },
   { key: "bgReturnDate", label: "BG return date", type: "date" },
   { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
-  { key: "soCancelledDate", label: "S.O. cancelled date", type: "date" },
   { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
 ];
 
@@ -2482,7 +2479,6 @@ function cleanSupplyOrderRows(rows: SupplyOrderDetail[]) {
     paymentMode: row.paymentMode || undefined,
     bgReturnDate: row.bgReturnDate || undefined,
     demandCancelled: row.demandCancelled || undefined,
-    soCancelledDate: row.soCancelledDate || undefined,
     soCancelled: row.soCancelled || undefined,
   }));
 }
@@ -2515,7 +2511,6 @@ function normalizeSupplyOrderRows(file: FileRecord | undefined) {
       paymentMode: file.paymentMode ?? "",
       bgReturnDate: file.bgReturnDate ?? "",
       demandCancelled: file.demandCancelled ?? "No",
-      soCancelledDate: file.soCancelledDate ?? "",
       soCancelled: file.soCancelled ?? "No",
     },
     undefined,
@@ -2544,7 +2539,6 @@ function legacySupplyOrderPatch(rows: SupplyOrderDetail[]) {
     paymentMode: first.paymentMode || undefined,
     bgReturnDate: first.bgReturnDate || undefined,
     demandCancelled: first.demandCancelled || undefined,
-    soCancelledDate: first.soCancelledDate || undefined,
     soCancelled: first.soCancelled || undefined,
   };
 }
@@ -2708,9 +2702,6 @@ function applySupplyOrderRules(
   }
   if (isNo(next.dpExtension ?? "")) {
     next = { ...next, dpExtensionCount: "" };
-  }
-  if (hasFilledString(next.soCancelledDate)) {
-    next = { ...next, soCancelled: "Yes" };
   }
   return next;
 }
