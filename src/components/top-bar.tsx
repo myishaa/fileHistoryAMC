@@ -2,6 +2,7 @@ import { useRouterState } from "@tanstack/react-router";
 import {
   BarChart3,
   Bell,
+  CalendarDays,
   FilePlus2,
   LayoutDashboard,
   Moon,
@@ -13,7 +14,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { store, useSettings, useUsers } from "@/lib/files-store";
+import { store, useFiles, useSettings, useUsers } from "@/lib/files-store";
 
 const titles: Record<string, string> = {
   "/": "Search Files",
@@ -37,9 +38,17 @@ const nav = [
 export function TopBar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const settings = useSettings();
+  const files = useFiles();
   const users = useUsers();
   const title = titles[pathname] ?? "Dashboard";
   const isDark = settings.theme === "dark";
+  const yearOptions = Array.from(
+    new Set(
+      [settings.financialYear, settings.selectedYear, ...files.map((file) => file.year)]
+        .map((year) => year?.trim())
+        .filter((year): year is string => Boolean(year)),
+    ),
+  ).sort((a, b) => b.localeCompare(a));
 
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-card/95 backdrop-blur">
@@ -88,6 +97,21 @@ export function TopBar() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
+          <label className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1">
+            <CalendarDays className="size-4 text-muted-foreground" />
+            <span className="text-[11px] font-medium text-muted-foreground">Year</span>
+            <select
+              value={settings.selectedYear}
+              onChange={(event) => store.updateSettings({ selectedYear: event.target.value })}
+              className="h-6 min-w-20 bg-transparent text-sm font-semibold text-foreground outline-none"
+            >
+              {yearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="hidden xl:block text-right">
             <h1 className="text-sm font-semibold">{title}</h1>
             <p className="text-[11px] text-muted-foreground">File history management system</p>

@@ -86,6 +86,7 @@ export type FileRecord = {
   bgReturnDate?: string;
   demandCancelled?: string;
   soCancelled?: string;
+  soCancelledDate?: string;
   invitedFirms?: FirmDetail[];
   bidderFirms?: FirmDetail[];
   supplyOrders?: SupplyOrderDetail[];
@@ -122,6 +123,7 @@ export type SupplyOrderDetail = {
   bgReturnDate?: string;
   demandCancelled?: string;
   soCancelled?: string;
+  soCancelledDate?: string;
 };
 
 export type FirmDetail = {
@@ -150,6 +152,7 @@ export type AppTheme = "light" | "dark";
 export type AppThemeTint = "plain" | "yellow" | "green" | "blue" | "pink" | "lavender";
 export type AppSettings = {
   financialYear: string;
+  selectedYear: string;
   theme: AppTheme;
   themeTint: AppThemeTint;
   deletionPassword: string;
@@ -170,6 +173,7 @@ function currentYear() {
 
 const defaultSettings: AppSettings = {
   financialYear: currentYear(),
+  selectedYear: currentYear(),
   theme: "light",
   themeTint: "plain",
   deletionPassword: "",
@@ -295,7 +299,14 @@ export const store = {
   },
   getSettings(): AppSettings {
     ensureInit();
-    return { ...defaultSettings, ...read<Partial<AppSettings>>(SETTINGS_KEY, defaultSettings) };
+    const stored = read<Partial<AppSettings>>(SETTINGS_KEY, defaultSettings);
+    const financialYear = stored.financialYear ?? defaultSettings.financialYear;
+    return {
+      ...defaultSettings,
+      ...stored,
+      financialYear,
+      selectedYear: stored.selectedYear ?? financialYear,
+    };
   },
   getUsers(): AppUser[] {
     ensureInit();
@@ -441,11 +452,17 @@ export function useAccessibleDivisions() {
 
 export function useAccessibleFiles() {
   const files = useFiles();
+  const settings = useSettings();
   const accessibleDivisions = useAccessibleDivisions();
   const activeUser = useActiveUser();
-  if (!activeUser || activeUser.role === "admin") return files;
+  const yearFilteredFiles = settings.selectedYear
+    ? files.filter((file) => file.year === settings.selectedYear)
+    : files;
+  if (!activeUser || activeUser.role === "admin") return yearFilteredFiles;
   const allowedDivisionNames = new Set(accessibleDivisions.map((division) => division.name));
-  return files.filter((file) => file.division && allowedDivisionNames.has(file.division));
+  return yearFilteredFiles.filter(
+    (file) => file.division && allowedDivisionNames.has(file.division),
+  );
 }
 
 export function isIncomplete(f: FileRecord) {

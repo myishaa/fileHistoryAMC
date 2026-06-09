@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { FileSpreadsheet, FileText } from "lucide-react";
 import {
@@ -16,8 +16,11 @@ export const Route = createFileRoute("/reports")({
 function ReportsPage() {
   const files = useAccessibleFiles();
   const divisions = useAccessibleDivisions();
+  const navigate = useNavigate();
   const [selectedDivision, setSelectedDivision] = useState("all");
   const [reportMode, setReportMode] = useState<ReportMode>("status");
+  const [delayDays, setDelayDays] = useState("5");
+  const [delayMilestoneKey, setDelayMilestoneKey] = useState("all");
   const selectedDivisionIsAccessible =
     selectedDivision === "all" || divisions.some((division) => division.name === selectedDivision);
   const activeDivision = selectedDivisionIsAccessible ? selectedDivision : "all";
@@ -27,16 +30,54 @@ function ReportsPage() {
     [activeDivision, files],
   );
   const statusSummaryGroups = getStatusSummaryTableGroups(reportFiles);
-  const cashOutgoRows = getExpectedCashOutgoRows(reportFiles);
+  const expectedCashOutgoRows = getExpectedCashOutgoRows(reportFiles);
+  const actualCashOutgoRows = getActualCashOutgoRows(reportFiles);
+  const delayThresholdDays = getDelayThresholdDays(delayDays);
+  const delayRows = getDelayStatusRows(reportFiles, delayThresholdDays, delayMilestoneKey);
+  const selectedCashOutgoRows =
+    reportMode === "actualCashOutgo" ? actualCashOutgoRows : expectedCashOutgoRows;
   const statusReportTitle =
     activeDivision === "all"
       ? "Status summary - All divisions"
       : `Status summary - ${activeDivision}`;
-  const cashOutgoReportTitle =
+  const expectedCashOutgoReportTitle =
     activeDivision === "all"
       ? "Expected cash outgo monthly - All divisions"
       : `Expected cash outgo monthly - ${activeDivision}`;
-  const reportTitle = reportMode === "status" ? statusReportTitle : cashOutgoReportTitle;
+  const actualCashOutgoReportTitle =
+    activeDivision === "all"
+      ? "Actual cash outgo monthly - All divisions"
+      : `Actual cash outgo monthly - ${activeDivision}`;
+  const cashOutgoReportTitle =
+    reportMode === "actualCashOutgo" ? actualCashOutgoReportTitle : expectedCashOutgoReportTitle;
+  const delayReportTitle =
+    activeDivision === "all"
+      ? `Delay status - More than ${delayThresholdDays} days`
+      : `Delay status - More than ${delayThresholdDays} days - ${activeDivision}`;
+  const reportTitle =
+    reportMode === "status"
+      ? statusReportTitle
+      : reportMode === "delayStatus"
+        ? delayReportTitle
+        : cashOutgoReportTitle;
+  const openDelaySearch = (milestoneKey = delayMilestoneKey) => {
+    navigate({
+      to: "/search",
+      search: {
+        dashboardFilter: getDelayStatusDashboardFilter(delayThresholdDays, milestoneKey),
+        division: activeDivision === "all" ? undefined : activeDivision,
+      },
+    });
+  };
+  const openDelayFile = (fileId: string) => {
+    navigate({
+      to: "/search",
+      search: {
+        dashboardFilter: `delayFile:${fileId}`,
+        division: activeDivision === "all" ? undefined : activeDivision,
+      },
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -64,7 +105,11 @@ function ReportsPage() {
             onClick={() =>
               reportMode === "status"
                 ? printStatusSummaryGroupsToPdf(statusSummaryGroups, reportTitle)
-                : printExpectedCashOutgoToPdf(cashOutgoRows, reportTitle)
+                : reportMode === "delayStatus"
+                  ? printDelayStatusToPdf(delayRows, reportTitle)
+                  : reportMode === "actualCashOutgo"
+                    ? printActualCashOutgoToPdf(selectedCashOutgoRows, reportTitle)
+                    : printExpectedCashOutgoToPdf(selectedCashOutgoRows, reportTitle)
             }
             className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
           >
@@ -76,7 +121,11 @@ function ReportsPage() {
             onClick={() =>
               reportMode === "status"
                 ? exportStatusSummaryGroupsToExcel(statusSummaryGroups, reportTitle)
-                : exportExpectedCashOutgoToExcel(cashOutgoRows, reportTitle)
+                : reportMode === "delayStatus"
+                  ? exportDelayStatusToExcel(delayRows, reportTitle)
+                  : reportMode === "actualCashOutgo"
+                    ? exportActualCashOutgoToExcel(selectedCashOutgoRows, reportTitle)
+                    : exportExpectedCashOutgoToExcel(selectedCashOutgoRows, reportTitle)
             }
             className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
           >
@@ -103,18 +152,34 @@ function ReportsPage() {
 
       {reportMode === "status" ? (
         <StatusSummaryReport groups={statusSummaryGroups} />
+      ) : reportMode === "delayStatus" ? (
+        <DelayStatusReport
+          rows={delayRows}
+          thresholdDays={delayThresholdDays}
+          selectedDays={delayDays}
+          selectedMilestoneKey={delayMilestoneKey}
+          onDaysChange={setDelayDays}
+          onMilestoneChange={setDelayMilestoneKey}
+          onOpenFile={openDelayFile}
+          onOpenSearch={() => openDelaySearch()}
+          onOpenMilestone={(milestoneKey) => openDelaySearch(milestoneKey)}
+        />
+      ) : reportMode === "actualCashOutgo" ? (
+        <ActualCashOutgoReport rows={actualCashOutgoRows} />
       ) : (
-        <ExpectedCashOutgoReport rows={cashOutgoRows} />
+        <ExpectedCashOutgoReport rows={expectedCashOutgoRows} />
       )}
     </div>
   );
 }
 
-type ReportMode = "status" | "cashOutgo";
+type ReportMode = "status" | "expectedCashOutgo" | "actualCashOutgo" | "delayStatus";
 
 const reportModes = [
   { key: "status", label: "Status summary" },
-  { key: "cashOutgo", label: "Expected cash outgo" },
+  { key: "expectedCashOutgo", label: "Expected cash outgo" },
+  { key: "actualCashOutgo", label: "Actual cash out go" },
+  { key: "delayStatus", label: "Delay status" },
 ] satisfies Array<{ key: ReportMode; label: string }>;
 
 function StatusSummaryReport({ groups }: { groups: StatusSummaryTableGroup[] }) {
@@ -176,16 +241,46 @@ function StatusSummaryReport({ groups }: { groups: StatusSummaryTableGroup[] }) 
 }
 
 function ExpectedCashOutgoReport({ rows }: { rows: ExpectedCashOutgoRow[] }) {
+  return (
+    <CashOutgoReport
+      rows={rows}
+      title="Expected cash outgo monthly"
+      description="Uses material receipt date if filled, otherwise DP date, then adds 10 days."
+      emptyMessage="No expected cash outgo rows found."
+    />
+  );
+}
+
+function ActualCashOutgoReport({ rows }: { rows: ExpectedCashOutgoRow[] }) {
+  return (
+    <CashOutgoReport
+      rows={rows}
+      title="Actual cash out go monthly"
+      description="Uses bill sent for payment date, excluding S.O. cancelled rows only when cancellation date is filled."
+      emptyMessage="No actual cash out go rows found."
+    />
+  );
+}
+
+function CashOutgoReport({
+  rows,
+  title,
+  description,
+  emptyMessage,
+}: {
+  rows: ExpectedCashOutgoRow[];
+  title: string;
+  description: string;
+  emptyMessage: string;
+}) {
   const totals = getExpectedCashOutgoTotals(rows);
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 shadow-[var(--shadow-card)]">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">Expected cash outgo monthly</h2>
-          <p className="text-xs text-muted-foreground">
-            Uses material receipt date if filled, otherwise DP date, then adds 10 days.
-          </p>
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <p className="text-xs text-muted-foreground">{description}</p>
         </div>
         <div className="grid grid-cols-3 gap-2 text-right text-xs">
           <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
@@ -250,7 +345,7 @@ function ExpectedCashOutgoReport({ rows }: { rows: ExpectedCashOutgoRow[] }) {
                     colSpan={cashOutgoColumns.length}
                     className="px-3 py-8 text-center text-sm text-muted-foreground"
                   >
-                    No expected cash outgo rows found.
+                    {emptyMessage}
                   </td>
                 </tr>
               )}
@@ -350,6 +445,175 @@ function StatusCountValue({ value }: { value: number | string | undefined }) {
   );
 }
 
+function DelayStatusReport({
+  rows,
+  thresholdDays,
+  selectedDays,
+  selectedMilestoneKey,
+  onDaysChange,
+  onMilestoneChange,
+  onOpenFile,
+  onOpenSearch,
+  onOpenMilestone,
+}: {
+  rows: DelayStatusRow[];
+  thresholdDays: number;
+  selectedDays: string;
+  selectedMilestoneKey: string;
+  onDaysChange: (value: string) => void;
+  onMilestoneChange: (value: string) => void;
+  onOpenFile: (fileId: string) => void;
+  onOpenSearch: () => void;
+  onOpenMilestone: (milestoneKey: string) => void;
+}) {
+  const summary = getDelayStatusSummary(rows);
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-6 shadow-[var(--shadow-card)]">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">Delay status</h2>
+          <p className="text-xs text-muted-foreground">
+            Files stuck in their current milestone for more than {thresholdDays} days.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex w-28 flex-col gap-1 text-xs text-muted-foreground">
+            <span>Days</span>
+            <input
+              type="number"
+              min="0"
+              value={selectedDays}
+              onChange={(event) => onDaysChange(event.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/40"
+            />
+          </label>
+          <label className="flex min-w-[220px] flex-col gap-1 text-xs text-muted-foreground">
+            <span>Milestone</span>
+            <select
+              value={selectedMilestoneKey}
+              onChange={(event) => onMilestoneChange(event.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/40"
+            >
+              <option value="all">All milestones</option>
+              {delayMilestoneOptions.map((milestone) => (
+                <option key={milestone.key} value={milestone.key}>
+                  {milestone.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="mb-5 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          className="rounded-md border border-border bg-secondary/30 px-3 py-2 text-left hover:bg-accent"
+        >
+          <div className="text-muted-foreground">Delayed files</div>
+          <div className="font-semibold tabular-nums">{rows.length}</div>
+        </button>
+        <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
+          <div className="text-muted-foreground">Average days</div>
+          <div className="font-semibold tabular-nums">
+            {summary.averageDays ? `${summary.averageDays} days` : "-"}
+          </div>
+        </div>
+        <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
+          <div className="text-muted-foreground">Longest delay</div>
+          <div className="font-semibold tabular-nums">
+            {summary.longestDays ? `${summary.longestDays} days` : "-"}
+          </div>
+        </div>
+      </div>
+
+      {selectedMilestoneKey === "all" && summary.byMilestone.length ? (
+        <div className="mb-5 flex flex-wrap gap-2">
+          {summary.byMilestone.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => onOpenMilestone(item.key)}
+              className="rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-xs hover:bg-accent"
+            >
+              <span className="text-muted-foreground">{item.label}</span>{" "}
+              <span className="font-semibold tabular-nums">{item.count}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[920px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/40 text-left text-[11px] uppercase text-muted-foreground">
+                {delayStatusColumns.map((column) => (
+                  <th
+                    key={column.key}
+                    className={
+                      "px-3 py-2.5 font-semibold " +
+                      (column.align === "right" ? "text-right" : "text-left")
+                    }
+                  >
+                    {column.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length ? (
+                rows.map((row, index) => (
+                  <tr
+                    key={row.fileId}
+                    className={
+                      "border-b border-border/60 last:border-0 " +
+                      (index % 2 === 0 ? "bg-card" : "bg-secondary/15")
+                    }
+                  >
+                    {delayStatusColumns.map((column) => (
+                      <td
+                        key={column.key}
+                        className={
+                          "px-3 py-2.5 " +
+                          (column.align === "right" ? "text-right tabular-nums" : "text-left")
+                        }
+                      >
+                        {column.key === "action" ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenFile(row.fileId)}
+                            className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 text-xs font-medium hover:bg-accent"
+                          >
+                            Open
+                          </button>
+                        ) : (
+                          getDelayStatusDisplayValue(row, column.key, index)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={delayStatusColumns.length}
+                    className="px-3 py-8 text-center text-sm text-muted-foreground"
+                  >
+                    No delayed files found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function exportStatusSummaryGroupsToExcel(groups: StatusSummaryTableGroup[], title: string) {
   const worksheet = `
     <html>
@@ -436,6 +700,104 @@ function getStatusSummaryGroupHtml(group: StatusSummaryTableGroup) {
   `;
 }
 
+function exportDelayStatusToExcel(rows: DelayStatusRow[], title: string) {
+  const worksheet = `
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          table { border-collapse: collapse; }
+          th, td { border: 1px solid #999; padding: 6px; text-align: left; }
+          th { font-weight: 700; background: #f3f4f6; }
+          td:nth-child(1), td:nth-child(8), th:nth-child(1), th:nth-child(8) { text-align: right; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title)}</h1>
+        ${getDelayStatusTableHtml(rows)}
+      </body>
+    </html>
+  `;
+  const blob = new Blob([worksheet], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${getExportFileName(title)}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function printDelayStatusToPdf(rows: DelayStatusRow[], title: string) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    window.alert("Please allow pop-ups to generate the PDF report.");
+    return;
+  }
+
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+          h1 { font-size: 18px; margin: 0 0 4px; }
+          p { margin: 0 0 16px; color: #4b5563; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; }
+          th, td { border: 1px solid #d1d5db; padding: 6px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; font-weight: 700; }
+          td:nth-child(1), td:nth-child(8), th:nth-child(1), th:nth-child(8) { text-align: right; }
+          @media print { body { margin: 12mm; } }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title)}</h1>
+        <p>Files whose current milestone has remained open beyond the selected threshold.</p>
+        ${getDelayStatusTableHtml(rows)}
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
+function getDelayStatusTableHtml(rows: DelayStatusRow[]) {
+  const exportColumns = delayStatusColumns.filter((column) => column.key !== "action");
+  return `
+    <table>
+      <thead>
+        <tr>
+          ${exportColumns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}
+        </tr>
+      </thead>
+      <tbody>
+        ${
+          rows.length
+            ? rows
+                .map(
+                  (row, index) => `
+                    <tr>
+                      ${exportColumns
+                        .map(
+                          (column) =>
+                            `<td>${escapeHtml(getDelayStatusDisplayValue(row, column.key, index))}</td>`,
+                        )
+                        .join("")}
+                    </tr>
+                  `,
+                )
+                .join("")
+            : `<tr><td colspan="${exportColumns.length}">No delayed files found.</td></tr>`
+        }
+      </tbody>
+    </table>
+  `;
+}
+
 function getExportFileName(title: string) {
   return title
     .trim()
@@ -446,6 +808,10 @@ function getExportFileName(title: string) {
 
 function exportExpectedCashOutgoToExcel(rows: ExpectedCashOutgoRow[], title: string) {
   exportCashOutgoToExcel(rows, title, "No expected cash outgo rows found.");
+}
+
+function exportActualCashOutgoToExcel(rows: ExpectedCashOutgoRow[], title: string) {
+  exportCashOutgoToExcel(rows, title, "No actual cash out go rows found.");
 }
 
 function exportCashOutgoToExcel(rows: ExpectedCashOutgoRow[], title: string, emptyMessage: string) {
@@ -483,6 +849,15 @@ function printExpectedCashOutgoToPdf(rows: ExpectedCashOutgoRow[], title: string
     title,
     "Base date is material receipt date if available, otherwise DP date. Cash outgo month is base date plus 10 days.",
     "No expected cash outgo rows found.",
+  );
+}
+
+function printActualCashOutgoToPdf(rows: ExpectedCashOutgoRow[], title: string) {
+  printCashOutgoToPdf(
+    rows,
+    title,
+    "Cash outgo month is bill sent for payment date. Rows are excluded when S.O. cancelled is Yes and S.O. cancelled date is filled.",
+    "No actual cash out go rows found.",
   );
 }
 
@@ -576,7 +951,31 @@ type ExpectedCashOutgoRow = {
   total: number;
 };
 
+type DelayStatusRow = {
+  fileId: string;
+  fileRef: string;
+  division: string;
+  indentor: string;
+  description: string;
+  milestoneKey: string;
+  milestone: string;
+  stageStartDate: string;
+  daysInStage: number;
+  lastFilledDate: string;
+};
+
 type CashOutgoColumnKey = "serial" | "month" | "capital" | "revenue" | "total";
+type DelayStatusColumnKey =
+  | "serial"
+  | "fileRef"
+  | "division"
+  | "indentor"
+  | "description"
+  | "milestone"
+  | "stageStartDate"
+  | "daysInStage"
+  | "lastFilledDate"
+  | "action";
 
 const cashOutgoColumns = [
   { key: "serial", label: "S.No.", align: "right" },
@@ -585,6 +984,19 @@ const cashOutgoColumns = [
   { key: "revenue", label: "Revenue", align: "right" },
   { key: "total", label: "Total", align: "right" },
 ] satisfies Array<{ key: CashOutgoColumnKey; label: string; align: "left" | "right" }>;
+
+const delayStatusColumns = [
+  { key: "serial", label: "S.No.", align: "right" },
+  { key: "fileRef", label: "File", align: "left" },
+  { key: "division", label: "Division", align: "left" },
+  { key: "indentor", label: "Indentor", align: "left" },
+  { key: "description", label: "Description", align: "left" },
+  { key: "milestone", label: "Current milestone", align: "left" },
+  { key: "stageStartDate", label: "Stage start date", align: "left" },
+  { key: "daysInStage", label: "Days", align: "right" },
+  { key: "lastFilledDate", label: "Last filled date", align: "left" },
+  { key: "action", label: "Search", align: "left" },
+] satisfies Array<{ key: DelayStatusColumnKey; label: string; align: "left" | "right" }>;
 
 function getExpectedCashOutgoRows(files: FileRecord[]): ExpectedCashOutgoRow[] {
   const totals = new Map<string, ExpectedCashOutgoRow>();
@@ -623,6 +1035,215 @@ function getExpectedCashOutgoRows(files: FileRecord[]): ExpectedCashOutgoRow[] {
       revenue: Math.round(row.revenue),
       total: Math.round(row.total),
     }));
+}
+
+function getActualCashOutgoRows(files: FileRecord[]): ExpectedCashOutgoRow[] {
+  const totals = new Map<string, ExpectedCashOutgoRow>();
+
+  files.forEach((file) => {
+    fileSupplyOrders(file).forEach((order) => {
+      if (!hasFilledString(order.billSentForPaymentDate) || isSoCancelledWithDate(order)) return;
+
+      const monthKey = order.billSentForPaymentDate.slice(0, 7);
+      const current = totals.get(monthKey) ?? {
+        monthKey,
+        month: formatMonthLabel(order.billSentForPaymentDate),
+        capital: 0,
+        revenue: 0,
+        total: 0,
+      };
+      const capital = getInrAmount(order.soValueCapital, file) ?? 0;
+      const revenue = getInrAmount(order.soValueRevenue, file) ?? 0;
+      current.capital += capital;
+      current.revenue += revenue;
+      current.total += capital + revenue;
+      totals.set(monthKey, current);
+    });
+  });
+
+  return Array.from(totals.values())
+    .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+    .map((row) => ({
+      ...row,
+      capital: Math.round(row.capital),
+      revenue: Math.round(row.revenue),
+      total: Math.round(row.total),
+    }));
+}
+
+function isSoCancelledWithDate(order: SupplyOrderDetail) {
+  return isYes(order.soCancelled) && hasFilledString(order.soCancelledDate);
+}
+
+function getDelayStatusRows(
+  files: FileRecord[],
+  thresholdDays: number,
+  milestoneKey: string,
+): DelayStatusRow[] {
+  return files
+    .map((file) => getCurrentMilestoneDelay(file, thresholdDays, milestoneKey))
+    .filter((row): row is DelayStatusRow => Boolean(row))
+    .sort((a, b) => b.daysInStage - a.daysInStage || a.milestone.localeCompare(b.milestone));
+}
+
+function getCurrentMilestoneDelay(
+  file: FileRecord,
+  thresholdDays: number,
+  selectedMilestoneKey: string,
+) {
+  const milestone = getActiveDelayMilestone(file);
+  if (!milestone) return undefined;
+  if (selectedMilestoneKey !== "all" && milestone.key !== selectedMilestoneKey) return undefined;
+  if (isMilestoneComplete(file, milestone)) return undefined;
+
+  const stageStartDate = getMilestoneStageStartDate(file, milestone);
+  const daysInStage = getDaysSinceDate(stageStartDate);
+  if (daysInStage === undefined || daysInStage <= thresholdDays) return undefined;
+
+  return {
+    fileId: file.id,
+    fileRef: getFileReference(file),
+    division: file.division ?? "",
+    indentor: file.indentor ?? "",
+    description: file.demandDescription ?? "",
+    milestoneKey: milestone.key,
+    milestone: milestone.label,
+    stageStartDate,
+    daysInStage,
+    lastFilledDate: getLastFilledDateValue(file) ?? "",
+  };
+}
+
+function getActiveDelayMilestone(file: FileRecord) {
+  return delayMilestoneOptions.find((milestone) => isManualActiveMilestone(file, milestone));
+}
+
+function getMilestoneStageStartDate(file: FileRecord, milestone: MilestoneDefinition) {
+  if (milestone.reviewed) {
+    const reviewedDate = getFieldDateValue(file, milestone.reviewed);
+    if (reviewedDate) return reviewedDate;
+  }
+
+  const previousMilestone = getPreviousApplicableMilestone(file, milestone);
+  if (previousMilestone) return getFieldDateValue(file, previousMilestone.current);
+  return getFieldDateValue(file, "receivedDate") ?? getFieldDateValue(file, "date");
+}
+
+function getPreviousApplicableMilestone(file: FileRecord, milestone: MilestoneDefinition) {
+  let previousMilestone: MilestoneDefinition | undefined;
+  for (const item of milestoneDefinitions) {
+    if (item.key === milestone.key) break;
+    if (isMilestoneApplicable(file, item)) previousMilestone = item;
+  }
+  return previousMilestone;
+}
+
+function getFieldDateValue(file: FileRecord, key: keyof FileRecord | keyof SupplyOrderDetail) {
+  if (supplyOrderDateKeys.has(key as keyof SupplyOrderDetail)) {
+    return getEarliestSupplyOrderDate(file, key as keyof SupplyOrderDetail);
+  }
+  const value = file[key as keyof FileRecord];
+  return typeof value === "string" && hasDate(value) ? value : undefined;
+}
+
+function getEarliestSupplyOrderDate(file: FileRecord, key: keyof SupplyOrderDetail) {
+  return fileSupplyOrders(file)
+    .map((order) => String(order[key] ?? ""))
+    .filter(hasDate)
+    .sort((a, b) => a.localeCompare(b))[0];
+}
+
+function getDaysSinceDate(date: string | undefined) {
+  const dateTime = parseLocalDateTime(date ?? "");
+  const todayTime = parseLocalDateTime(formatLocalDate(new Date()));
+  if (dateTime === undefined || todayTime === undefined) return undefined;
+  return Math.floor((todayTime - dateTime) / 86_400_000);
+}
+
+function getLastFilledDateValue(file: FileRecord) {
+  return [
+    file.receivedDate,
+    file.scrutinyDate,
+    file.scrutinyResponseDate,
+    file.scrutinyCompletionDate,
+    file.immsDate,
+    file.highValueMeetingDate,
+    file.highValueMinutesDate,
+    file.preTcecDate,
+    file.preTcecMinutesDate,
+    file.adVettingDate,
+    file.rqaApprovalDate,
+    file.ifaSentDate,
+    file.ifaFinalDate,
+    file.cfaSentDate,
+    file.cfaDate,
+    file.gemUndertakingDate,
+    file.rfpVettingInitiationDate,
+    file.rfpVettingApprovalDate,
+    file.bidDate,
+    file.bidOpeningDate,
+    file.refloatBiddingDate,
+    file.refloatBidOpeningDate,
+    file.postTcecDate,
+    file.postTcecMinutesDate,
+    file.refloatPostTcecDate,
+    file.refloatPostTcecMinutesDate,
+    file.cncDate,
+    file.cncApprovalDate,
+    ...fileSupplyOrders(file).flatMap((order) => [
+      order.soDate,
+      order.dpDate,
+      order.bgValidityDate,
+      order.revisedDp,
+      order.materialReceiptDate,
+      order.billSentForPaymentDate,
+      order.paymentDate,
+      order.bgReturnDate,
+      order.soCancelledDate,
+    ]),
+  ]
+    .filter((value): value is string => hasDate(value))
+    .sort((a, b) => b.localeCompare(a))[0];
+}
+
+function getFileReference(file: FileRecord) {
+  return file.fileNo || file.uniqueCode || file.title || file.id;
+}
+
+function getDelayThresholdDays(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function getDelayStatusDashboardFilter(days: number, milestoneKey: string) {
+  return `delayStatus:${days}:${milestoneKey || "all"}`;
+}
+
+function getDelayStatusSummary(rows: DelayStatusRow[]) {
+  const totalDays = rows.reduce((sum, row) => sum + row.daysInStage, 0);
+  const counts = new Map<string, { key: string; label: string; count: number }>();
+  rows.forEach((row) => {
+    const current = counts.get(row.milestoneKey) ?? {
+      key: row.milestoneKey,
+      label: row.milestone,
+      count: 0,
+    };
+    current.count += 1;
+    counts.set(row.milestoneKey, current);
+  });
+
+  return {
+    averageDays: rows.length ? Math.round(totalDays / rows.length) : 0,
+    longestDays: rows.reduce((max, row) => Math.max(max, row.daysInStage), 0),
+    byMilestone: Array.from(counts.values()).sort((a, b) => b.count - a.count),
+  };
+}
+
+function getDelayStatusDisplayValue(row: DelayStatusRow, key: DelayStatusColumnKey, index: number) {
+  if (key === "serial") return String(index + 1);
+  if (key === "action") return "";
+  if (key === "daysInStage") return String(row.daysInStage);
+  return row[key];
 }
 
 function getExpectedCashOutgoTotals(rows: ExpectedCashOutgoRow[]) {
@@ -810,6 +1431,8 @@ const milestoneDefinitions = [
   },
   { key: "payment", label: "Payment", totalLabel: "Total files", current: "paymentDate" },
 ] satisfies MilestoneDefinition[];
+
+const delayMilestoneOptions = milestoneDefinitions;
 
 function getStatusSummaryTableGroups(files: FileRecord[]): StatusSummaryTableGroup[] {
   const byMilestone = new Map<string, StatusSummaryTableRow & { columns: StatusSummaryColumn[] }>();
@@ -1110,6 +1733,7 @@ const supplyOrderDateKeys = new Set<keyof SupplyOrderDetail>([
   "bgValidityDate",
   "billSentForPaymentDate",
   "paymentDate",
+  "soCancelledDate",
 ]);
 
 function hasMilestoneDate(file: FileRecord, key: keyof FileRecord | keyof SupplyOrderDetail) {
@@ -1151,6 +1775,7 @@ function fileSupplyOrders(file: FileRecord) {
     bgReturnDate: file.bgReturnDate,
     demandCancelled: file.demandCancelled,
     soCancelled: file.soCancelled,
+    soCancelledDate: file.soCancelledDate,
   };
   return Object.values(legacy).some((value) => Boolean(String(value ?? "").trim())) ? [legacy] : [];
 }
@@ -1281,6 +1906,10 @@ function isDateAfterToday(date: string | undefined) {
   const todayTime = parseLocalDateTime(formatLocalDate(new Date()));
   if (dateTime === undefined || todayTime === undefined) return false;
   return dateTime > todayTime;
+}
+
+function hasDate(date: string | undefined) {
+  return parseLocalDateTime(date ?? "") !== undefined;
 }
 
 function parseLocalDateTime(date: string) {

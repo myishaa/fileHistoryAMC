@@ -184,7 +184,7 @@ function WorkspaceSettings() {
         <EditableField
           label="Financial year"
           value={settings.financialYear}
-          onChange={(value) => store.updateSettings({ financialYear: value })}
+          onChange={(value) => store.updateSettings({ financialYear: value, selectedYear: value })}
         />
         <ThemeField
           label="Theme"

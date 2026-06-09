@@ -20,6 +20,16 @@ export const Route = createFileRoute("/")({
 
 type DashboardTab = "snapshot" | "status" | "analytics" | "finance";
 type StatusActionMode = "pdf" | "excel" | "search";
+type DivisionValueSortMode = "value" | "percent";
+type DivisionValueSortKey =
+  | "allocatedCapital"
+  | "allocatedRevenue"
+  | "intendedCapital"
+  | "intendedRevenue"
+  | "bookedCapital"
+  | "bookedRevenue"
+  | "committedCapital"
+  | "committedRevenue";
 type AnalyticsPanelKey =
   | "divisionFiles"
   | "divisionValue"
@@ -94,6 +104,10 @@ export function Dashboard() {
   const [statusActionMode, setStatusActionMode] = useState<StatusActionMode>("search");
   const [activeAnalyticsPanel, setActiveAnalyticsPanel] =
     useState<AnalyticsPanelKey>("divisionFiles");
+  const [divisionValueSortMode, setDivisionValueSortMode] =
+    useState<DivisionValueSortMode>("value");
+  const [divisionValueSortKey, setDivisionValueSortKey] =
+    useState<DivisionValueSortKey>("allocatedCapital");
   const [selectedAnalyticsDivision, setSelectedAnalyticsDivision] = useState("all");
   const selectedDivisionIsAccessible =
     selectedDivision === "all" || divisions.some((division) => division.name === selectedDivision);
@@ -406,6 +420,17 @@ export function Dashboard() {
   ];
   const selectedAnalyticsPanel =
     analyticsPanels.find((panel) => panel.key === activeAnalyticsPanel) ?? analyticsPanels[0];
+  const displayedAnalyticsPanel =
+    selectedAnalyticsPanel.key === "divisionValue"
+      ? {
+          ...selectedAnalyticsPanel,
+          rows: sortDivisionValueRows(
+            selectedAnalyticsPanel.rows,
+            divisionValueSortKey,
+            divisionValueSortMode,
+          ),
+        }
+      : selectedAnalyticsPanel;
   const analyticsDivisionFilterEnabled = isDivisionFilterableAnalyticsPanel(
     selectedAnalyticsPanel.key,
   );
@@ -708,8 +733,8 @@ export function Dashboard() {
             </aside>
             <div className="min-w-0">
               <AnalyticsChartCard
-                title={selectedAnalyticsPanel.title}
-                subtitle={selectedAnalyticsPanel.subtitle}
+                title={displayedAnalyticsPanel.title}
+                subtitle={displayedAnalyticsPanel.subtitle}
                 actions={
                   <>
                     {analyticsDivisionFilterEnabled ? (
@@ -731,14 +756,14 @@ export function Dashboard() {
                     ) : null}
                     <button
                       type="button"
-                      onClick={() => printAnalyticsPanelToPdf(selectedAnalyticsPanel)}
+                      onClick={() => printAnalyticsPanelToPdf(displayedAnalyticsPanel)}
                       className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium hover:bg-accent"
                     >
                       Export PDF
                     </button>
                     <button
                       type="button"
-                      onClick={() => exportAnalyticsPanelToExcel(selectedAnalyticsPanel)}
+                      onClick={() => exportAnalyticsPanelToExcel(displayedAnalyticsPanel)}
                       className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium hover:bg-accent"
                     >
                       Export Excel
@@ -746,9 +771,17 @@ export function Dashboard() {
                   </>
                 }
               >
+                {displayedAnalyticsPanel.key === "divisionValue" ? (
+                  <DivisionValueSortControls
+                    mode={divisionValueSortMode}
+                    sortKey={divisionValueSortKey}
+                    onModeChange={setDivisionValueSortMode}
+                    onSortKeyChange={setDivisionValueSortKey}
+                  />
+                ) : null}
                 <AnalyticsRankingTable
-                  columns={selectedAnalyticsPanel.columns}
-                  rows={selectedAnalyticsPanel.rows}
+                  columns={displayedAnalyticsPanel.columns}
+                  rows={displayedAnalyticsPanel.rows}
                 />
               </AnalyticsChartCard>
             </div>
@@ -1181,6 +1214,79 @@ function StatusMetricBox({
   );
 }
 
+const divisionValueSortOptions = [
+  { key: "allocatedCapital", label: "Allocated C" },
+  { key: "allocatedRevenue", label: "Allocated R" },
+  { key: "intendedCapital", label: "Intended C" },
+  { key: "intendedRevenue", label: "Intended R" },
+  { key: "bookedCapital", label: "Booked C" },
+  { key: "bookedRevenue", label: "Booked R" },
+  { key: "committedCapital", label: "Committed C" },
+  { key: "committedRevenue", label: "Committed R" },
+] satisfies Array<{ key: DivisionValueSortKey; label: string }>;
+
+function DivisionValueSortControls({
+  mode,
+  sortKey,
+  onModeChange,
+  onSortKeyChange,
+}: {
+  mode: DivisionValueSortMode;
+  sortKey: DivisionValueSortKey;
+  onModeChange: (mode: DivisionValueSortMode) => void;
+  onSortKeyChange: (key: DivisionValueSortKey) => void;
+}) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary/25 px-2.5 py-2 text-xs">
+      <div className="flex items-center gap-1 rounded-md border border-border bg-card p-0.5">
+        {[
+          { key: "value", label: "Value" },
+          { key: "percent", label: "%" },
+        ].map((item) => (
+          <label
+            key={item.key}
+            className={
+              "flex h-7 cursor-pointer items-center gap-1.5 rounded px-2 font-medium transition " +
+              (mode === item.key
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground")
+            }
+          >
+            <input
+              type="checkbox"
+              checked={mode === item.key}
+              onChange={() => onModeChange(item.key as DivisionValueSortMode)}
+              className="size-3 accent-current"
+            />
+            {item.label}
+          </label>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        {divisionValueSortOptions.map((option) => (
+          <label
+            key={option.key}
+            className={
+              "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 font-medium transition " +
+              (sortKey === option.key
+                ? "border-primary bg-primary/10 text-foreground"
+                : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground")
+            }
+          >
+            <input
+              type="checkbox"
+              checked={sortKey === option.key}
+              onChange={() => onSortKeyChange(option.key)}
+              className="size-3 accent-primary"
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AnalyticsChartCard({
   title,
   subtitle,
@@ -1253,6 +1359,31 @@ function getDivisionValueAnalyticsColumns(): AnalyticsTableColumn[] {
   ];
 }
 
+function sortDivisionValueRows(
+  rows: Array<Record<string, number | string>>,
+  sortKey: DivisionValueSortKey,
+  mode: DivisionValueSortMode,
+) {
+  return [...rows].sort((a, b) => {
+    const aValue = getDivisionValueSortValue(a, sortKey, mode);
+    const bValue = getDivisionValueSortValue(b, sortKey, mode);
+    if (bValue !== aValue) return bValue - aValue;
+    return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+  });
+}
+
+function getDivisionValueSortValue(
+  row: Record<string, number | string>,
+  sortKey: DivisionValueSortKey,
+  mode: DivisionValueSortMode,
+) {
+  const value = Number(row[sortKey] ?? 0);
+  if (mode === "value" || sortKey.startsWith("allocated")) return value;
+  const allocationKey = sortKey.endsWith("Revenue") ? "allocatedRevenue" : "allocatedCapital";
+  const allocation = Number(row[allocationKey] ?? 0);
+  return allocation > 0 ? value / allocation : 0;
+}
+
 function getAverageDaysAnalyticsColumns(nameLabel: string): AnalyticsTableColumn[] {
   return [
     { key: "name", label: nameLabel, align: "left" },
@@ -1276,7 +1407,12 @@ function AnalyticsRankingTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[520px] border-collapse text-sm">
+      <table className="w-full min-w-[980px] table-fixed border-collapse text-sm">
+        <colgroup>
+          {columns.map((column, index) => (
+            <col key={column.key} className={index === 0 ? "w-40" : "w-32"} />
+          ))}
+        </colgroup>
         <thead>
           {hasGroupedHeaders ? (
             <>
@@ -1287,7 +1423,8 @@ function AnalyticsRankingTable({
                     colSpan={header.colSpan}
                     rowSpan={header.group ? 1 : 2}
                     className={
-                      "py-2 font-medium " + (header.align === "left" ? "text-left" : "text-center")
+                      "px-3 py-2 font-medium " +
+                      (header.align === "left" ? "text-left" : "text-center")
                     }
                   >
                     {header.label}
@@ -1298,7 +1435,7 @@ function AnalyticsRankingTable({
                 {columns
                   .filter((column) => column.group)
                   .map((column) => (
-                    <th key={column.key} className="py-2 text-center font-medium">
+                    <th key={column.key} className="px-3 py-2 text-center font-medium">
                       {column.label}
                     </th>
                   ))}
@@ -1310,7 +1447,8 @@ function AnalyticsRankingTable({
                 <th
                   key={column.key}
                   className={
-                    "py-2 font-medium " + (column.align === "left" ? "text-left" : "text-right")
+                    "px-3 py-2 font-medium " +
+                    (column.align === "left" ? "text-left" : "text-center")
                   }
                 >
                   {column.label}
@@ -1326,8 +1464,8 @@ function AnalyticsRankingTable({
                 <td
                   key={column.key}
                   className={
-                    "whitespace-pre-line py-2 tabular-nums " +
-                    (column.align === "left" ? "text-left font-medium" : "text-right")
+                    "whitespace-pre-line px-3 py-2 tabular-nums " +
+                    (column.align === "left" ? "text-left font-medium" : "text-center")
                   }
                 >
                   {column.render
@@ -2887,6 +3025,7 @@ const supplyOrderDateKeys = new Set<keyof SupplyOrderDetail>([
   "bgValidityDate",
   "billSentForPaymentDate",
   "paymentDate",
+  "soCancelledDate",
 ]);
 
 function fileSupplyOrders(file: FileRecord) {
@@ -2908,6 +3047,7 @@ function fileSupplyOrders(file: FileRecord) {
     paymentDate: file.paymentDate,
     bgReturnDate: file.bgReturnDate,
     soCancelled: file.soCancelled,
+    soCancelledDate: file.soCancelledDate,
   };
   return Object.values(legacy).some((value) => Boolean(String(value ?? "").trim())) ? [legacy] : [];
 }
@@ -3150,6 +3290,7 @@ const supplyOrderDateFields = [
   { key: "billSentForPaymentDate", label: "Bill sent for payment" },
   { key: "paymentDate", label: "Payment" },
   { key: "bgReturnDate", label: "BG return" },
+  { key: "soCancelledDate", label: "S.O. cancelled" },
 ] satisfies Array<{ key: keyof SupplyOrderDetail; label: string }>;
 
 function isPaymentDue(file: FileRecord) {
@@ -3930,9 +4071,9 @@ function formatLakhsValueWithPercent(value: number, allocatedValue: number) {
 function renderLakhsValueWithPercent(value: number, allocatedValue: number) {
   const percent = getPercent(value, allocatedValue);
   return (
-    <span className="flex w-full items-center justify-between gap-2">
+    <span className="inline-flex w-full items-baseline justify-center gap-2 whitespace-nowrap">
       <span>{formatLakhsValue(value)}</span>
-      <span className="text-muted-foreground">
+      <span className="text-xs text-muted-foreground">
         {percent === undefined ? "-" : `(${formatPercent(percent)})`}
       </span>
     </span>

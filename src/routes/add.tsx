@@ -111,6 +111,7 @@ const empty = {
   bgReturnDate: "",
   demandCancelled: "No",
   soCancelled: "No",
+  soCancelledDate: "",
 };
 
 const defaultMilestones = [
@@ -306,6 +307,7 @@ const supplyOrderFields: ExtraField[] = [
   { key: "bgReturnDate", label: "BG return date", type: "date" },
   { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
   { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
+  { key: "soCancelledDate", label: "S.O. cancelled date", type: "date" },
 ];
 
 const extraSections: { title: string; fields: ExtraField[] }[] = [
@@ -2480,6 +2482,7 @@ function cleanSupplyOrderRows(rows: SupplyOrderDetail[]) {
     bgReturnDate: row.bgReturnDate || undefined,
     demandCancelled: row.demandCancelled || undefined,
     soCancelled: row.soCancelled || undefined,
+    soCancelledDate: row.soCancelledDate || undefined,
   }));
 }
 
@@ -2512,6 +2515,7 @@ function normalizeSupplyOrderRows(file: FileRecord | undefined) {
       bgReturnDate: file.bgReturnDate ?? "",
       demandCancelled: file.demandCancelled ?? "No",
       soCancelled: file.soCancelled ?? "No",
+      soCancelledDate: file.soCancelledDate ?? "",
     },
     undefined,
   );
@@ -2540,6 +2544,7 @@ function legacySupplyOrderPatch(rows: SupplyOrderDetail[]) {
     bgReturnDate: first.bgReturnDate || undefined,
     demandCancelled: first.demandCancelled || undefined,
     soCancelled: first.soCancelled || undefined,
+    soCancelledDate: first.soCancelledDate || undefined,
   };
 }
 

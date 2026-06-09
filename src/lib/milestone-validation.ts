@@ -161,6 +161,7 @@ function fileSupplyOrders(file: Partial<FileRecord>) {
     materialReceiptDate: file.materialReceiptDate,
     billSentForPaymentDate: file.billSentForPaymentDate,
     paymentDate: file.paymentDate,
+    soCancelledDate: file.soCancelledDate,
   };
   return Object.values(legacy).some((value) => hasFilledString(String(value ?? "")))
     ? [legacy]

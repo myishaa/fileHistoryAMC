@@ -138,6 +138,7 @@ const supplyOrderKeys: FileKey[] = [
   "bgReturnDate",
   "demandCancelled",
   "soCancelled",
+  "soCancelledDate",
 ];
 
 const fieldSections: { title: string; fields: FieldDef[] }[] = [
@@ -247,6 +248,7 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "bgReturnDate", label: "BG return date", type: "date" },
       { key: "demandCancelled", label: "Demand cancelled (Yes/No)", options: yesNo },
       { key: "soCancelled", label: "S.O. Cancelled (Yes/No)", options: yesNo },
+      { key: "soCancelledDate", label: "S.O. cancelled date", type: "date" },
     ],
   },
 ];
@@ -1834,6 +1836,7 @@ function fileSupplyOrders(file: FileRecord) {
     bgReturnDate: file.bgReturnDate,
     demandCancelled: file.demandCancelled,
     soCancelled: file.soCancelled,
+    soCancelledDate: file.soCancelledDate,
   };
   return Object.values(legacy).some((value) => Boolean(String(value ?? "").trim())) ? [legacy] : [];
 }
@@ -2057,6 +2060,7 @@ const supplyOrderDateKeys = new Set<SupplyOrderKey>([
   "bgValidityDate",
   "billSentForPaymentDate",
   "paymentDate",
+  "soCancelledDate",
 ]);
 
 function hasFilledString(value: string | undefined) {
@@ -2271,7 +2275,78 @@ function isDateToday(date: string | undefined) {
   return dateTime === todayTime;
 }
 
+function isDelayStatusMatch(file: FileRecord, thresholdDays: number, selectedMilestoneKey: string) {
+  const milestone = milestoneDefinitions.find((item) => isManualActiveMilestone(file, item));
+  if (!milestone) return false;
+  if (selectedMilestoneKey !== "all" && milestone.key !== selectedMilestoneKey) return false;
+  if (isMilestoneComplete(file, milestone)) return false;
+
+  const stageStartDate = getMilestoneStageStartDate(file, milestone);
+  const daysInStage = getDaysSinceDate(stageStartDate);
+  return daysInStage !== undefined && daysInStage > thresholdDays;
+}
+
+function getMilestoneStageStartDate(
+  file: FileRecord,
+  milestone: (typeof milestoneDefinitions)[number],
+) {
+  if (milestone.reviewed) {
+    const reviewedDate = getFieldDateValue(file, milestone.reviewed);
+    if (reviewedDate) return reviewedDate;
+  }
+
+  const previousMilestone = getPreviousApplicableMilestone(file, milestone);
+  if (previousMilestone) return getFieldDateValue(file, previousMilestone.current);
+  return getFieldDateValue(file, "receivedDate") ?? getFieldDateValue(file, "date");
+}
+
+function getPreviousApplicableMilestone(
+  file: FileRecord,
+  milestone: (typeof milestoneDefinitions)[number],
+) {
+  let previousMilestone: (typeof milestoneDefinitions)[number] | undefined;
+  for (const item of milestoneDefinitions) {
+    if (item.key === milestone.key) break;
+    if (isMilestoneApplicable(file, item)) previousMilestone = item;
+  }
+  return previousMilestone;
+}
+
+function getFieldDateValue(file: FileRecord, key: FileKey | SupplyOrderKey) {
+  if (supplyOrderDateKeys.has(key as SupplyOrderKey)) {
+    return getEarliestSupplyOrderDate(file, key as SupplyOrderKey);
+  }
+  const value = file[key as FileKey];
+  return typeof value === "string" && hasDate(value) ? value : undefined;
+}
+
+function getEarliestSupplyOrderDate(file: FileRecord, key: SupplyOrderKey) {
+  return fileSupplyOrders(file)
+    .map((order) => String(order[key] ?? ""))
+    .filter(hasDate)
+    .sort((a, b) => a.localeCompare(b))[0];
+}
+
+function getDaysSinceDate(date: string | undefined) {
+  const dateTime = parseLocalDateTime(date ?? "");
+  const todayTime = parseLocalDateTime(formatLocalDate(new Date()));
+  if (dateTime === undefined || todayTime === undefined) return undefined;
+  return Math.floor((todayTime - dateTime) / 86_400_000);
+}
+
+function getDelayThresholdDays(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
 function matchesDashboardFilter(file: FileRecord, filter: string) {
+  if (filter.startsWith("delayFile:")) {
+    return file.id === filter.slice("delayFile:".length);
+  }
+  if (filter.startsWith("delayStatus:")) {
+    const [, daysValue = "0", milestoneKey = "all"] = filter.split(":");
+    return isDelayStatusMatch(file, getDelayThresholdDays(daysValue), milestoneKey);
+  }
   if (filter.startsWith("attribute:")) {
     const [, key, value] = filter.split(":");
     const fieldValue = String(file[key as keyof FileRecord] ?? "");
