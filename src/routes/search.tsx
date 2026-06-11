@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   store,
   type FileRecord,
@@ -313,6 +313,10 @@ const printColumnGroups = [
 const allTableColumnKeys = printColumns.map((column) => column.key);
 const manualTablePresetId = "manual";
 const TABLE_FIELDS_DEFAULT_KEY_PREFIX = "ofms.searchTableDefaultFields.v2";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(
+  /\/$/,
+  "",
+);
 
 function tableDefaultStorageKey(userId: string | undefined) {
   return `${TABLE_FIELDS_DEFAULT_KEY_PREFIX}.${userId || "no-active-user"}`;
@@ -342,6 +346,30 @@ function getValidTableColumnKeys(keys: string[]) {
 
 function sameStringList(left: string[], right: string[]) {
   return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+function appendSearchParam(params: URLSearchParams, key: string, value: string | undefined) {
+  if (value?.trim()) params.set(key, value.trim());
+}
+
+function appendSearchBool(params: URLSearchParams, key: string, value: boolean) {
+  if (value) params.set(key, "true");
+}
+
+function appendSearchList(params: URLSearchParams, key: string, values: string[]) {
+  if (values.length) params.set(key, values.join(","));
+}
+
+async function fetchBackendSearchResults(query: string, signal: AbortSignal) {
+  const response = await fetch(`${API_BASE_URL}/api/files/search${query ? `?${query}` : ""}`, {
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
+    throw new Error(body?.error ?? `Search request failed: ${response.status}`);
+  }
+  return (await response.json()) as { files: FileRecord[]; total: number };
 }
 
 function SearchPage() {
@@ -394,6 +422,11 @@ function SearchPage() {
     readDefaultTableColumnKeys(settings.activeUserId),
   );
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
+  const [backendResults, setBackendResults] = useState<FileRecord[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [hasLoadedSearchResults, setHasLoadedSearchResults] = useState(false);
+  const [searchError, setSearchError] = useState<string | undefined>();
+  const hasLoadedSearchResultsRef = useRef(false);
   const [selectedTableColumnKeys, setSelectedTableColumnKeys] = useState<string[]>(
     () => defaultTableColumnKeys ?? allTableColumnKeys,
   );
@@ -476,82 +509,48 @@ function SearchPage() {
     freeDate ||
     search.dashboardFilter;
 
-  const results = useMemo(() => {
-    const minValue = parseAmount(valueFrom);
-    const maxValue = parseAmount(valueTo);
+  const searchQuery = useMemo(() => {
+    const params = new URLSearchParams();
 
-    const filtered = files.filter((file) => {
-      if (yearFilter && !includesText(file.year, yearFilter)) return false;
-      if (search.dashboardFilter && !matchesDashboardFilter(file, search.dashboardFilter))
-        return false;
-      if (indentor && !includesText(file.indentor, indentor)) return false;
-      if (divisionFilter && !includesText(file.division, divisionFilter)) return false;
-      if (description && !includesText(file.demandDescription, description)) return false;
-      if (firm && !fileSupplyOrders(file).some((order) => includesText(order.firm, firm)))
-        return false;
-      if (
-        selectedModes.length > 0 &&
-        !selectedModes.includes((file.mode ?? "").trim().toUpperCase())
-      )
-        return false;
-      if (selectedFileTypes.length > 0 && !selectedFileTypes.includes((file.fileType ?? "").trim()))
-        return false;
-      if (highValue && !isYes(file.highValue)) return false;
-      if (gte && !isYes(file.gte)) return false;
-      if (ad && !isYes(file.ad)) return false;
-      if (rqa && !isYes(file.rqa)) return false;
-      if (ifaFilter && !isYes(file.ifa)) return false;
-      if (psbFilter && !isYes(file.psb)) return false;
-      if (bgFilter && !isYes(file.bg)) return false;
-      if (rfpVettingFilter && !isYes(file.rfpVetting)) return false;
-      if (
-        refloat &&
-        !isYes(file.refloat) &&
-        !hasAny(file, [
-          "refloatBiddingDate",
-          "refloatBidOpeningDate",
-          "refloatPostTcecDate",
-          "refloatPostTcecCommitteeNo",
-        ])
-      )
-        return false;
-      if (cnc && !hasAny(file, ["cncDate", "cncApprovalDate"])) return false;
-      if (tcec && !isTcecFile(file)) return false;
-      if (rstFilter && !isYes(file.rst)) return false;
-      if (
-        demandCancelledFilter &&
-        !fileSupplyOrders(file).some((order) => isYes(order.demandCancelled))
-      )
-        return false;
-      if (soCancelledFilter && !fileSupplyOrders(file).some((order) => isYes(order.soCancelled)))
-        return false;
-      if (!matchesValueType(file, capitalOnly, revenueOnly)) return false;
-      if (!matchesValueRange(file, minValue, maxValue)) return false;
-      if (!fileSupplyOrders(file).some((order) => matchesDateRange(order.dpDate, dpFrom, dpTo)))
-        return false;
-      if (freeText && !allSearchText(file).includes(freeText.trim().toLowerCase())) return false;
-      if (
-        freeDate &&
-        !editableFields.some((field) => {
-          if (field.type !== "date") return false;
-          if (supplyOrderKeys.includes(field.key)) {
-            return fileSupplyOrders(file).some(
-              (order) => order[field.key as SupplyOrderKey] === freeDate,
-            );
-          }
-          return file[field.key] === freeDate;
-        })
-      )
-        return false;
-      return true;
-    });
+    appendSearchParam(params, "yearFilter", yearFilter);
+    appendSearchParam(params, "indentor", indentor);
+    appendSearchParam(params, "divisionFilter", divisionFilter);
+    appendSearchParam(params, "valueFrom", valueFrom);
+    appendSearchParam(params, "valueTo", valueTo);
+    appendSearchParam(params, "description", description);
+    appendSearchParam(params, "firm", firm);
+    appendSearchList(params, "selectedModes", selectedModes);
+    appendSearchList(params, "selectedFileTypes", selectedFileTypes);
+    appendSearchBool(params, "capitalOnly", capitalOnly);
+    appendSearchBool(params, "revenueOnly", revenueOnly);
+    appendSearchBool(params, "highValue", highValue);
+    appendSearchBool(params, "gte", gte);
+    appendSearchBool(params, "ad", ad);
+    appendSearchBool(params, "rqa", rqa);
+    appendSearchBool(params, "ifaFilter", ifaFilter);
+    appendSearchBool(params, "psbFilter", psbFilter);
+    appendSearchBool(params, "bgFilter", bgFilter);
+    appendSearchBool(params, "rfpVettingFilter", rfpVettingFilter);
+    appendSearchBool(params, "refloat", refloat);
+    appendSearchBool(params, "cnc", cnc);
+    appendSearchBool(params, "tcec", tcec);
+    appendSearchParam(params, "dpFrom", dpFrom);
+    appendSearchParam(params, "dpTo", dpTo);
+    appendSearchBool(params, "rstFilter", rstFilter);
+    appendSearchBool(params, "demandCancelledFilter", demandCancelledFilter);
+    appendSearchBool(params, "soCancelledFilter", soCancelledFilter);
+    appendSearchParam(params, "freeText", freeText);
+    appendSearchParam(params, "freeDate", freeDate);
+    appendSearchParam(params, "dashboardFilter", search.dashboardFilter);
+    appendSearchParam(params, "sortColumnKey", activeSortColumnKey);
+    appendSearchParam(params, "sortDirection", sortDirection);
+    appendSearchBool(params, "divisionWiseSort", divisionWiseSort);
 
-    return sortFiles(filtered, activeSortColumnKey, divisionWiseSort, sortDirection);
+    return params.toString();
   }, [
     activeSortColumnKey,
     sortDirection,
     divisionWiseSort,
-    files,
     yearFilter,
     search.dashboardFilter,
     indentor,
@@ -583,6 +582,39 @@ function SearchPage() {
     freeText,
     freeDate,
   ]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const delay = hasLoadedSearchResultsRef.current ? 180 : 0;
+    const timeoutId = window.setTimeout(() => {
+      setSearchLoading(true);
+      setSearchError(undefined);
+      fetchBackendSearchResults(searchQuery, controller.signal)
+        .then((payload) => {
+          setBackendResults(payload.files);
+          setHasLoadedSearchResults(true);
+          hasLoadedSearchResultsRef.current = true;
+          setSelectedFileIds((current) =>
+            current.filter((id) => payload.files.some((file) => file.id === id)),
+          );
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.error(error);
+          setSearchError(error instanceof Error ? error.message : "Search request failed.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearchLoading(false);
+        });
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [searchQuery]);
+
+  const results = backendResults;
 
   const valueTotals = useMemo(() => getValueTotals(results), [results]);
   const allValueTotals = useMemo(() => getValueTotals(files), [files]);
@@ -725,6 +757,19 @@ function SearchPage() {
           className="flex-1 h-10 bg-transparent outline-none text-sm"
         />
       </div>
+
+      {(searchError || (searchLoading && !hasLoadedSearchResults)) && (
+        <div
+          className={
+            "rounded-md border px-3 py-2 text-sm " +
+            (searchError
+              ? "border-destructive/30 bg-destructive/10 text-destructive"
+              : "border-border bg-secondary/40 text-muted-foreground")
+          }
+        >
+          {searchError ? searchError : "Updating search results..."}
+        </div>
+      )}
 
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]">
         <aside className="bg-card border border-border rounded-md p-4 shadow-[var(--shadow-card)] h-fit min-w-0 space-y-4">

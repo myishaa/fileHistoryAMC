@@ -1,15 +1,24 @@
 import cors from "cors";
 import "dotenv/config";
 import express, { type ErrorRequestHandler } from "express";
+import { dashboardRouter } from "./routes/dashboard.js";
+import { divisionsRouter } from "./routes/divisions.js";
+import { filesRouter } from "./routes/files.js";
 import { healthRouter } from "./routes/health.js";
+import { settingsRouter } from "./routes/settings.js";
+import { usersRouter } from "./routes/users.js";
+import { HttpError } from "./utils/http.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const frontendOrigin = process.env.FRONTEND_ORIGIN ?? "http://localhost:5173";
+const frontendOrigins = (process.env.FRONTEND_ORIGIN ?? "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
-    origin: frontendOrigin,
+    origin: frontendOrigins,
     credentials: true,
   }),
 );
@@ -20,10 +29,16 @@ app.get("/", (_request, response) => {
 });
 
 app.use("/api/health", healthRouter);
+app.use("/api/dashboard", dashboardRouter);
+app.use("/api/divisions", divisionsRouter);
+app.use("/api/users", usersRouter);
+app.use("/api/settings", settingsRouter);
+app.use("/api/files", filesRouter);
 
 const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
   console.error(error);
-  response.status(500).json({
+  const status = error instanceof HttpError ? error.status : 500;
+  response.status(status).json({
     ok: false,
     error: error instanceof Error ? error.message : "Unexpected server error",
   });

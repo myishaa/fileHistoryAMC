@@ -24,6 +24,32 @@ Once the server is running, the database connection health check is:
 curl http://localhost:3000/api/health
 ```
 
+## Initial API Routes
+
+- `GET /api/health`
+- `GET /api/divisions`
+- `POST /api/divisions`
+- `PATCH /api/divisions/:id`
+- `DELETE /api/divisions/:id`
+- `GET /api/users`
+- `POST /api/users`
+- `PATCH /api/users/:id`
+- `DELETE /api/users/:id`
+- `GET /api/settings`
+- `PATCH /api/settings`
+- `GET /api/files`
+- `GET /api/files/:id`
+- `POST /api/files`
+- `PATCH /api/files/:id`
+- `DELETE /api/files/:id`
+
+The file endpoints accept and return the current frontend-style camelCase shape. Empty strings are stored as `null` for dates, numbers, and optional text fields. Nested file data is stored in child tables:
+
+- `invitedFirms` and `bidderFirms` -> `file_firms`
+- `supplyOrders` -> `supply_orders`
+- `remarks` -> `file_remarks`
+- `completedMilestones` -> `file_completed_milestones`
+
 ## Main Tables
 
 - `files`: core file/procurement records.

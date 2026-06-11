@@ -1,4 +1,4 @@
-// Lightweight localStorage-backed store for files and divisions.
+// Backend-backed store for files, divisions, users, and settings.
 import * as React from "react";
 import { defaultTableFieldPresets, type TableFieldPreset } from "@/lib/table-field-presets";
 
@@ -162,11 +162,6 @@ export type AppSettings = {
   activeUserId?: string;
 };
 
-const FILES_KEY = "ofms.files.v1";
-const DIVS_KEY = "ofms.divisions.v1";
-const SETTINGS_KEY = "ofms.settings.v1";
-const USERS_KEY = "ofms.users.v1";
-
 function currentYear() {
   return String(new Date().getFullYear());
 }
@@ -182,157 +177,174 @@ const defaultSettings: AppSettings = {
   tableFieldPresets: defaultTableFieldPresets,
 };
 
-const defaultDivisions: Division[] = [
-  {
-    id: "d1",
-    name: "Mechanical",
-    code: "MECH",
-    allocatedCapital: "",
-    allocatedRevenue: "",
-    ad: "No",
-  },
-  {
-    id: "d2",
-    name: "Electrical",
-    code: "ELEC",
-    allocatedCapital: "",
-    allocatedRevenue: "",
-    ad: "No",
-  },
-  {
-    id: "d3",
-    name: "Electronics",
-    code: "ELX",
-    allocatedCapital: "",
-    allocatedRevenue: "",
-    ad: "No",
-  },
-  {
-    id: "d4",
-    name: "Administration",
-    code: "ADMIN",
-    allocatedCapital: "",
-    allocatedRevenue: "",
-    ad: "No",
-  },
-  {
-    id: "d5",
-    name: "Procurement",
-    code: "PROC",
-    allocatedCapital: "",
-    allocatedRevenue: "",
-    ad: "No",
-  },
-];
-
 const defaultUsers: AppUser[] = [];
-
-const sampleOfficers = ["Rajesh Kumar", "Anita Sharma", "Vikram Singh", "Priya Nair", "S. Iyer"];
-const sampleTitles = [
-  "Gear assembly inspection report",
-  "Transformer maintenance log",
-  "PCB calibration certificate",
-  "Procurement order — bearings",
-  "Annual audit summary",
-  "Vendor compliance file",
-  "Lathe machine overhaul",
-  "Sensor batch QA report",
-];
-
-function seedFiles(): FileRecord[] {
-  const out: FileRecord[] = [];
-  for (let i = 0; i < 18; i++) {
-    const div = defaultDivisions[i % defaultDivisions.length].name;
-    const incomplete = i % 4 === 0;
-    out.push({
-      id: crypto.randomUUID(),
-      title: incomplete && i % 8 === 0 ? undefined : sampleTitles[i % sampleTitles.length],
-      division: div,
-      officer: incomplete && i % 6 === 0 ? undefined : sampleOfficers[i % sampleOfficers.length],
-      imms: incomplete ? undefined : `IMMS-${1000 + i}`,
-      date: new Date(Date.now() - i * 86400000 * 2).toISOString().slice(0, 10),
-      createdAt: new Date(Date.now() - i * 86400000 * 2).toISOString(),
-    });
-  }
-  return out;
-}
-
-function read<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function write<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(value));
-}
 
 const listeners = new Set<() => void>();
 function emit() {
   listeners.forEach((l) => l());
 }
 
-let initialized = false;
-function ensureInit() {
-  if (initialized || typeof window === "undefined") return;
-  initialized = true;
-  if (!localStorage.getItem(DIVS_KEY)) write(DIVS_KEY, defaultDivisions);
-  if (!localStorage.getItem(FILES_KEY)) write(FILES_KEY, seedFiles());
-  if (!localStorage.getItem(SETTINGS_KEY)) write(SETTINGS_KEY, defaultSettings);
-  if (!localStorage.getItem(USERS_KEY)) write(USERS_KEY, defaultUsers);
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(
+  /\/$/,
+  "",
+);
+
+type StoreState = {
+  files: FileRecord[];
+  divisions: Division[];
+  settings: AppSettings;
+  users: AppUser[];
+  loading: boolean;
+  loaded: boolean;
+  error?: string;
+};
+
+let state: StoreState = {
+  files: [],
+  divisions: [],
+  settings: defaultSettings,
+  users: defaultUsers,
+  loading: false,
+  loaded: false,
+};
+
+let loadPromise: Promise<void> | undefined;
+
+function setState(patch: Partial<StoreState>) {
+  state = { ...state, ...patch };
+  emit();
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    let message = `Request failed: ${response.status}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      message = body.error ?? message;
+    } catch {
+      // Keep the status-based message if the backend did not send JSON.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function loadAll(force = false) {
+  if (typeof window === "undefined") return;
+  if (loadPromise && !force) return loadPromise;
+
+  loadPromise = (async () => {
+    setState({ loading: true, error: undefined });
+    try {
+      const [files, divisions, users, settings] = await Promise.all([
+        request<{ files: FileRecord[] }>("/api/files"),
+        request<{ divisions: Division[] }>("/api/divisions"),
+        request<{ users: AppUser[] }>("/api/users"),
+        request<{ settings: AppSettings }>("/api/settings"),
+      ]);
+
+      setState({
+        files: files.files,
+        divisions: divisions.divisions,
+        users: users.users,
+        settings: {
+          ...defaultSettings,
+          ...settings.settings,
+          tableFieldPresets: settings.settings.tableFieldPresets?.length
+            ? settings.settings.tableFieldPresets
+            : defaultTableFieldPresets,
+        },
+        loading: false,
+        loaded: true,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load backend data.";
+      console.error(error);
+      setState({ loading: false, loaded: true, error: message });
+    } finally {
+      loadPromise = undefined;
+    }
+  })();
+
+  return loadPromise;
+}
+
+function ensureLoaded() {
+  if (typeof window === "undefined") return;
+  if (!state.loaded && !state.loading) void loadAll();
+}
+
+function runMutation(mutation: () => Promise<unknown>) {
+  if (typeof window === "undefined") return;
+  void (async () => {
+    try {
+      await mutation();
+      await loadAll(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Backend save failed.";
+      console.error(error);
+      setState({ error: message });
+    }
+  })();
 }
 
 export const store = {
   getFiles(): FileRecord[] {
-    ensureInit();
-    return read<FileRecord[]>(FILES_KEY, []);
+    ensureLoaded();
+    return state.files;
   },
   getDivisions(): Division[] {
-    ensureInit();
-    return read<Division[]>(DIVS_KEY, defaultDivisions);
+    ensureLoaded();
+    return state.divisions;
   },
   getSettings(): AppSettings {
-    ensureInit();
-    const stored = read<Partial<AppSettings>>(SETTINGS_KEY, defaultSettings);
-    const financialYear = stored.financialYear ?? defaultSettings.financialYear;
-    return {
-      ...defaultSettings,
-      ...stored,
-      financialYear,
-      selectedYear: stored.selectedYear ?? financialYear,
-    };
+    ensureLoaded();
+    const financialYear = state.settings.financialYear ?? defaultSettings.financialYear;
+    return { ...defaultSettings, ...state.settings, financialYear };
   },
   getUsers(): AppUser[] {
-    ensureInit();
-    return read<AppUser[]>(USERS_KEY, defaultUsers);
+    ensureLoaded();
+    return state.users;
   },
   updateSettings(patch: Partial<AppSettings>) {
-    write(SETTINGS_KEY, { ...store.getSettings(), ...patch });
-    emit();
+    setState({ settings: { ...store.getSettings(), ...patch } });
+    runMutation(() =>
+      request("/api/settings", {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    );
   },
   addFile(f: Omit<FileRecord, "id" | "createdAt">) {
-    const files = store.getFiles();
-    files.unshift({ ...f, id: crypto.randomUUID(), createdAt: new Date().toISOString() });
-    write(FILES_KEY, files);
-    emit();
+    runMutation(() =>
+      request("/api/files", {
+        method: "POST",
+        body: JSON.stringify(f),
+      }),
+    );
   },
   updateFile(id: string, patch: Partial<FileRecord>) {
-    const files = store.getFiles().map((f) => (f.id === id ? { ...f, ...patch } : f));
-    write(FILES_KEY, files);
-    emit();
+    setState({ files: state.files.map((f) => (f.id === id ? { ...f, ...patch } : f)) });
+    runMutation(() =>
+      request(`/api/files/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    );
   },
   deleteFile(id: string) {
-    write(
-      FILES_KEY,
-      store.getFiles().filter((f) => f.id !== id),
-    );
-    emit();
+    setState({ files: state.files.filter((f) => f.id !== id) });
+    runMutation(() => request(`/api/files/${id}`, { method: "DELETE" }));
   },
   addDivision(
     name: string,
@@ -341,55 +353,60 @@ export const store = {
     allocatedRevenue?: string,
     ad?: string,
   ) {
-    const divs = store.getDivisions();
-    divs.push({ id: crypto.randomUUID(), name, code, allocatedCapital, allocatedRevenue, ad });
-    write(DIVS_KEY, divs);
-    emit();
+    runMutation(() =>
+      request("/api/divisions", {
+        method: "POST",
+        body: JSON.stringify({ name, code, allocatedCapital, allocatedRevenue, ad }),
+      }),
+    );
   },
   updateDivision(id: string, patch: Partial<Division>) {
-    write(
-      DIVS_KEY,
-      store.getDivisions().map((d) => (d.id === id ? { ...d, ...patch } : d)),
+    setState({ divisions: state.divisions.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
+    runMutation(() =>
+      request(`/api/divisions/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
     );
-    emit();
   },
   deleteDivision(id: string) {
-    write(
-      DIVS_KEY,
-      store.getDivisions().filter((d) => d.id !== id),
-    );
-    write(
-      USERS_KEY,
-      store.getUsers().map((user) => ({
+    setState({
+      divisions: state.divisions.filter((d) => d.id !== id),
+      users: state.users.map((user) => ({
         ...user,
         divisionIds: user.divisionIds.filter((divId) => divId !== id),
       })),
-    );
-    emit();
+    });
+    runMutation(() => request(`/api/divisions/${id}`, { method: "DELETE" }));
   },
   addUser(user: Omit<AppUser, "id">) {
-    const users = store.getUsers();
-    users.push({ ...user, id: crypto.randomUUID() });
-    write(USERS_KEY, users);
-    emit();
+    runMutation(() =>
+      request("/api/users", {
+        method: "POST",
+        body: JSON.stringify(user),
+      }),
+    );
   },
   updateUser(id: string, patch: Partial<AppUser>) {
-    write(
-      USERS_KEY,
-      store.getUsers().map((user) => (user.id === id ? { ...user, ...patch } : user)),
+    setState({ users: state.users.map((user) => (user.id === id ? { ...user, ...patch } : user)) });
+    runMutation(() =>
+      request(`/api/users/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
     );
-    emit();
   },
   deleteUser(id: string) {
-    write(
-      USERS_KEY,
-      store.getUsers().filter((user) => user.id !== id),
-    );
-    emit();
+    setState({ users: state.users.filter((user) => user.id !== id) });
+    runMutation(() => request(`/api/users/${id}`, { method: "DELETE" }));
   },
   subscribe(fn: () => void) {
+    ensureLoaded();
     listeners.add(fn);
     return () => listeners.delete(fn);
+  },
+  reload() {
+    return loadAll(true);
   },
 };
 

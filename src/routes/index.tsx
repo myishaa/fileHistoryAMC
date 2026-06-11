@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   type Division,
   type FileRecord,
@@ -82,6 +82,58 @@ const statusActionModes = [
   { key: "search", label: "Search file", icon: Search },
 ] satisfies Array<{ key: StatusActionMode; label: string; icon: typeof Search }>;
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(
+  /\/$/,
+  "",
+);
+
+type DashboardSummaryPayload = {
+  activeDivision: string;
+  activeAnalyticsDivision: string;
+  dashboardFileCount: number;
+  dashboardDivisions: Division[];
+  modeCounts: ReturnType<typeof getModeCounts>;
+  fileTypeCounts: ReturnType<typeof getFileTypeCounts>;
+  topSummaryStats: SummaryStat[];
+  manualMilestoneFlow: ReturnType<typeof getManualMilestoneFlow>;
+  visibleLiveMilestoneNames: string[];
+  liveStatusRows: ReturnType<typeof getLiveStatusDivisionRows>;
+  statusFlow: ReturnType<typeof getMilestoneFlow>;
+  miscellaneousCounts: ReturnType<typeof getMiscellaneousCounts>;
+  analytics: ReturnType<typeof getAnalyticsSummary>;
+  divisionFilteredAnalytics: ReturnType<typeof getAnalyticsSummary>;
+  financeTotals: {
+    allocatedCapital: number;
+    allocatedRevenue: number;
+    bookedCapital: number;
+    bookedRevenue: number;
+    projectedCapital: number;
+    projectedRevenue: number;
+    spentCapital: number;
+    spentRevenue: number;
+  };
+  financePercents: {
+    capitalBooked?: number;
+    revenueBooked?: number;
+    capitalProjected?: number;
+    revenueProjected?: number;
+    capitalSpent?: number;
+    revenueSpent?: number;
+  };
+};
+
+async function fetchDashboardSummary(query: string, signal: AbortSignal) {
+  const response = await fetch(`${API_BASE_URL}/api/dashboard/summary?${query}`, {
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
+    throw new Error(body?.error ?? `Dashboard summary request failed: ${response.status}`);
+  }
+  return (await response.json()) as { summary: DashboardSummaryPayload };
+}
+
 const divisionFilterableAnalyticsPanels: AnalyticsPanelKey[] = [
   "topFirms",
   "indentorsByFiles",
@@ -120,6 +172,11 @@ export function Dashboard() {
     useState<DivisionTotalValueSortKey>("allocatedTotal");
   const [selectedAnalyticsDivision, setSelectedAnalyticsDivision] = useState("all");
   const [selectedLiveMilestones, setSelectedLiveMilestones] = useState<string[] | undefined>();
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummaryPayload | undefined>();
+  const [dashboardSummaryLoading, setDashboardSummaryLoading] = useState(false);
+  const [hasLoadedDashboardSummary, setHasLoadedDashboardSummary] = useState(false);
+  const [dashboardSummaryError, setDashboardSummaryError] = useState<string | undefined>();
+  const hasLoadedDashboardSummaryRef = useRef(false);
   const selectedDivisionIsAccessible =
     selectedDivision === "all" || divisions.some((division) => division.name === selectedDivision);
   const activeDivision = selectedDivisionIsAccessible ? selectedDivision : "all";
@@ -156,39 +213,69 @@ export function Dashboard() {
     [activeAnalyticsDivision, dashboardDivisions, divisions],
   );
 
-  const modeCounts = getModeCounts(dashboardFiles);
-  const manualMilestoneFlow = getManualMilestoneFlow(
+  const dashboardSummaryQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("division", activeDivision);
+    params.set("analyticsDivision", activeAnalyticsDivision);
+    if (selectedLiveMilestones?.length) {
+      params.set("liveMilestones", selectedLiveMilestones.join(","));
+    }
+    return params.toString();
+  }, [activeDivision, activeAnalyticsDivision, selectedLiveMilestones]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const delay = hasLoadedDashboardSummaryRef.current ? 180 : 0;
+    const timeoutId = window.setTimeout(() => {
+      setDashboardSummaryLoading(true);
+      setDashboardSummaryError(undefined);
+
+      fetchDashboardSummary(dashboardSummaryQuery, controller.signal)
+        .then((payload) => {
+          setDashboardSummary(payload.summary);
+          setHasLoadedDashboardSummary(true);
+          hasLoadedDashboardSummaryRef.current = true;
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.error(error);
+          setDashboardSummaryError(
+            error instanceof Error ? error.message : "Dashboard summary request failed.",
+          );
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setDashboardSummaryLoading(false);
+        });
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [dashboardSummaryQuery, settings.selectedYear]);
+
+  const localModeCounts = getModeCounts(dashboardFiles);
+  const localManualMilestoneFlow = getManualMilestoneFlow(
     dashboardFiles,
     getConfiguredMilestones(settings.milestones),
   );
-  const visibleLiveMilestoneNames =
+  const localVisibleLiveMilestoneNames =
     selectedLiveMilestones?.filter((name) =>
-      manualMilestoneFlow.some((milestone) => milestone.name === name),
-    ) ?? manualMilestoneFlow.map((milestone) => milestone.name);
-  const liveStatusRows = getLiveStatusDivisionRows(
+      localManualMilestoneFlow.some((milestone) => milestone.name === name),
+    ) ?? localManualMilestoneFlow.map((milestone) => milestone.name);
+  const localLiveStatusRows = getLiveStatusDivisionRows(
     dashboardFiles,
     dashboardDivisions,
-    visibleLiveMilestoneNames,
+    localVisibleLiveMilestoneNames,
   );
-  const statusFlow = getMilestoneFlow(dashboardFiles);
-  const miscellaneousCounts = getMiscellaneousCounts(dashboardFiles);
-  const statusPageExportTitle =
-    activeUser?.role === "admin"
-      ? "ASL Buildup"
-      : activeDivision === "all"
-        ? dashboardDivisions.map((division) => division.name).join(", ") || "Status"
-        : activeDivision;
-  const statusPageExportRows = getStatusPageExportRows(
-    statusFlow,
-    miscellaneousCounts,
-    dashboardFiles.length,
-  );
-  const analytics = getAnalyticsSummary(dashboardFiles, dashboardDivisions);
-  const divisionFilteredAnalytics = getAnalyticsSummary(
+  const localStatusFlow = getMilestoneFlow(dashboardFiles);
+  const localMiscellaneousCounts = getMiscellaneousCounts(dashboardFiles);
+  const localAnalytics = getAnalyticsSummary(dashboardFiles, dashboardDivisions);
+  const localDivisionFilteredAnalytics = getAnalyticsSummary(
     filteredAnalyticsFiles,
     filteredAnalyticsDivisions,
   );
-  const financeTotals = {
+  const localFinanceTotals = {
     allocatedCapital: dashboardDivisions.reduce(
       (sum, division) => sum + (parseAmount(division.allocatedCapital) ?? 0),
       0,
@@ -226,32 +313,51 @@ export function Dashboard() {
       0,
     ),
   };
-  const capitalBookedPercent = getPercent(
-    financeTotals.bookedCapital,
-    financeTotals.allocatedCapital,
+  const dashboardFileCount = dashboardSummary?.dashboardFileCount ?? dashboardFiles.length;
+  const dashboardDivisionsForView = dashboardSummary?.dashboardDivisions ?? dashboardDivisions;
+  const modeCounts = dashboardSummary?.modeCounts ?? localModeCounts;
+  const fileTypeCounts = dashboardSummary?.fileTypeCounts ?? getFileTypeCounts(dashboardFiles);
+  const topSummaryStats =
+    dashboardSummary?.topSummaryStats ?? getAttributeSummaryStats(dashboardFiles);
+  const manualMilestoneFlow = dashboardSummary?.manualMilestoneFlow ?? localManualMilestoneFlow;
+  const visibleLiveMilestoneNames =
+    dashboardSummary?.visibleLiveMilestoneNames ?? localVisibleLiveMilestoneNames;
+  const liveStatusRows = dashboardSummary?.liveStatusRows ?? localLiveStatusRows;
+  const statusFlow = dashboardSummary?.statusFlow ?? localStatusFlow;
+  const miscellaneousCounts = dashboardSummary?.miscellaneousCounts ?? localMiscellaneousCounts;
+  const analytics = dashboardSummary?.analytics ?? localAnalytics;
+  const divisionFilteredAnalytics =
+    dashboardSummary?.divisionFilteredAnalytics ?? localDivisionFilteredAnalytics;
+  const financeTotals = dashboardSummary?.financeTotals ?? localFinanceTotals;
+  const statusPageExportTitle =
+    activeUser?.role === "admin"
+      ? "ASL Buildup"
+      : activeDivision === "all"
+        ? dashboardDivisionsForView.map((division) => division.name).join(", ") || "Status"
+        : activeDivision;
+  const statusPageExportRows = getStatusPageExportRows(
+    statusFlow,
+    miscellaneousCounts,
+    dashboardFileCount,
   );
-  const revenueBookedPercent = getPercent(
-    financeTotals.bookedRevenue,
-    financeTotals.allocatedRevenue,
-  );
-  const capitalProjectedPercent = getPercent(
-    financeTotals.projectedCapital,
-    financeTotals.allocatedCapital,
-  );
-  const revenueProjectedPercent = getPercent(
-    financeTotals.projectedRevenue,
-    financeTotals.allocatedRevenue,
-  );
-  const capitalSpentPercent = getPercent(
-    financeTotals.spentCapital,
-    financeTotals.allocatedCapital,
-  );
-  const revenueSpentPercent = getPercent(
-    financeTotals.spentRevenue,
-    financeTotals.allocatedRevenue,
-  );
-
-  const topSummaryStats: SummaryStat[] = getAttributeSummaryStats(dashboardFiles);
+  const capitalBookedPercent =
+    dashboardSummary?.financePercents.capitalBooked ??
+    getPercent(financeTotals.bookedCapital, financeTotals.allocatedCapital);
+  const revenueBookedPercent =
+    dashboardSummary?.financePercents.revenueBooked ??
+    getPercent(financeTotals.bookedRevenue, financeTotals.allocatedRevenue);
+  const capitalProjectedPercent =
+    dashboardSummary?.financePercents.capitalProjected ??
+    getPercent(financeTotals.projectedCapital, financeTotals.allocatedCapital);
+  const revenueProjectedPercent =
+    dashboardSummary?.financePercents.revenueProjected ??
+    getPercent(financeTotals.projectedRevenue, financeTotals.allocatedRevenue);
+  const capitalSpentPercent =
+    dashboardSummary?.financePercents.capitalSpent ??
+    getPercent(financeTotals.spentCapital, financeTotals.allocatedCapital);
+  const revenueSpentPercent =
+    dashboardSummary?.financePercents.revenueSpent ??
+    getPercent(financeTotals.spentRevenue, financeTotals.allocatedRevenue);
   const biddingTypeSummaryStat: SummaryStat = {
     label: "Bidding type",
     value: modeCounts.map((mode) => ({
@@ -263,7 +369,7 @@ export function Dashboard() {
   };
   const fileTypeSummaryStat: SummaryStat = {
     label: "File type",
-    value: getFileTypeCounts(dashboardFiles).map((fileType) => ({
+    value: fileTypeCounts.map((fileType) => ({
       label: fileType.name,
       value: fileType.count,
       searchFilter: `fileType:${fileType.name}`,
@@ -548,6 +654,20 @@ export function Dashboard() {
           </select>
         </label>
       </div>
+      {dashboardSummaryError || (dashboardSummaryLoading && !hasLoadedDashboardSummary) ? (
+        <div
+          className={
+            "rounded-md border px-3 py-2 text-xs " +
+            (dashboardSummaryError
+              ? "border-destructive/30 bg-destructive/10 text-destructive"
+              : "border-border bg-secondary/30 text-muted-foreground")
+          }
+        >
+          {dashboardSummaryError
+            ? `Dashboard API unavailable, showing local fallback: ${dashboardSummaryError}`
+            : "Updating dashboard summary..."}
+        </div>
+      ) : null}
 
       {activeDashboardTab === "snapshot" ? (
         <section className="space-y-4">
@@ -663,7 +783,7 @@ export function Dashboard() {
                 </div>
                 <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-right">
                   <div className="text-[11px] font-medium text-muted-foreground">Total files</div>
-                  <div className="text-lg font-semibold tabular-nums">{dashboardFiles.length}</div>
+                  <div className="text-lg font-semibold tabular-nums">{dashboardFileCount}</div>
                 </div>
               </div>
             </div>
@@ -754,7 +874,7 @@ export function Dashboard() {
           milestones={manualMilestoneFlow}
           visibleMilestoneNames={visibleLiveMilestoneNames}
           rows={liveStatusRows}
-          totalFiles={dashboardFiles.length}
+          totalFiles={dashboardFileCount}
           onMilestoneToggle={(milestoneName) =>
             setSelectedLiveMilestones((current) => {
               const selected = current ?? manualMilestoneFlow.map((milestone) => milestone.name);
