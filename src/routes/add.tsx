@@ -9,12 +9,13 @@ import {
   type SupplyOrderDetail,
   useAccessibleDivisions,
   useAccessibleFiles,
+  useActiveUser,
   useDivisions,
   useFiles,
   useSettings,
 } from "@/lib/files-store";
 import { Save, Eraser, Lock, Plus, Printer, Trash2, Unlock } from "lucide-react";
-import { requestDeletionPassword } from "@/lib/delete-password";
+import { promptDeletionPassword } from "@/lib/delete-password";
 import { validateMilestoneCompletionConsistency } from "@/lib/milestone-validation";
 
 export const Route = createFileRoute("/add")({
@@ -418,6 +419,24 @@ type TimelineItem = {
 };
 
 function AddFilePage() {
+  const activeUser = useActiveUser();
+  const canEditFiles =
+    activeUser?.role === "admin" ||
+    activeUser?.role === "sub_admin" ||
+    activeUser?.role === "editor";
+  if (!canEditFiles) {
+    return (
+      <div className="max-w-xl rounded-md border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+        <h1 className="text-sm font-semibold">File editing unavailable</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Your account can view records only.</p>
+      </div>
+    );
+  }
+
+  return <AddFileEditor />;
+}
+
+function AddFileEditor() {
   const allDivisions = useDivisions();
   const divisions = useAccessibleDivisions();
   const files = useAccessibleFiles();
@@ -916,8 +935,9 @@ function AddFilePage() {
     if (!editingFile) return;
     const label =
       editingFile.uniqueCode || editingFile.imms || editingFile.demandDescription || "this file";
-    if (!requestDeletionPassword(`delete ${label}`)) return;
-    store.deleteFile(editingFile.id);
+    const deletionPassword = promptDeletionPassword(`delete ${label}`);
+    if (deletionPassword === null) return;
+    store.deleteFile(editingFile.id, deletionPassword);
     navigate({ to: "/search", search: { dashboardFilter: undefined, division: undefined } });
   };
 

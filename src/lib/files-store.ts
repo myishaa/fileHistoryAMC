@@ -140,7 +140,7 @@ export type Division = {
   allocatedRevenue?: string;
   ad?: string;
 };
-export type AppUserRole = "admin" | "division_user";
+export type AppUserRole = "admin" | "sub_admin" | "division_user" | "editor" | "viewer";
 export type AppUser = {
   id: string;
   name: string;
@@ -194,6 +194,7 @@ type StoreState = {
   divisions: Division[];
   settings: AppSettings;
   users: AppUser[];
+  authUser?: AppUser;
   loading: boolean;
   loaded: boolean;
   error?: string;
@@ -204,6 +205,7 @@ let state: StoreState = {
   divisions: [],
   settings: defaultSettings,
   users: defaultUsers,
+  authUser: undefined,
   loading: false,
   loaded: false,
 };
@@ -246,20 +248,50 @@ async function loadAll(force = false) {
   loadPromise = (async () => {
     setState({ loading: true, error: undefined });
     try {
-      const [files, divisions, users, settings] = await Promise.all([
+      const auth = await request<{ user: AppUser | null }>("/api/auth/me");
+      if (!auth.user) {
+        const [divisions, settings] = await Promise.all([
+          request<{ divisions: Division[] }>("/api/divisions"),
+          request<{ settings: AppSettings }>("/api/settings"),
+        ]);
+        setState({
+          files: [],
+          divisions: divisions.divisions,
+          users: [],
+          authUser: undefined,
+          settings: {
+            ...defaultSettings,
+            ...settings.settings,
+            tableFieldPresets: settings.settings.tableFieldPresets?.length
+              ? settings.settings.tableFieldPresets
+              : defaultTableFieldPresets,
+          },
+          loading: false,
+          loaded: true,
+        });
+        return;
+      }
+
+      const baseRequests = [
         request<{ files: FileRecord[] }>("/api/files"),
         request<{ divisions: Division[] }>("/api/divisions"),
-        request<{ users: AppUser[] }>("/api/users"),
         request<{ settings: AppSettings }>("/api/settings"),
-      ]);
+      ] as const;
+      const [files, divisions, settings] = await Promise.all(baseRequests);
+      const users =
+        auth.user.role === "admin"
+          ? await request<{ users: AppUser[] }>("/api/users")
+          : { users: [auth.user] };
 
       setState({
         files: files.files,
         divisions: divisions.divisions,
         users: users.users,
+        authUser: auth.user,
         settings: {
           ...defaultSettings,
           ...settings.settings,
+          activeUserId: auth.user.id,
           tableFieldPresets: settings.settings.tableFieldPresets?.length
             ? settings.settings.tableFieldPresets
             : defaultTableFieldPresets,
@@ -325,6 +357,36 @@ export const store = {
       }),
     );
   },
+  login(username: string, password: string) {
+    return (async () => {
+      await request<{ user: AppUser }>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      });
+      await loadAll(true);
+    })();
+  },
+  viewerLogin(divisionId: string, password: string) {
+    return (async () => {
+      await request<{ user: AppUser }>("/api/auth/viewer-login", {
+        method: "POST",
+        body: JSON.stringify({ divisionId, password }),
+      });
+      await loadAll(true);
+    })();
+  },
+  logout() {
+    return (async () => {
+      await request<{ ok: true }>("/api/auth/logout", { method: "POST" });
+      setState({
+        files: [],
+        users: [],
+        authUser: undefined,
+        loaded: false,
+      });
+      await loadAll(true);
+    })();
+  },
   addFile(f: Omit<FileRecord, "id" | "createdAt">) {
     runMutation(() =>
       request("/api/files", {
@@ -342,9 +404,32 @@ export const store = {
       }),
     );
   },
-  deleteFile(id: string) {
+  deleteFile(id: string, deletionPassword: string) {
     setState({ files: state.files.filter((f) => f.id !== id) });
-    runMutation(() => request(`/api/files/${id}`, { method: "DELETE" }));
+    runMutation(() =>
+      request(`/api/files/${id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ deletionPassword }),
+      }),
+    );
+  },
+  listArchivedFiles() {
+    return request<{ files: FileRecord[] }>("/api/files/archive/list");
+  },
+  restoreArchivedFile(id: string) {
+    return (async () => {
+      await request<{ file: FileRecord }>(`/api/files/${id}/restore`, { method: "POST" });
+      await loadAll(true);
+    })();
+  },
+  permanentlyDeleteArchivedFile(id: string, deletionPassword: string) {
+    return (async () => {
+      await request<{ deleted: true; file: FileRecord }>(`/api/files/archive/${id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ deletionPassword }),
+      });
+      await loadAll(true);
+    })();
   },
   addDivision(
     name: string,
@@ -360,7 +445,7 @@ export const store = {
       }),
     );
   },
-  updateDivision(id: string, patch: Partial<Division>) {
+  updateDivision(id: string, patch: Partial<Division> & { viewerPassword?: string }) {
     setState({ divisions: state.divisions.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
     runMutation(() =>
       request(`/api/divisions/${id}`, {
@@ -379,7 +464,7 @@ export const store = {
     });
     runMutation(() => request(`/api/divisions/${id}`, { method: "DELETE" }));
   },
-  addUser(user: Omit<AppUser, "id">) {
+  addUser(user: Omit<AppUser, "id"> & { password: string }) {
     runMutation(() =>
       request("/api/users", {
         method: "POST",
@@ -387,7 +472,7 @@ export const store = {
       }),
     );
   },
-  updateUser(id: string, patch: Partial<AppUser>) {
+  updateUser(id: string, patch: Partial<AppUser> & { password?: string }) {
     setState({ users: state.users.map((user) => (user.id === id ? { ...user, ...patch } : user)) });
     runMutation(() =>
       request(`/api/users/${id}`, {
@@ -455,15 +540,21 @@ export function useUsers() {
 }
 
 export function useActiveUser() {
-  const users = useUsers();
-  const settings = useSettings();
-  return users.find((user) => user.id === settings.activeUserId);
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const u = store.subscribe(() => setTick((t) => t + 1));
+    return () => {
+      u();
+    };
+  }, []);
+  ensureLoaded();
+  return state.authUser;
 }
 
 export function useAccessibleDivisions() {
   const divisions = useDivisions();
   const activeUser = useActiveUser();
-  if (!activeUser || activeUser.role === "admin") return divisions;
+  if (!activeUser || activeUser.role === "admin" || activeUser.role === "sub_admin") return divisions;
   return divisions.filter((division) => activeUser.divisionIds.includes(division.id));
 }
 
@@ -475,7 +566,9 @@ export function useAccessibleFiles() {
   const yearFilteredFiles = settings.selectedYear
     ? files.filter((file) => file.year === settings.selectedYear)
     : files;
-  if (!activeUser || activeUser.role === "admin") return yearFilteredFiles;
+  if (!activeUser || activeUser.role === "admin" || activeUser.role === "sub_admin") {
+    return yearFilteredFiles;
+  }
   const allowedDivisionNames = new Set(accessibleDivisions.map((division) => division.name));
   return yearFilteredFiles.filter(
     (file) => file.division && allowedDivisionNames.has(file.division),

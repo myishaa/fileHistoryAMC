@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -23,9 +23,10 @@ import {
   useSettings,
   useUsers,
   type AppUserRole,
+  type FileRecord,
 } from "@/lib/files-store";
 import { tableFieldPresetGroups, type TableFieldPreset } from "@/lib/table-field-presets";
-import { requestDeletionPassword } from "@/lib/delete-password";
+import { promptDeletionPassword, requestDeletionPassword } from "@/lib/delete-password";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/settings")({
@@ -80,13 +81,35 @@ const defaultMilestoneSequence = [
 ];
 
 function SettingsPage() {
+  const activeUser = useActiveUser();
   const [activeAdminSection, setActiveAdminSection] = useState("divisions");
+  if (activeUser?.role === "sub_admin" || activeUser?.role === "editor") {
+    return (
+      <div className="space-y-4 max-w-3xl">
+        <AccountSettings />
+      </div>
+    );
+  }
+
+  if (activeUser?.role !== "admin") {
+    return (
+      <div className="max-w-xl rounded-md border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+        <h1 className="text-sm font-semibold">Admin settings</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This page is available only to administrators.
+        </p>
+      </div>
+    );
+  }
+
   const adminSections = [
+    { key: "workspace", label: "Workspace", content: <WorkspaceSettings /> },
     { key: "divisions", label: "Divisions", content: <DivisionSettings /> },
     { key: "tcec", label: "TCEC Committee", content: <TcecCommitteeSettings /> },
     { key: "milestones", label: "Milestones", content: <MilestoneSettings /> },
     { key: "presets", label: "Preset table fields", content: <TableFieldPresetSettings /> },
     { key: "users", label: "Users", content: <UserSettings /> },
+    { key: "archive", label: "Archive", content: <ArchiveSettings /> },
   ];
   const selectedAdminSection =
     adminSections.find((section) => section.key === activeAdminSection) ?? adminSections[0];
@@ -128,7 +151,7 @@ function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="user">
-          <WorkspaceSettings />
+          <AccountSettings />
         </TabsContent>
       </Tabs>
 
@@ -170,6 +193,45 @@ function SettingsPage() {
   );
 }
 
+function AccountSettings() {
+  const activeUser = useActiveUser();
+  const divisions = useDivisions();
+  const settings = useSettings();
+  const assignedDivisionNames =
+    activeUser?.role === "sub_admin"
+      ? "All divisions"
+      : activeUser?.divisionIds
+          .map((id) => divisions.find((division) => division.id === id)?.name)
+          .filter(Boolean)
+          .join(", ") || "No divisions assigned";
+
+  return (
+    <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
+      <h2 className="text-sm font-semibold mb-1">User settings</h2>
+      <p className="text-xs text-muted-foreground mb-5">
+        View your account and access details.
+      </p>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Name" value={activeUser?.name ?? "Not signed in"} />
+        <Field label="Username" value={activeUser?.username ?? "Not signed in"} />
+        <Field label="Role" value={activeUser ? roleLabel(activeUser.role) : "Not signed in"} />
+        <Field label="Divisions" value={assignedDivisionNames} />
+      </div>
+
+      {(activeUser?.role === "editor" || activeUser?.role === "sub_admin") && (
+        <div className="mt-5 max-w-sm">
+          <ThemeTintField
+            label="UI tint"
+            value={settings.themeTint}
+            onChange={(value) => store.updateSettings({ themeTint: value })}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WorkspaceSettings() {
   const settings = useSettings();
 
@@ -201,7 +263,6 @@ function WorkspaceSettings() {
           value={settings.deletionPassword}
           onChange={(value) => store.updateSettings({ deletionPassword: value })}
         />
-        <Field label="Locale" value="English (India)" />
       </div>
     </div>
   );
@@ -592,6 +653,7 @@ function DivisionSettings() {
   const [editCapital, setEditCapital] = useState("");
   const [editRevenue, setEditRevenue] = useState("");
   const [editAd, setEditAd] = useState("");
+  const [editViewerPassword, setEditViewerPassword] = useState("");
 
   const add = () => {
     if (!name.trim()) return;
@@ -616,6 +678,7 @@ function DivisionSettings() {
     setEditCapital(division.allocatedCapital ?? "");
     setEditRevenue(division.allocatedRevenue ?? "");
     setEditAd(division.ad ?? "");
+    setEditViewerPassword("");
   };
 
   const saveEdit = (id: string) => {
@@ -626,6 +689,7 @@ function DivisionSettings() {
       allocatedCapital: editCapital.trim() || undefined,
       allocatedRevenue: editRevenue.trim() || undefined,
       ad: editAd,
+      ...(editViewerPassword.trim() ? { viewerPassword: editViewerPassword.trim() } : {}),
     });
     setEditingId(null);
   };
@@ -663,14 +727,15 @@ function DivisionSettings() {
       </div>
 
       <div className="mt-5 overflow-x-auto rounded-md border border-border">
-        <table className="w-full min-w-[900px] table-fixed text-sm">
+        <table className="w-full min-w-[1040px] table-fixed text-sm">
           <colgroup>
-            <col className="w-[22%]" />
+            <col className="w-[18%]" />
+            <col className="w-[12%]" />
+            <col className="w-[15%]" />
+            <col className="w-[15%]" />
+            <col className="w-[8%]" />
+            <col className="w-[8%]" />
             <col className="w-[14%]" />
-            <col className="w-[18%]" />
-            <col className="w-[18%]" />
-            <col className="w-[8%]" />
-            <col className="w-[8%]" />
             <col className="w-[12%]" />
           </colgroup>
           <thead className="bg-secondary text-xs text-muted-foreground">
@@ -681,6 +746,7 @@ function DivisionSettings() {
               <th className="text-left font-medium px-4 py-2.5">Allocated revenue</th>
               <th className="text-left font-medium px-4 py-2.5">AD</th>
               <th className="text-left font-medium px-4 py-2.5">Files</th>
+              <th className="text-left font-medium px-4 py-2.5">Viewer password</th>
               <th className="text-right font-medium px-4 py-2.5">Action</th>
             </tr>
           </thead>
@@ -744,6 +810,17 @@ function DivisionSettings() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{count}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {isEditing ? (
+                      <DivisionInput
+                        value={editViewerPassword}
+                        onChange={setEditViewerPassword}
+                        placeholder="New viewer password"
+                      />
+                    ) : (
+                      "Set while editing"
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
                       {isEditing ? (
@@ -803,25 +880,29 @@ function UserSettings() {
   const settings = useSettings();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
-  const [role, setRole] = useState<AppUserRole>("division_user");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<AppUserRole>("editor");
   const [divisionIds, setDivisionIds] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editUsername, setEditUsername] = useState("");
-  const [editRole, setEditRole] = useState<AppUserRole>("division_user");
+  const [editPassword, setEditPassword] = useState("");
+  const [editRole, setEditRole] = useState<AppUserRole>("editor");
   const [editDivisionIds, setEditDivisionIds] = useState<string[]>([]);
 
   const add = () => {
-    if (!name.trim() || !username.trim()) return;
+    if (!name.trim() || !username.trim() || !password.trim()) return;
     store.addUser({
       name: name.trim(),
       username: username.trim(),
+      password: password.trim(),
       role,
       divisionIds,
     });
     setName("");
     setUsername("");
-    setRole("division_user");
+    setPassword("");
+    setRole("editor");
     setDivisionIds([]);
   };
 
@@ -829,6 +910,7 @@ function UserSettings() {
     setEditingId(user.id);
     setEditName(user.name);
     setEditUsername(user.username);
+    setEditPassword("");
     setEditRole(user.role);
     setEditDivisionIds(user.divisionIds ?? []);
   };
@@ -838,6 +920,7 @@ function UserSettings() {
     store.updateUser(id, {
       name: editName.trim(),
       username: editUsername.trim(),
+      ...(editPassword.trim() ? { password: editPassword.trim() } : {}),
       role: editRole,
       divisionIds: editDivisionIds,
     });
@@ -851,9 +934,10 @@ function UserSettings() {
         Add users and assign the divisions they should be allowed to work with.
       </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1fr_1fr_0.8fr_auto] gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_0.8fr_auto] gap-3">
         <DivisionInput value={name} onChange={setName} placeholder="User name" />
         <DivisionInput value={username} onChange={setUsername} placeholder="Username" />
+        <DivisionInput value={password} onChange={setPassword} placeholder="Password" />
         <UserRoleSelect value={role} onChange={setRole} />
         <button
           type="button"
@@ -871,22 +955,6 @@ function UserSettings() {
           onChange={setDivisionIds}
         />
       </div>
-
-      <label className="mt-5 block max-w-sm">
-        <div className="text-xs font-medium mb-1.5">Active user for this browser</div>
-        <select
-          value={settings.activeUserId ?? ""}
-          onChange={(event) => store.updateSettings({ activeUserId: event.target.value })}
-          className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
-        >
-          <option value="">No active user</option>
-          {users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.name} ({roleLabel(user.role)})
-            </option>
-          ))}
-        </select>
-      </label>
 
       <div className="mt-5 overflow-x-auto rounded-md border border-border">
         <table className="w-full min-w-[860px] table-fixed text-sm">
@@ -931,11 +999,18 @@ function UserSettings() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {isEditing ? (
-                        <DivisionInput
-                          value={editUsername}
-                          onChange={setEditUsername}
-                          placeholder="Username"
-                        />
+                        <div className="space-y-2">
+                          <DivisionInput
+                            value={editUsername}
+                            onChange={setEditUsername}
+                            placeholder="Username"
+                          />
+                          <DivisionInput
+                            value={editPassword}
+                            onChange={setEditPassword}
+                            placeholder="New password"
+                          />
+                        </div>
                       ) : (
                         user.username
                       )}
@@ -991,9 +1066,6 @@ function UserSettings() {
                               onClick={() => {
                                 if (requestDeletionPassword(`delete user "${user.name}"`)) {
                                   store.deleteUser(user.id);
-                                  if (settings.activeUserId === user.id) {
-                                    store.updateSettings({ activeUserId: "" });
-                                  }
                                 }
                               }}
                               className="size-8 grid place-items-center rounded-md text-destructive hover:bg-destructive/10"
@@ -1029,8 +1101,139 @@ function UserRoleSelect({
       className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
     >
       <option value="admin">Admin</option>
-      <option value="division_user">Division user</option>
+      <option value="sub_admin">Sub admin</option>
+      <option value="editor">Editor</option>
     </select>
+  );
+}
+
+function ArchiveSettings() {
+  const [archivedFiles, setArchivedFiles] = useState<FileRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  const loadArchive = async () => {
+    setLoading(true);
+    setError(undefined);
+    try {
+      const result = await store.listArchivedFiles();
+      setArchivedFiles(result.files);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to load archive.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadArchive();
+  }, []);
+
+  const restore = async (file: FileRecord) => {
+    await store.restoreArchivedFile(file.id);
+    await loadArchive();
+  };
+
+  const permanentlyDelete = async (file: FileRecord) => {
+    const label = file.uniqueCode || file.fileNo || file.indentor || file.id;
+    const deletionPassword = promptDeletionPassword(`permanently delete archived file "${label}"`);
+    if (deletionPassword === null) return;
+    await store.permanentlyDeleteArchivedFile(file.id, deletionPassword);
+    await loadArchive();
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold mb-1">Archive</h2>
+          <p className="text-xs text-muted-foreground">
+            Review files archived by editors or sub admins.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadArchive()}
+          className="h-8 rounded-md border border-border bg-background px-3 text-xs font-medium hover:bg-accent"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {error ? (
+        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full min-w-[900px] table-fixed text-sm">
+          <colgroup>
+            <col className="w-[16%]" />
+            <col className="w-[16%]" />
+            <col className="w-[16%]" />
+            <col className="w-[26%]" />
+            <col className="w-[10%]" />
+            <col className="w-[16%]" />
+          </colgroup>
+          <thead className="bg-secondary text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2.5 text-left font-medium">Unique code</th>
+              <th className="px-4 py-2.5 text-left font-medium">Division</th>
+              <th className="px-4 py-2.5 text-left font-medium">Indentor</th>
+              <th className="px-4 py-2.5 text-left font-medium">Description</th>
+              <th className="px-4 py-2.5 text-left font-medium">Year</th>
+              <th className="py-2.5 pl-8 pr-4 text-right font-medium">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr className="border-t border-border">
+                <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
+                  Loading archive...
+                </td>
+              </tr>
+            ) : archivedFiles.length === 0 ? (
+              <tr className="border-t border-border">
+                <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
+                  No archived files.
+                </td>
+              </tr>
+            ) : (
+              archivedFiles.map((file) => (
+                <tr key={file.id} className="border-t border-border align-top">
+                  <td className="px-4 py-3 font-medium">{file.uniqueCode || "Not set"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{file.division || "Not set"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{file.indentor || "Not set"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {file.demandDescription || "Not set"}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{file.year || "Not set"}</td>
+                  <td className="py-3 pl-8 pr-4">
+                    <div className="flex justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void restore(file)}
+                        className="h-8 rounded-md border border-border bg-background px-2 text-xs font-medium hover:bg-accent"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void permanentlyDelete(file)}
+                        className="h-8 rounded-md border border-destructive/30 px-2 text-xs font-medium text-destructive hover:bg-destructive/10"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -1081,7 +1284,9 @@ function DivisionAccessPicker({
 
 function roleLabel(role: AppUserRole) {
   if (role === "admin") return "Admin";
-  return "Division user";
+  if (role === "sub_admin") return "Sub admin";
+  if (role === "editor") return "Editor";
+  return "Viewer";
 }
 
 function divisionAccessLabel(selectedIds: string[], divisions: ReturnType<typeof useDivisions>) {

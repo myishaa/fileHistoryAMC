@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import type { AppUser, AppUserRole } from "../types.js";
+import { requireAdmin, type AuthRequest } from "../utils/auth.js";
 import { asyncHandler, HttpError, requireObjectBody, requireParam, requireString } from "../utils/http.js";
 
 export const usersRouter = Router();
 
-const allowedRoles = new Set<AppUserRole>(["admin", "division_user", "editor", "viewer"]);
+const allowedRoles = new Set<AppUserRole>(["admin", "sub_admin", "division_user", "editor", "viewer"]);
 
 type UserRow = {
   id: string;
@@ -27,7 +28,7 @@ function mapUser(row: UserRow): AppUser {
 
 function readRole(value: unknown) {
   if (typeof value !== "string" || !allowedRoles.has(value as AppUserRole)) {
-    throw new HttpError(400, "role must be admin, division_user, editor, or viewer.");
+    throw new HttpError(400, "role must be admin, sub_admin, editor, or viewer.");
   }
   return value as AppUserRole;
 }
@@ -79,7 +80,8 @@ async function replaceUserDivisions(userId: string, divisionIds: string[]) {
 
 usersRouter.get(
   "/",
-  asyncHandler(async (_request, response) => {
+  asyncHandler(async (request, response) => {
+    requireAdmin(request as AuthRequest);
     response.json({ users: await listUsers() });
   }),
 );
@@ -87,20 +89,22 @@ usersRouter.get(
 usersRouter.post(
   "/",
   asyncHandler(async (request, response) => {
+    requireAdmin(request as AuthRequest);
     const body = requireObjectBody(request.body);
     const name = requireString(body.name, "name");
     const username = requireString(body.username, "username");
-    const role = readRole(body.role ?? "division_user");
+    const role = readRole(body.role ?? "editor");
+    const password = requireString(body.password, "password");
     const divisionIds = readDivisionIds(body.divisionIds) ?? [];
 
     const client = await pool.connect();
     try {
       await client.query("begin");
       const result = await client.query<{ id: string }>(
-        `insert into app_users (name, username, role)
-         values ($1, $2, $3)
+        `insert into app_users (name, username, role, password_hash, is_active)
+         values ($1, $2, $3, crypt($4, gen_salt('bf')), true)
          returning id`,
-        [name, username, role],
+        [name, username, role, password],
       );
       const userId = result.rows[0].id;
       for (const divisionId of divisionIds) {
@@ -125,6 +129,7 @@ usersRouter.post(
 usersRouter.patch(
   "/:id",
   asyncHandler(async (request, response) => {
+    requireAdmin(request as AuthRequest);
     const body = requireObjectBody(request.body);
     const id = requireParam(request.params.id, "id");
     const fields: string[] = [];
@@ -139,6 +144,7 @@ usersRouter.patch(
     if ("name" in body) addField("name", requireString(body.name, "name"));
     if ("username" in body) addField("username", requireString(body.username, "username"));
     if ("role" in body) addField("role", readRole(body.role));
+    if ("password" in body) addField("password_hash", requireString(body.password, "password"));
 
     const client = await pool.connect();
     try {
@@ -147,8 +153,15 @@ usersRouter.patch(
       if (existing.rowCount === 0) throw new HttpError(404, "User not found.");
       if (fields.length) {
         values.push(id);
+        const setSql = fields
+          .map((field) =>
+            field.startsWith("password_hash = ")
+              ? field.replace("password_hash = ", "password_hash = crypt(") + ", gen_salt('bf'))"
+              : field,
+          )
+          .join(", ");
         await client.query(
-          `update app_users set ${fields.join(", ")} where id = $${values.length}`,
+          `update app_users set ${setSql} where id = $${values.length}`,
           values,
         );
       }
@@ -178,6 +191,7 @@ usersRouter.patch(
 usersRouter.delete(
   "/:id",
   asyncHandler(async (request, response) => {
+    requireAdmin(request as AuthRequest);
     const id = requireParam(request.params.id, "id");
     const user = await getUser(id);
     if (!user) throw new HttpError(404, "User not found.");

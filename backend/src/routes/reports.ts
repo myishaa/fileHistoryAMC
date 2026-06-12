@@ -1,22 +1,13 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
+import type { AppSettings } from "../types.js";
 import { loadFiles } from "./files.js";
-import type { AppSettings, Division } from "../types.js";
 import { fromDbJsonArray, fromDbText } from "../utils/db-values.js";
-import { buildDashboardSummary } from "../utils/dashboard-summary.js";
-import { canUseAllDivisions, getDivisionScopeCondition, requireAuth, type AuthRequest } from "../utils/auth.js";
+import { buildReportsSummary } from "../utils/report-summary.js";
+import { getDivisionScopeCondition, requireAuth, type AuthRequest } from "../utils/auth.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 
-export const dashboardRouter = Router();
-
-type DivisionRow = {
-  id: string;
-  name: string;
-  code: string | null;
-  allocated_capital: string | null;
-  allocated_revenue: string | null;
-  ad: string | null;
-};
+export const reportsRouter = Router();
 
 type SettingsRow = {
   financial_year: string;
@@ -30,17 +21,6 @@ type SettingsRow = {
   active_user_id: string | null;
 };
 
-function mapDivision(row: DivisionRow): Division {
-  return {
-    id: row.id,
-    name: row.name,
-    code: fromDbText(row.code),
-    allocatedCapital: fromDbText(row.allocated_capital),
-    allocatedRevenue: fromDbText(row.allocated_revenue),
-    ad: fromDbText(row.ad),
-  };
-}
-
 function mapSettings(row: SettingsRow): AppSettings {
   return {
     financialYear: row.financial_year,
@@ -53,24 +33,6 @@ function mapSettings(row: SettingsRow): AppSettings {
     tableFieldPresets: fromDbJsonArray(row.table_field_presets),
     activeUserId: fromDbText(row.active_user_id) || undefined,
   };
-}
-
-async function loadDivisions(user: ReturnType<typeof requireAuth>) {
-  const values: unknown[] = [];
-  const whereSql = canUseAllDivisions(user)
-    ? ""
-    : user.divisionIds.length
-      ? "where id = any($1::uuid[])"
-      : "where false";
-  if (!canUseAllDivisions(user) && user.divisionIds.length) values.push(user.divisionIds);
-  const result = await pool.query<DivisionRow>(
-    `select id, name, code, allocated_capital, allocated_revenue, ad
-     from divisions
-     ${whereSql}
-     order by name asc`,
-    values,
-  );
-  return result.rows.map(mapDivision);
 }
 
 async function loadSettings() {
@@ -88,23 +50,19 @@ function readString(value: unknown) {
   return typeof value === "string" ? value : undefined;
 }
 
-function readList(value: unknown) {
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
-  if (typeof value !== "string" || !value.trim()) return undefined;
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+function readNonNegativeInteger(value: unknown, fallback: number) {
+  const text = readString(value);
+  const parsed = Number.parseInt(text ?? "", 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-dashboardRouter.get(
+reportsRouter.get(
   "/summary",
   asyncHandler(async (request, response) => {
     const user = requireAuth(request as AuthRequest);
     const scope = getDivisionScopeCondition(user);
-    const [files, divisions, settings] = await Promise.all([
+    const [files, settings] = await Promise.all([
       loadFiles(scope.sql ? `where ${scope.sql}` : "", scope.values),
-      loadDivisions(user),
       loadSettings(),
     ]);
     const selectedYear = readString(request.query.selectedYear) ?? settings.selectedYear;
@@ -113,13 +71,11 @@ dashboardRouter.get(
       : files;
 
     response.json({
-      summary: buildDashboardSummary({
+      summary: buildReportsSummary({
         files: selectedYearFiles,
-        divisions,
-        settings,
         division: readString(request.query.division) ?? "all",
-        analyticsDivision: readString(request.query.analyticsDivision) ?? "all",
-        liveMilestones: readList(request.query.liveMilestones),
+        delayDays: readNonNegativeInteger(request.query.delayDays, 5),
+        delayMilestone: readString(request.query.delayMilestone) ?? "all",
       }),
     });
   }),

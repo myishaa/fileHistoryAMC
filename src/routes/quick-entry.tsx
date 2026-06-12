@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { ArrowRight, ScanLine } from "lucide-react";
-import { type FileRecord, useAccessibleFiles } from "@/lib/files-store";
+import { type FileRecord, useAccessibleFiles, useActiveUser } from "@/lib/files-store";
 
 export const Route = createFileRoute("/quick-entry")({
   component: QuickEntryPage,
@@ -37,6 +37,24 @@ const quickEntryStageSections = [
 type QuickEntryError = { tone: "error"; text: string };
 
 function QuickEntryPage() {
+  const activeUser = useActiveUser();
+  const canEditFiles =
+    activeUser?.role === "admin" ||
+    activeUser?.role === "sub_admin" ||
+    activeUser?.role === "editor";
+  if (!canEditFiles) {
+    return (
+      <div className="max-w-xl rounded-md border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+        <h1 className="text-sm font-semibold">Quick Entry unavailable</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Your account can view records only.</p>
+      </div>
+    );
+  }
+
+  return <QuickEntryEditor />;
+}
+
+function QuickEntryEditor() {
   const files = useAccessibleFiles();
   const navigate = useNavigate();
   const [uniqueCode, setUniqueCode] = useState("");

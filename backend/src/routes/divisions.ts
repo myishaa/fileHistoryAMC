@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import type { Division } from "../types.js";
+import { requireAdmin, type AuthRequest } from "../utils/auth.js";
 import { fromDbText, toDbNumber, toDbText } from "../utils/db-values.js";
 import { asyncHandler, HttpError, requireObjectBody, requireParam, requireString } from "../utils/http.js";
 
@@ -51,6 +52,7 @@ divisionsRouter.get(
 divisionsRouter.post(
   "/",
   asyncHandler(async (request, response) => {
+    requireAdmin(request as AuthRequest);
     const body = requireObjectBody(request.body);
     const name = requireString(body.name, "name");
 
@@ -74,6 +76,7 @@ divisionsRouter.post(
 divisionsRouter.patch(
   "/:id",
   asyncHandler(async (request, response) => {
+    requireAdmin(request as AuthRequest);
     const body = requireObjectBody(request.body);
     const id = requireParam(request.params.id, "id");
     const fields: string[] = [];
@@ -89,13 +92,24 @@ divisionsRouter.patch(
     if ("allocatedCapital" in body) addField("allocated_capital", toDbNumber(body.allocatedCapital));
     if ("allocatedRevenue" in body) addField("allocated_revenue", toDbNumber(body.allocatedRevenue));
     if ("ad" in body) addField("ad", toDbText(body.ad));
+    if ("viewerPassword" in body) {
+      addField("viewer_password_hash", requireString(body.viewerPassword, "viewerPassword"));
+    }
 
     if (!fields.length) throw new HttpError(400, "No division fields provided.");
 
     values.push(id);
+    const setSql = fields
+      .map((field) =>
+        field.startsWith("viewer_password_hash = ")
+          ? field.replace("viewer_password_hash = ", "viewer_password_hash = crypt(") +
+            ", gen_salt('bf'))"
+          : field,
+      )
+      .join(", ");
     const result = await pool.query<DivisionRow>(
       `update divisions
-       set ${fields.join(", ")}
+       set ${setSql}
        where id = $${values.length}
        returning id, name, code, allocated_capital, allocated_revenue, ad`,
       values,
@@ -109,6 +123,7 @@ divisionsRouter.patch(
 divisionsRouter.delete(
   "/:id",
   asyncHandler(async (request, response) => {
+    requireAdmin(request as AuthRequest);
     const id = requireParam(request.params.id, "id");
     const division = await getDivision(id);
     if (!division) throw new HttpError(404, "Division not found.");

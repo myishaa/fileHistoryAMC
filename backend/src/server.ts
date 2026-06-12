@@ -1,12 +1,15 @@
 import cors from "cors";
 import "dotenv/config";
 import express, { type ErrorRequestHandler } from "express";
+import { authRouter } from "./routes/auth.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { divisionsRouter } from "./routes/divisions.js";
 import { filesRouter } from "./routes/files.js";
 import { healthRouter } from "./routes/health.js";
+import { reportsRouter } from "./routes/reports.js";
 import { settingsRouter } from "./routes/settings.js";
 import { usersRouter } from "./routes/users.js";
+import { attachAuthUser } from "./utils/auth.js";
 import { HttpError } from "./utils/http.js";
 
 const app = express();
@@ -16,21 +19,32 @@ const frontendOrigins = (process.env.FRONTEND_ORIGIN ?? "http://localhost:5173")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+function isAllowedFrontendOrigin(origin: string | undefined) {
+  if (!origin) return true;
+  if (frontendOrigins.includes(origin)) return true;
+  return /^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin) || /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin);
+}
+
 app.use(
   cors({
-    origin: frontendOrigins,
+    origin(origin, callback) {
+      callback(null, isAllowedFrontendOrigin(origin));
+    },
     credentials: true,
   }),
 );
 app.use(express.json({ limit: "2mb" }));
+app.use(attachAuthUser);
 
 app.get("/", (_request, response) => {
   response.json({ ok: true, service: "recordkeeper-backend" });
 });
 
 app.use("/api/health", healthRouter);
+app.use("/api/auth", authRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/divisions", divisionsRouter);
+app.use("/api/reports", reportsRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/files", filesRouter);

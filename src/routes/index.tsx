@@ -217,11 +217,12 @@ export function Dashboard() {
     const params = new URLSearchParams();
     params.set("division", activeDivision);
     params.set("analyticsDivision", activeAnalyticsDivision);
+    params.set("selectedYear", settings.selectedYear);
     if (selectedLiveMilestones?.length) {
       params.set("liveMilestones", selectedLiveMilestones.join(","));
     }
     return params.toString();
-  }, [activeDivision, activeAnalyticsDivision, selectedLiveMilestones]);
+  }, [activeDivision, activeAnalyticsDivision, selectedLiveMilestones, settings.selectedYear]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -252,7 +253,7 @@ export function Dashboard() {
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [dashboardSummaryQuery, settings.selectedYear]);
+  }, [dashboardSummaryQuery]);
 
   const localModeCounts = getModeCounts(dashboardFiles);
   const localManualMilestoneFlow = getManualMilestoneFlow(

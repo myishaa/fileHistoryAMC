@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, FileText } from "lucide-react";
 import {
   type FileRecord,
   type SupplyOrderDetail,
   useAccessibleDivisions,
   useAccessibleFiles,
+  useSettings,
 } from "@/lib/files-store";
 import { formatThousandsAndLakhs, getInrAmount } from "@/lib/money";
 
@@ -13,14 +14,47 @@ export const Route = createFileRoute("/reports")({
   component: ReportsPage,
 });
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(
+  /\/$/,
+  "",
+);
+
+type ReportsSummaryPayload = {
+  activeDivision: string;
+  reportFileCount: number;
+  statusSummaryGroups: StatusSummaryTableGroup[];
+  expectedCashOutgoRows: ExpectedCashOutgoRow[];
+  actualCashOutgoRows: ExpectedCashOutgoRow[];
+  delayRows: DelayStatusRow[];
+  delaySummary: ReturnType<typeof getDelayStatusSummary>;
+};
+
+async function fetchReportsSummary(query: string, signal: AbortSignal) {
+  const response = await fetch(`${API_BASE_URL}/api/reports/summary?${query}`, {
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
+    throw new Error(body?.error ?? `Reports request failed: ${response.status}`);
+  }
+  return (await response.json()) as { summary: ReportsSummaryPayload };
+}
+
 function ReportsPage() {
   const files = useAccessibleFiles();
   const divisions = useAccessibleDivisions();
+  const settings = useSettings();
   const navigate = useNavigate();
   const [selectedDivision, setSelectedDivision] = useState("all");
   const [reportMode, setReportMode] = useState<ReportMode>("status");
   const [delayDays, setDelayDays] = useState("5");
   const [delayMilestoneKey, setDelayMilestoneKey] = useState("all");
+  const [reportsSummary, setReportsSummary] = useState<ReportsSummaryPayload | undefined>();
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [hasLoadedReports, setHasLoadedReports] = useState(false);
+  const [reportsError, setReportsError] = useState<string | undefined>();
+  const hasLoadedReportsRef = useRef(false);
   const selectedDivisionIsAccessible =
     selectedDivision === "all" || divisions.some((division) => division.name === selectedDivision);
   const activeDivision = selectedDivisionIsAccessible ? selectedDivision : "all";
@@ -29,11 +63,54 @@ function ReportsPage() {
       activeDivision === "all" ? files : files.filter((file) => file.division === activeDivision),
     [activeDivision, files],
   );
-  const statusSummaryGroups = getStatusSummaryTableGroups(reportFiles);
-  const expectedCashOutgoRows = getExpectedCashOutgoRows(reportFiles);
-  const actualCashOutgoRows = getActualCashOutgoRows(reportFiles);
   const delayThresholdDays = getDelayThresholdDays(delayDays);
-  const delayRows = getDelayStatusRows(reportFiles, delayThresholdDays, delayMilestoneKey);
+  const reportsQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("division", activeDivision);
+    params.set("delayDays", String(delayThresholdDays));
+    params.set("delayMilestone", delayMilestoneKey);
+    params.set("selectedYear", settings.selectedYear);
+    return params.toString();
+  }, [activeDivision, delayThresholdDays, delayMilestoneKey, settings.selectedYear]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const delay = hasLoadedReportsRef.current ? 180 : 0;
+    const timeoutId = window.setTimeout(() => {
+      setReportsLoading(true);
+      setReportsError(undefined);
+      fetchReportsSummary(reportsQuery, controller.signal)
+        .then((payload) => {
+          setReportsSummary(payload.summary);
+          setHasLoadedReports(true);
+          hasLoadedReportsRef.current = true;
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.error(error);
+          setReportsError(error instanceof Error ? error.message : "Reports request failed.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setReportsLoading(false);
+        });
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [reportsQuery]);
+
+  const localStatusSummaryGroups = getStatusSummaryTableGroups(reportFiles);
+  const localExpectedCashOutgoRows = getExpectedCashOutgoRows(reportFiles);
+  const localActualCashOutgoRows = getActualCashOutgoRows(reportFiles);
+  const localDelayRows = getDelayStatusRows(reportFiles, delayThresholdDays, delayMilestoneKey);
+  const statusSummaryGroups = reportsSummary?.statusSummaryGroups ?? localStatusSummaryGroups;
+  const expectedCashOutgoRows =
+    reportsSummary?.expectedCashOutgoRows ?? localExpectedCashOutgoRows;
+  const actualCashOutgoRows = reportsSummary?.actualCashOutgoRows ?? localActualCashOutgoRows;
+  const delayRows = reportsSummary?.delayRows ?? localDelayRows;
+  const delaySummary = reportsSummary?.delaySummary ?? getDelayStatusSummary(localDelayRows);
   const selectedCashOutgoRows =
     reportMode === "actualCashOutgo" ? actualCashOutgoRows : expectedCashOutgoRows;
   const statusReportTitle =
@@ -150,6 +227,21 @@ function ReportsPage() {
         </label>
       </div>
 
+      {reportsError || (reportsLoading && !hasLoadedReports) ? (
+        <div
+          className={
+            "rounded-md border px-3 py-2 text-xs " +
+            (reportsError
+              ? "border-destructive/30 bg-destructive/10 text-destructive"
+              : "border-border bg-secondary/30 text-muted-foreground")
+          }
+        >
+          {reportsError
+            ? `Reports API unavailable, showing local fallback: ${reportsError}`
+            : "Updating reports..."}
+        </div>
+      ) : null}
+
       {reportMode === "status" ? (
         <StatusSummaryReport groups={statusSummaryGroups} />
       ) : reportMode === "delayStatus" ? (
@@ -158,6 +250,7 @@ function ReportsPage() {
           thresholdDays={delayThresholdDays}
           selectedDays={delayDays}
           selectedMilestoneKey={delayMilestoneKey}
+          summary={delaySummary}
           onDaysChange={setDelayDays}
           onMilestoneChange={setDelayMilestoneKey}
           onOpenFile={openDelayFile}
@@ -447,6 +540,7 @@ function StatusCountValue({ value }: { value: number | string | undefined }) {
 
 function DelayStatusReport({
   rows,
+  summary,
   thresholdDays,
   selectedDays,
   selectedMilestoneKey,
@@ -457,6 +551,7 @@ function DelayStatusReport({
   onOpenMilestone,
 }: {
   rows: DelayStatusRow[];
+  summary: ReturnType<typeof getDelayStatusSummary>;
   thresholdDays: number;
   selectedDays: string;
   selectedMilestoneKey: string;
@@ -466,8 +561,6 @@ function DelayStatusReport({
   onOpenSearch: () => void;
   onOpenMilestone: (milestoneKey: string) => void;
 }) {
-  const summary = getDelayStatusSummary(rows);
-
   return (
     <div className="bg-card border border-border rounded-xl p-6 shadow-[var(--shadow-card)]">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">

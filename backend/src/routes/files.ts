@@ -2,6 +2,13 @@ import { Router } from "express";
 import type { PoolClient } from "pg";
 import { pool } from "../db/pool.js";
 import type { FileRecord, FirmDetail, FileRemark, SupplyOrderDetail } from "../types.js";
+import {
+  canAccessDivision,
+  canMutateFiles,
+  getDivisionScopeCondition,
+  requireAuth,
+  type AuthRequest,
+} from "../utils/auth.js";
 import { type FileSearchParams, searchFiles } from "../utils/file-search.js";
 import {
   fromDbDate,
@@ -277,12 +284,23 @@ async function loadChildren(fileIds: string[]): Promise<FileChildren> {
   return children;
 }
 
-export async function loadFiles(whereSql = "", values: unknown[] = []) {
+function combineWhere(whereSql: string, includeArchived: boolean) {
+  const trimmed = whereSql.trim();
+  const activeCondition = includeArchived ? "" : "f.archived_at is null";
+  if (!activeCondition) return trimmed;
+  if (!trimmed) return `where ${activeCondition}`;
+  if (trimmed.toLowerCase().startsWith("where ")) {
+    return `where ${activeCondition} and (${trimmed.slice(6)})`;
+  }
+  return `${trimmed} and ${activeCondition}`;
+}
+
+export async function loadFiles(whereSql = "", values: unknown[] = [], includeArchived = false) {
   const result = await pool.query<FileRow>(
     `select f.*, d.name as division
      from files f
      left join divisions d on d.id = f.division_id
-     ${whereSql}
+     ${combineWhere(whereSql, includeArchived)}
      order by f.created_at desc`,
     values,
   );
@@ -343,6 +361,22 @@ function readSearchParams(query: Record<string, unknown>): FileSearchParams {
     sortDirection: readQueryString(query.sortDirection) === "desc" ? "desc" : "asc",
     divisionWiseSort: readQueryBoolean(query.divisionWiseSort),
   };
+}
+
+async function verifyDeletionPassword(value: unknown) {
+  if (typeof value !== "string") throw new HttpError(400, "Deletion password is required.");
+  const result = await pool.query<{ ok: boolean; configured: boolean }>(
+    `select
+       deletion_password <> '' as configured,
+       deletion_password <> '' and deletion_password = $1 as ok
+     from app_settings
+     where id = true`,
+    [value],
+  );
+  if (!result.rows[0]?.configured) {
+    throw new HttpError(400, "Set a deletion password in admin settings before deleting files.");
+  }
+  if (!result.rows[0].ok) throw new HttpError(403, "Incorrect deletion password.");
 }
 
 function buildFileInsert(body: Record<string, unknown>, divisionId: string | null) {
@@ -485,8 +519,14 @@ async function replaceNestedFileData(
 filesRouter.get(
   "/",
   asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
     const conditions: string[] = [];
     const values: unknown[] = [];
+    const scope = getDivisionScopeCondition(user);
+    if (scope.sql) {
+      conditions.push(scope.sql);
+      values.push(...scope.values);
+    }
 
     if (typeof request.query.year === "string" && request.query.year.trim()) {
       values.push(request.query.year.trim());
@@ -505,7 +545,20 @@ filesRouter.get(
 filesRouter.get(
   "/search",
   asyncHandler(async (request, response) => {
-    const files = await loadFiles();
+    const user = requireAuth(request as AuthRequest);
+    const scope = getDivisionScopeCondition(user);
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    if (scope.sql) {
+      conditions.push(scope.sql);
+      values.push(...scope.values);
+    }
+    const selectedYear = readQueryString(request.query.selectedYear)?.trim();
+    if (selectedYear) {
+      values.push(selectedYear);
+      conditions.push(`f.year = $${values.length}`);
+    }
+    const files = await loadFiles(conditions.length ? `where ${conditions.join(" and ")}` : "", values);
     const results = searchFiles(files, readSearchParams(request.query));
     response.json({ files: results, total: results.length });
   }),
@@ -514,9 +567,17 @@ filesRouter.get(
 filesRouter.get(
   "/:id",
   asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
     const id = requireParam(request.params.id, "id");
     const files = await loadFiles("where f.id = $1", [id]);
     if (!files[0]) throw new HttpError(404, "File not found.");
+    const divisionResult = await pool.query<{ division_id: string | null }>(
+      "select division_id from files where id = $1",
+      [id],
+    );
+    if (!canAccessDivision(user, divisionResult.rows[0]?.division_id)) {
+      throw new HttpError(403, "You cannot access this division.");
+    }
     response.json({ file: files[0] });
   }),
 );
@@ -524,11 +585,16 @@ filesRouter.get(
 filesRouter.post(
   "/",
   asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
+    if (!canMutateFiles(user)) throw new HttpError(403, "You cannot add files.");
     const body = requireObjectBody(request.body);
     const client = await pool.connect();
     try {
       await client.query("begin");
       const divisionId = await resolveDivisionId(client, body.division);
+      if (!canAccessDivision(user, divisionId)) {
+        throw new HttpError(403, "You cannot add files for this division.");
+      }
       const insert = buildFileInsert(body, divisionId);
       const result = await client.query<{ id: string }>(
         `insert into files (${insert.columns.join(", ")})
@@ -554,14 +620,25 @@ filesRouter.post(
 filesRouter.patch(
   "/:id",
   asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
+    if (!canMutateFiles(user)) throw new HttpError(403, "You cannot edit files.");
     const body = requireObjectBody(request.body);
     const id = requireParam(request.params.id, "id");
     const client = await pool.connect();
     try {
       await client.query("begin");
-      const existing = await client.query("select id from files where id = $1", [id]);
+      const existing = await client.query<{ id: string; division_id: string | null }>(
+        "select id, division_id from files where id = $1 and archived_at is null",
+        [id],
+      );
       if (existing.rowCount === 0) throw new HttpError(404, "File not found.");
+      if (!canAccessDivision(user, existing.rows[0].division_id)) {
+        throw new HttpError(403, "You cannot edit this division.");
+      }
       const divisionId = "division" in body ? await resolveDivisionId(client, body.division) : undefined;
+      if (divisionId !== undefined && !canAccessDivision(user, divisionId)) {
+        throw new HttpError(403, "You cannot move files to this division.");
+      }
       const update = buildFileUpdate(body, divisionId);
 
       if (update.fields.length) {
@@ -596,11 +673,73 @@ filesRouter.patch(
 filesRouter.delete(
   "/:id",
   asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
+    if (!canMutateFiles(user)) throw new HttpError(403, "You cannot delete files.");
+    const body = requireObjectBody(request.body);
+    await verifyDeletionPassword(body.deletionPassword);
     const id = requireParam(request.params.id, "id");
     const files = await loadFiles("where f.id = $1", [id]);
     if (!files[0]) throw new HttpError(404, "File not found.");
+    const existing = await pool.query<{ division_id: string | null }>(
+      "select division_id from files where id = $1 and archived_at is null",
+      [id],
+    );
+    if (!canAccessDivision(user, existing.rows[0]?.division_id)) {
+      throw new HttpError(403, "You cannot delete this division.");
+    }
+
+    if (user.role !== "admin") {
+      await pool.query(
+        `update files
+         set archived_at = now(), archived_by = $2, archive_reason = 'Archived by editor'
+         where id = $1`,
+        [id, user.id],
+      );
+      response.json({ archived: true, file: files[0] });
+      return;
+    }
 
     await pool.query("delete from files where id = $1", [id]);
     response.json({ deleted: true, file: files[0] });
+  }),
+);
+
+filesRouter.get(
+  "/archive/list",
+  asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
+    if (user.role !== "admin") throw new HttpError(403, "Admin access required.");
+    response.json({ files: await loadFiles("where f.archived_at is not null", [], true) });
+  }),
+);
+
+filesRouter.delete(
+  "/archive/:id",
+  asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
+    if (user.role !== "admin") throw new HttpError(403, "Admin access required.");
+    const body = requireObjectBody(request.body);
+    await verifyDeletionPassword(body.deletionPassword);
+    const id = requireParam(request.params.id, "id");
+    const files = await loadFiles("where f.id = $1 and f.archived_at is not null", [id], true);
+    if (!files[0]) throw new HttpError(404, "Archived file not found.");
+    await pool.query("delete from files where id = $1 and archived_at is not null", [id]);
+    response.json({ deleted: true, file: files[0] });
+  }),
+);
+
+filesRouter.post(
+  "/:id/restore",
+  asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
+    if (user.role !== "admin") throw new HttpError(403, "Admin access required.");
+    const id = requireParam(request.params.id, "id");
+    await pool.query(
+      "update files set archived_at = null, archived_by = null, archive_reason = null where id = $1",
+      [id],
+    );
+    const files = await loadFiles("where f.id = $1", [id]);
+    if (!files[0]) throw new HttpError(404, "File not found.");
+    response.json({ file: files[0] });
   }),
 );

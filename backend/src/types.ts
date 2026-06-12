@@ -1,4 +1,4 @@
-export type AppUserRole = "admin" | "division_user" | "editor" | "viewer";
+export type AppUserRole = "admin" | "sub_admin" | "division_user" | "editor" | "viewer";
 export type AppTheme = "light" | "dark";
 export type AppThemeTint = "plain" | "yellow" | "green" | "blue" | "pink" | "lavender";
 
@@ -12,6 +12,14 @@ export type Division = {
 };
 
 export type AppUser = {
+  id: string;
+  name: string;
+  username: string;
+  role: AppUserRole;
+  divisionIds: string[];
+};
+
+export type AuthUser = {
   id: string;
   name: string;
   username: string;

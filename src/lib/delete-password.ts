@@ -1,5 +1,9 @@
 import { store } from "@/lib/files-store";
 
+export function promptDeletionPassword(action: string) {
+  return prompt(`Enter deletion password to ${action}:`);
+}
+
 export function requestDeletionPassword(action: string) {
   const password = store.getSettings().deletionPassword;
   if (!password) {

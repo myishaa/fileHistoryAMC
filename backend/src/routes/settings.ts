@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import type { AppSettings, AppTheme, AppThemeTint } from "../types.js";
+import { requireAuth, type AuthRequest } from "../utils/auth.js";
 import { fromDbJsonArray, fromDbText, toDbText } from "../utils/db-values.js";
 import { asyncHandler, HttpError, requireObjectBody, requireString } from "../utils/http.js";
 
@@ -67,15 +68,32 @@ function readArray(value: unknown, field: string) {
 
 settingsRouter.get(
   "/",
-  asyncHandler(async (_request, response) => {
-    response.json({ settings: await getSettings() });
+  asyncHandler(async (request, response) => {
+    const settings = await getSettings();
+    const user = (request as AuthRequest).authUser;
+    response.json({
+      settings:
+        user?.role === "admin"
+          ? settings
+          : {
+              ...settings,
+              deletionPassword: "",
+              activeUserId: user?.id,
+            },
+    });
   }),
 );
 
 settingsRouter.patch(
   "/",
   asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
     const body = requireObjectBody(request.body);
+    const bodyFields = Object.keys(body);
+    const userEditableFields = new Set(["selectedYear", "theme", "themeTint"]);
+    const canUpdateUserPreference =
+      bodyFields.length > 0 && bodyFields.every((field) => userEditableFields.has(field));
+    if (user.role !== "admin" && !canUpdateUserPreference) throw new HttpError(403, "Admin access required.");
     const fields: string[] = [];
     const values: unknown[] = [];
 

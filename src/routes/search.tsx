@@ -19,7 +19,7 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { requestDeletionPassword } from "@/lib/delete-password";
+import { promptDeletionPassword } from "@/lib/delete-password";
 import { formatThousandsAndLakhs, getInrAmount, parseAmount } from "@/lib/money";
 import { validateMilestoneCompletionConsistency } from "@/lib/milestone-validation";
 import type { TableFieldPreset } from "@/lib/table-field-presets";
@@ -541,6 +541,7 @@ function SearchPage() {
     appendSearchBool(params, "soCancelledFilter", soCancelledFilter);
     appendSearchParam(params, "freeText", freeText);
     appendSearchParam(params, "freeDate", freeDate);
+    appendSearchParam(params, "selectedYear", settings.selectedYear);
     appendSearchParam(params, "dashboardFilter", search.dashboardFilter);
     appendSearchParam(params, "sortColumnKey", activeSortColumnKey);
     appendSearchParam(params, "sortDirection", sortDirection);
@@ -581,6 +582,7 @@ function SearchPage() {
     soCancelledFilter,
     freeText,
     freeDate,
+    settings.selectedYear,
   ]);
 
   useEffect(() => {
@@ -1397,8 +1399,9 @@ function EditModal({
 
   const del = () => {
     const label = file.uniqueCode || file.imms || file.demandDescription || "this file";
-    if (!requestDeletionPassword(`delete ${label}`)) return;
-    store.deleteFile(file.id);
+    const deletionPassword = promptDeletionPassword(`delete ${label}`);
+    if (deletionPassword === null) return;
+    store.deleteFile(file.id, deletionPassword);
     onClose();
   };
 

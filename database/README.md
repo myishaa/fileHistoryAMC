@@ -7,9 +7,15 @@ Run these files against a new PostgreSQL database:
 ```sh
 psql "$DATABASE_URL" -f database/001_initial_schema.sql
 psql "$DATABASE_URL" -f database/002_seed_defaults.sql
+psql "$DATABASE_URL" -f database/003_auth_and_archive.sql
 ```
 
 The backend will read the same `DATABASE_URL` from `backend/.env`.
+
+The auth migration creates the initial admin login:
+
+- Username: `ovais`
+- Password: `ovais123`
 
 ```sh
 cd backend
@@ -27,6 +33,10 @@ curl http://localhost:3000/api/health
 ## Initial API Routes
 
 - `GET /api/health`
+- `POST /api/auth/login`
+- `POST /api/auth/viewer-login`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
 - `GET /api/divisions`
 - `POST /api/divisions`
 - `PATCH /api/divisions/:id`
