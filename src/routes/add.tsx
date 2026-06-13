@@ -154,7 +154,7 @@ function createFormFromFile(file: FileRecord, financialYear: string): FormState 
     valueCapitalSelected: hasNonZeroAmount(file.valueCapital) ? "Yes" : "",
     valueRevenueSelected: hasNonZeroAmount(file.valueRevenue) ? "Yes" : "",
     noOfSo: file.noOfSo ?? String(supplyOrderCount),
-    year: financialYear,
+    year: file.year ?? financialYear,
   } as FormState;
 }
 
@@ -167,6 +167,11 @@ function createFirmDetailsFromFile(file: FileRecord | undefined): FirmDetailsSta
 
 function normalizeCompletedMilestones(value: string[] | undefined) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+function normalizeActiveYears(file: FileRecord | undefined, financialYear: string) {
+  const years = file?.activeYears?.length ? file.activeYears : [file?.year ?? financialYear];
+  return Array.from(new Set(years.filter(Boolean)));
 }
 
 function getAutoCompletedMilestones(
@@ -466,6 +471,9 @@ function AddFileEditor() {
   const [completedMilestones, setCompletedMilestones] = useState<string[]>(() =>
     normalizeCompletedMilestones(editingFile?.completedMilestones),
   );
+  const [activeYears, setActiveYears] = useState<string[]>(() =>
+    normalizeActiveYears(editingFile, settings.financialYear),
+  );
   const [saved, setSaved] = useState(false);
   const [unlockedSections, setUnlockedSections] = useState<Set<string>>(() => new Set());
   const [activeBoardSection, setActiveBoardSection] = useState(section ?? "File details");
@@ -485,6 +493,7 @@ function AddFileEditor() {
     setFileRemarks(createRemarksFromFile(editingFile));
     setCurrentMilestone(editingFile?.currentMilestone ?? "");
     setCompletedMilestones(normalizeCompletedMilestones(editingFile?.completedMilestones));
+    setActiveYears(normalizeActiveYears(editingFile, settings.financialYear));
     setUnlockedSections(new Set());
     // The file object is re-read from localStorage on each render; reset only when the edited id changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -497,13 +506,30 @@ function AddFileEditor() {
   const generatedUniqueCode = isEditing
     ? form.uniqueCode
     : generateUniqueCode(settings.financialYear, form.division, allDivisions, allFiles);
+  const originYear = isEditing
+    ? form.year || editingFile?.year || settings.financialYear
+    : settings.financialYear;
   const formWithLockedYear = useMemo(
     () => ({
       ...form,
-      year: settings.financialYear,
+      year: originYear,
       uniqueCode: generatedUniqueCode,
     }),
-    [form, generatedUniqueCode, settings.financialYear],
+    [form, generatedUniqueCode, originYear],
+  );
+  const activeYearOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            settings.financialYear,
+            settings.selectedYear,
+            ...settings.financialYears,
+            originYear,
+          ].filter(Boolean),
+        ),
+      ).sort((a, b) => b.localeCompare(a)),
+    [originYear, settings.financialYear, settings.financialYears, settings.selectedYear],
   );
   const tcecIsNo = isNo(formWithLockedYear.tcec);
   const gemIsNo = isNo(formWithLockedYear.gem);
@@ -852,6 +878,7 @@ function AddFileEditor() {
       noOfSo: String(supplyOrderCount),
       supplyOrders: cleanedSupplyOrders,
       remarks: cleanFileRemarks(fileRemarks),
+      activeYears,
       invitedFirms: cleanFirmRows(firmDetails.invitedFirms),
       bidderFirms: cleanFirmRows(firmDetails.bidderFirms),
       currentMilestone: currentMilestone || undefined,
@@ -1053,7 +1080,17 @@ function AddFileEditor() {
                   onOrderChange={updateSupplyOrder}
                 />
               ) : (
-                renderSectionFields(activeSection)
+                <>
+                  {activeSection.title === "File details" ? (
+                    <ActiveYearsField
+                      years={activeYearOptions}
+                      selectedYears={activeYears}
+                      originYear={formWithLockedYear.year}
+                      onChange={setActiveYears}
+                    />
+                  ) : null}
+                  {renderSectionFields(activeSection)}
+                </>
               )}
               <SectionRemarks
                 sectionTitle={activeSection.title}
@@ -1086,6 +1123,7 @@ function AddFileEditor() {
                 onClick={() => {
                   setForm(applyConditionalRules(createEmptyForm(settings.financialYear)));
                   setFileRemarks([]);
+                  setActiveYears([settings.financialYear]);
                   setCurrentMilestone("");
                   setCompletedMilestones([]);
                 }}
@@ -1214,6 +1252,50 @@ function SectionRemarks({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ActiveYearsField({
+  years,
+  selectedYears,
+  originYear,
+  onChange,
+}: {
+  years: string[];
+  selectedYears: string[];
+  originYear: string;
+  onChange: (years: string[]) => void;
+}) {
+  const toggleYear = (year: string) => {
+    if (year === originYear) return;
+    if (selectedYears.includes(year)) {
+      onChange(selectedYears.filter((item) => item !== year));
+      return;
+    }
+    onChange([...selectedYears, year].sort((a, b) => b.localeCompare(a)));
+  };
+
+  return (
+    <div className="rounded-md border border-border bg-secondary/20 p-3">
+      <div className="mb-2 text-xs font-medium text-muted-foreground">Active years</div>
+      <div className="flex flex-wrap gap-2">
+        {years.map((year) => (
+          <label
+            key={year}
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <input
+              type="checkbox"
+              checked={selectedYears.includes(year) || year === originYear}
+              disabled={year === originYear}
+              onChange={() => toggleYear(year)}
+              className="size-4 rounded border-input"
+            />
+            <span>{year}</span>
+          </label>
+        ))}
+      </div>
     </div>
   );
 }

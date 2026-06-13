@@ -21,6 +21,7 @@ import {
 import { asyncHandler, HttpError, requireObjectBody, requireParam } from "../utils/http.js";
 
 export const filesRouter = Router();
+const allActiveFilesYear = "__all_active_files__";
 
 type ValueKind = "text" | "date" | "number" | "integer";
 
@@ -145,6 +146,7 @@ type FileChildren = {
   supplyOrders: Map<string, SupplyOrderDetail[]>;
   remarks: Map<string, FileRemark[]>;
   completedMilestones: Map<string, string[]>;
+  activeYears: Map<string, string[]>;
 };
 
 function toDbValue(value: unknown, kind: ValueKind) {
@@ -170,7 +172,7 @@ async function resolveDivisionId(client: PoolClient, division: unknown) {
   if (!name) return null;
 
   const result = await client.query<{ id: string }>(
-    "select id from divisions where lower(name) = lower($1)",
+    "select id from divisions where lower(name) = lower($1) and archived_at is null",
     [name],
   );
   if (!result.rows[0]) throw new HttpError(400, `Division not found: ${name}`);
@@ -181,12 +183,14 @@ function mapFile(row: FileRow, children: FileChildren): FileRecord {
   const file = {
     id: row.id,
     division: fromDbText(row.division),
-    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+    createdAt:
+      row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     invitedFirms: children.invitedFirms.get(row.id) ?? [],
     bidderFirms: children.bidderFirms.get(row.id) ?? [],
     supplyOrders: children.supplyOrders.get(row.id) ?? [],
     remarks: children.remarks.get(row.id) ?? [],
     completedMilestones: children.completedMilestones.get(row.id) ?? [],
+    activeYears: children.activeYears.get(row.id) ?? [],
   } as FileRecord;
 
   for (const [frontendKey, [column, kind]] of Object.entries(fileFields)) {
@@ -203,6 +207,7 @@ async function loadChildren(fileIds: string[]): Promise<FileChildren> {
     supplyOrders: new Map(),
     remarks: new Map(),
     completedMilestones: new Map(),
+    activeYears: new Map(),
   };
   if (!fileIds.length) return children;
 
@@ -241,7 +246,10 @@ async function loadChildren(fileIds: string[]): Promise<FileChildren> {
     for (const [frontendKey, [column, kind]] of Object.entries(supplyOrderFields)) {
       (order as Record<string, unknown>)[frontendKey] = fromDbValue(row[column], kind);
     }
-    children.supplyOrders.set(row.file_id, [...(children.supplyOrders.get(row.file_id) ?? []), order]);
+    children.supplyOrders.set(row.file_id, [
+      ...(children.supplyOrders.get(row.file_id) ?? []),
+      order,
+    ]);
   }
 
   const remarkRows = await pool.query<{
@@ -262,7 +270,8 @@ async function loadChildren(fileIds: string[]): Promise<FileChildren> {
       id: row.id,
       section: row.section,
       text: row.text,
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      createdAt:
+        row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     };
     children.remarks.set(row.file_id, [...(children.remarks.get(row.file_id) ?? []), remark]);
   }
@@ -278,6 +287,20 @@ async function loadChildren(fileIds: string[]): Promise<FileChildren> {
     children.completedMilestones.set(row.file_id, [
       ...(children.completedMilestones.get(row.file_id) ?? []),
       row.milestone,
+    ]);
+  }
+
+  const activeYearRows = await pool.query<{ file_id: string; financial_year: string }>(
+    `select file_id, financial_year
+     from file_year_activity
+     where file_id = any($1::uuid[]) and status = 'active'
+     order by financial_year asc`,
+    [fileIds],
+  );
+  for (const row of activeYearRows.rows) {
+    children.activeYears.set(row.file_id, [
+      ...(children.activeYears.get(row.file_id) ?? []),
+      row.financial_year,
     ]);
   }
 
@@ -422,7 +445,10 @@ async function replaceFirms(
   firmType: "invited" | "bidder",
   rows: Record<string, unknown>[],
 ) {
-  await client.query("delete from file_firms where file_id = $1 and firm_type = $2", [fileId, firmType]);
+  await client.query("delete from file_firms where file_id = $1 and firm_type = $2", [
+    fileId,
+    firmType,
+  ]);
   let sortOrder = 0;
   for (const row of rows.filter(hasFilledValue)) {
     await client.query(
@@ -440,7 +466,11 @@ async function replaceFirms(
   }
 }
 
-async function replaceSupplyOrders(client: PoolClient, fileId: string, rows: Record<string, unknown>[]) {
+async function replaceSupplyOrders(
+  client: PoolClient,
+  fileId: string,
+  rows: Record<string, unknown>[],
+) {
   await client.query("delete from supply_orders where file_id = $1", [fileId]);
   let sortOrder = 0;
   for (const row of rows.filter(hasFilledValue)) {
@@ -492,6 +522,41 @@ async function replaceCompletedMilestones(
   }
 }
 
+function readActiveYears(body: Record<string, unknown>) {
+  if (!("activeYears" in body)) return undefined;
+  if (!Array.isArray(body.activeYears)) throw new HttpError(400, "activeYears must be an array.");
+  return body.activeYears
+    .map((year) => (typeof year === "string" ? year.trim() : ""))
+    .filter(Boolean);
+}
+
+async function replaceActiveYears(
+  client: PoolClient,
+  fileId: string,
+  activeYears: string[],
+  originYear: unknown,
+) {
+  const origin =
+    typeof originYear === "string" && originYear.trim()
+      ? originYear.trim()
+      : (
+          await client.query<{ year: string | null }>("select year from files where id = $1", [
+            fileId,
+          ])
+        ).rows[0]?.year;
+  const years = Array.from(new Set([...activeYears, ...(origin ? [origin] : [])]));
+  await client.query("delete from file_year_activity where file_id = $1", [fileId]);
+  for (const year of years) {
+    await client.query(
+      `insert into file_year_activity (file_id, financial_year, status)
+       values ($1, $2, 'active')
+       on conflict (file_id, financial_year)
+       do update set status = 'active'`,
+      [fileId, year],
+    );
+  }
+}
+
 async function replaceNestedFileData(
   client: PoolClient,
   fileId: string,
@@ -503,8 +568,10 @@ async function replaceNestedFileData(
   const supplyOrders = readArray(body.supplyOrders, "supplyOrders");
   const remarks = readArray(body.remarks, "remarks");
   const completedMilestones = body.completedMilestones;
+  const activeYears = readActiveYears(body);
 
-  if (!onlyProvided || invitedFirms) await replaceFirms(client, fileId, "invited", invitedFirms ?? []);
+  if (!onlyProvided || invitedFirms)
+    await replaceFirms(client, fileId, "invited", invitedFirms ?? []);
   if (!onlyProvided || bidderFirms) await replaceFirms(client, fileId, "bidder", bidderFirms ?? []);
   if (!onlyProvided || supplyOrders) await replaceSupplyOrders(client, fileId, supplyOrders ?? []);
   if (!onlyProvided || remarks) await replaceRemarks(client, fileId, remarks ?? []);
@@ -512,7 +579,14 @@ async function replaceNestedFileData(
     if (completedMilestones !== undefined && !Array.isArray(completedMilestones)) {
       throw new HttpError(400, "completedMilestones must be an array.");
     }
-    await replaceCompletedMilestones(client, fileId, completedMilestones ?? []);
+    await replaceCompletedMilestones(
+      client,
+      fileId,
+      Array.isArray(completedMilestones) ? completedMilestones : [],
+    );
+  }
+  if (!onlyProvided || activeYears !== undefined) {
+    await replaceActiveYears(client, fileId, activeYears ?? [], body.year);
   }
 }
 
@@ -530,7 +604,12 @@ filesRouter.get(
 
     if (typeof request.query.year === "string" && request.query.year.trim()) {
       values.push(request.query.year.trim());
-      conditions.push(`f.year = $${values.length}`);
+      conditions.push(
+        `(f.year = $${values.length} or exists (
+          select 1 from file_year_activity a
+          where a.file_id = f.id and a.financial_year = $${values.length} and a.status = 'active'
+        ))`,
+      );
     }
     if (typeof request.query.division === "string" && request.query.division.trim()) {
       values.push(request.query.division.trim());
@@ -554,11 +633,36 @@ filesRouter.get(
       values.push(...scope.values);
     }
     const selectedYear = readQueryString(request.query.selectedYear)?.trim();
-    if (selectedYear) {
+    if (selectedYear === allActiveFilesYear) {
+      conditions.push(
+        `(not exists (
+            select 1 from file_completed_milestones completed
+            where completed.file_id = f.id and lower(completed.milestone) = 'payment'
+          )
+          and lower(coalesce(f.demand_cancelled, '')) <> 'yes'
+          and lower(coalesce(f.so_cancelled, '')) <> 'yes'
+          and not exists (
+            select 1 from supply_orders so
+            where so.file_id = f.id
+              and (
+                lower(coalesce(so.demand_cancelled, '')) = 'yes'
+                or lower(coalesce(so.so_cancelled, '')) = 'yes'
+              )
+          ))`,
+      );
+    } else if (selectedYear) {
       values.push(selectedYear);
-      conditions.push(`f.year = $${values.length}`);
+      conditions.push(
+        `(f.year = $${values.length} or exists (
+          select 1 from file_year_activity a
+          where a.file_id = f.id and a.financial_year = $${values.length} and a.status = 'active'
+        ))`,
+      );
     }
-    const files = await loadFiles(conditions.length ? `where ${conditions.join(" and ")}` : "", values);
+    const files = await loadFiles(
+      conditions.length ? `where ${conditions.join(" and ")}` : "",
+      values,
+    );
     const results = searchFiles(files, readSearchParams(request.query));
     response.json({ files: results, total: results.length });
   }),
@@ -635,7 +739,8 @@ filesRouter.patch(
       if (!canAccessDivision(user, existing.rows[0].division_id)) {
         throw new HttpError(403, "You cannot edit this division.");
       }
-      const divisionId = "division" in body ? await resolveDivisionId(client, body.division) : undefined;
+      const divisionId =
+        "division" in body ? await resolveDivisionId(client, body.division) : undefined;
       if (divisionId !== undefined && !canAccessDivision(user, divisionId)) {
         throw new HttpError(403, "You cannot move files to this division.");
       }

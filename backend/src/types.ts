@@ -9,6 +9,8 @@ export type Division = {
   allocatedCapital?: string;
   allocatedRevenue?: string;
   ad?: string;
+  active?: boolean;
+  archivedAt?: string;
 };
 
 export type AppUser = {
@@ -30,6 +32,7 @@ export type AuthUser = {
 export type AppSettings = {
   financialYear: string;
   selectedYear: string;
+  financialYears: string[];
   theme: AppTheme;
   themeTint: AppThemeTint;
   deletionPassword: string;
@@ -83,6 +86,7 @@ export type FileRecord = {
   imms?: string;
   date?: string;
   year?: string;
+  activeYears?: string[];
   uniqueCode?: string;
   receivedDate?: string;
   scrutinyDate?: string;

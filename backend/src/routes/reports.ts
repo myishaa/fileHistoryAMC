@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
-import type { AppSettings } from "../types.js";
+import type { AppSettings, FileRecord, SupplyOrderDetail } from "../types.js";
 import { loadFiles } from "./files.js";
 import { fromDbJsonArray, fromDbText } from "../utils/db-values.js";
 import { buildReportsSummary } from "../utils/report-summary.js";
@@ -25,6 +25,7 @@ function mapSettings(row: SettingsRow): AppSettings {
   return {
     financialYear: row.financial_year,
     selectedYear: row.selected_year,
+    financialYears: [row.financial_year, row.selected_year].filter(Boolean),
     theme: row.theme,
     themeTint: row.theme_tint,
     deletionPassword: row.deletion_password,
@@ -50,6 +51,40 @@ function readString(value: unknown) {
   return typeof value === "string" ? value : undefined;
 }
 
+const allActiveFilesYear = "__all_active_files__";
+
+function isFileActiveInYear(file: { year?: string; activeYears?: string[] }, year: string) {
+  return file.year === year || file.activeYears?.includes(year);
+}
+
+function isPaymentCompletedFile(file: { completedMilestones?: string[] }) {
+  return Boolean(
+    file.completedMilestones?.some((milestone) => milestone.trim().toLowerCase() === "payment"),
+  );
+}
+
+function isYes(value: string | undefined) {
+  return (value ?? "").trim().toLowerCase() === "yes";
+}
+
+function isInactiveFile(
+  file: Pick<
+    FileRecord,
+    "completedMilestones" | "demandCancelled" | "soCancelled" | "supplyOrders"
+  >,
+) {
+  return (
+    isPaymentCompletedFile(file) ||
+    isYes(file.demandCancelled) ||
+    isYes(file.soCancelled) ||
+    Boolean(
+      file.supplyOrders?.some(
+        (order: SupplyOrderDetail) => isYes(order.demandCancelled) || isYes(order.soCancelled),
+      ),
+    )
+  );
+}
+
 function readNonNegativeInteger(value: unknown, fallback: number) {
   const text = readString(value);
   const parsed = Number.parseInt(text ?? "", 10);
@@ -66,9 +101,12 @@ reportsRouter.get(
       loadSettings(),
     ]);
     const selectedYear = readString(request.query.selectedYear) ?? settings.selectedYear;
-    const selectedYearFiles = selectedYear
-      ? files.filter((file) => file.year === selectedYear)
-      : files;
+    const selectedYearFiles =
+      selectedYear === allActiveFilesYear
+        ? files.filter((file) => !isInactiveFile(file))
+        : selectedYear
+          ? files.filter((file) => isFileActiveInYear(file, selectedYear))
+          : files;
 
     response.json({
       summary: buildReportsSummary({

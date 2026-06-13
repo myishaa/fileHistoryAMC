@@ -2,6 +2,8 @@ export type TableFieldPreset = {
   id: string;
   name: string;
   fieldKeys: string[];
+  owner?: "global" | "personal";
+  ownerUserId?: string;
 };
 
 export type TableFieldPresetGroup = {

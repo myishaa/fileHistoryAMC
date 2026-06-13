@@ -119,7 +119,13 @@ const milestoneDefinitions = [
     current: "ifaFinalDate",
     applies: (file: FileRecord) => isYes(file.ifa),
   },
-  { key: "cfa", label: "CFA", totalLabel: "Total files", reviewed: "cfaSentDate", current: "cfaDate" },
+  {
+    key: "cfa",
+    label: "CFA",
+    totalLabel: "Total files",
+    reviewed: "cfaSentDate",
+    current: "cfaDate",
+  },
   { key: "bidding", label: "Bidding", totalLabel: "Total files", current: "biddingStageOver" },
   {
     key: "postTcec",
@@ -137,7 +143,13 @@ const milestoneDefinitions = [
     current: "cncApprovalDate",
     applies: (file: FileRecord) => isYes(file.tcec),
   },
-  { key: "supplyOrder", label: "Supply Order", completedLabel: "Placed", totalLabel: "Total files", current: "soDate" },
+  {
+    key: "supplyOrder",
+    label: "Supply Order",
+    completedLabel: "Placed",
+    totalLabel: "Total files",
+    current: "soDate",
+  },
   {
     key: "bankGuarantee",
     label: "Bank Guarantee",
@@ -189,6 +201,7 @@ function getExpectedCashOutgoRows(files: FileRecord[]): CashOutgoRow[] {
   const totals = new Map<string, CashOutgoRow>();
 
   files.forEach((file) => {
+    if (isCancelledFile(file)) return;
     fileSupplyOrders(file).forEach((order) => {
       if (!hasSupplyOrderDate(order) || isYes(order.soCancelled)) return;
       const baseDate = hasFilledString(order.materialReceiptDate)
@@ -228,6 +241,7 @@ function getActualCashOutgoRows(files: FileRecord[]): CashOutgoRow[] {
   const totals = new Map<string, CashOutgoRow>();
 
   files.forEach((file) => {
+    if (isCancelledFile(file)) return;
     fileSupplyOrders(file).forEach((order) => {
       if (!hasFilledString(order.billSentForPaymentDate) || isSoCancelledWithDate(order)) return;
 
@@ -514,9 +528,21 @@ function getStatusSummaryRows(files: FileRecord[]): StatusSummaryRow[] {
 
   const supplyOrderIndex = rows.findIndex((row) => row.milestone === "Supply Order");
   const deliveryPeriodRows = [
-    { milestone: "Delivery Period", stage: "Valid", count: files.filter(isDeliveryPeriodValid).length },
-    { milestone: "Delivery Period", stage: "Expired", count: files.filter(isDeliveryPeriodExpired).length },
-    { milestone: "Delivery Period", stage: "Extended", count: files.filter(isDeliveryPeriodExtended).length },
+    {
+      milestone: "Delivery Period",
+      stage: "Valid",
+      count: files.filter(isDeliveryPeriodValid).length,
+    },
+    {
+      milestone: "Delivery Period",
+      stage: "Expired",
+      count: files.filter(isDeliveryPeriodExpired).length,
+    },
+    {
+      milestone: "Delivery Period",
+      stage: "Extended",
+      count: files.filter(isDeliveryPeriodExtended).length,
+    },
   ];
   const withDeliveryPeriod =
     supplyOrderIndex === -1
@@ -548,22 +574,32 @@ function getMilestoneStatusRows(
   milestone: MilestoneDefinition,
 ): StatusSummaryRow[] {
   const applicableFiles = files.filter((file) => isMilestoneApplicable(file, milestone));
-  const reachedFiles = applicableFiles.filter((file) => isEligibleMilestone(file, milestone));
-  const activeFiles = applicableFiles.filter((file) => isManualActiveMilestone(file, milestone));
+  const processFiles = applicableFiles.filter((file) => !isCancelledFile(file));
+  const reachedFiles = processFiles.filter((file) => isEligibleMilestone(file, milestone));
+  const activeFiles = processFiles.filter((file) => isManualActiveMilestone(file, milestone));
   const reviewedFiles = activeFiles.filter((file) => isMilestoneReviewed(file, milestone));
   const pendingFiles = activeFiles.filter((file) => isPendingMilestone(file, milestone));
-  const clearedFiles = applicableFiles.filter((file) => isMilestoneComplete(file, milestone));
+  const clearedFiles = processFiles.filter((file) => isMilestoneComplete(file, milestone));
   const base = (stage: string, count: number) => ({ milestone: milestone.label, stage, count });
 
   if (milestone.key === "bankGuarantee") {
-    const eligibleBgFiles = applicableFiles.filter(isBankGuaranteeEligible);
+    const eligibleBgFiles = processFiles.filter(isBankGuaranteeEligible);
     const activeBgFiles = eligibleBgFiles.filter((file) =>
       isManualActiveMilestone(file, milestone),
     );
     return [
-      base("Received", eligibleBgFiles.filter((file) => hasMilestoneDate(file, milestone.current)).length),
-      base("Pending", activeBgFiles.filter((file) => !hasMilestoneDate(file, milestone.current)).length),
-      base("At previous stage", applicableFiles.filter((file) => !isEligibleMilestone(file, milestone)).length),
+      base(
+        "Received",
+        eligibleBgFiles.filter((file) => hasMilestoneDate(file, milestone.current)).length,
+      ),
+      base(
+        "Pending",
+        activeBgFiles.filter((file) => !hasMilestoneDate(file, milestone.current)).length,
+      ),
+      base(
+        "At previous stage",
+        processFiles.filter((file) => !isEligibleMilestone(file, milestone)).length,
+      ),
     ];
   }
 
@@ -571,7 +607,7 @@ function getMilestoneStatusRows(
     return [
       base("Completed", clearedFiles.length),
       base("Pending", pendingFiles.length),
-      base("At previous stage", Math.max(0, applicableFiles.length - reachedFiles.length)),
+      base("At previous stage", Math.max(0, processFiles.length - reachedFiles.length)),
     ];
   }
 
@@ -628,6 +664,7 @@ function isMilestoneApplicable(file: FileRecord, milestone: MilestoneDefinition)
 }
 
 function isEligibleMilestone(file: FileRecord, milestone: MilestoneDefinition) {
+  if (isCancelledFile(file)) return false;
   return (
     isMilestoneApplicable(file, milestone) && isPreviousApplicableMilestoneComplete(file, milestone)
   );
@@ -652,6 +689,7 @@ function isMilestoneComplete(file: FileRecord, milestone: MilestoneDefinition) {
 }
 
 function isMilestoneReviewed(file: FileRecord, milestone: MilestoneDefinition) {
+  if (isCancelledFile(file)) return false;
   if (!milestone.reviewed) return false;
   return (
     isManualActiveMilestone(file, milestone) &&
@@ -661,6 +699,7 @@ function isMilestoneReviewed(file: FileRecord, milestone: MilestoneDefinition) {
 }
 
 function isPendingMilestone(file: FileRecord, milestone: MilestoneDefinition) {
+  if (isCancelledFile(file)) return false;
   if (milestone.reviewed) {
     return (
       isManualActiveMilestone(file, milestone) &&
@@ -672,6 +711,7 @@ function isPendingMilestone(file: FileRecord, milestone: MilestoneDefinition) {
 }
 
 function isManualActiveMilestone(file: FileRecord, milestone: MilestoneDefinition) {
+  if (isCancelledFile(file)) return false;
   const current = normalizeMilestoneName(file.currentMilestone);
   return getMilestoneNameAliases(milestone).some(
     (name) => current === normalizeMilestoneName(name),
@@ -741,9 +781,18 @@ function isSupplyOrderPlaced(file: FileRecord) {
 }
 
 function isBankGuaranteeEligible(file: FileRecord) {
+  if (isCancelledFile(file)) return false;
   return (
     isYes(file.bg) &&
     fileSupplyOrders(file).some((order) => hasSupplyOrderDate(order) && !isYes(order.soCancelled))
+  );
+}
+
+function isCancelledFile(file: FileRecord) {
+  return (
+    isYes(file.demandCancelled) ||
+    isYes(file.soCancelled) ||
+    fileSupplyOrders(file).some((order) => isYes(order.demandCancelled) || isYes(order.soCancelled))
   );
 }
 
@@ -761,6 +810,7 @@ function isDeliveryCompleted(file: FileRecord) {
 }
 
 function isDeliveryDue(file: FileRecord) {
+  if (isCancelledFile(file)) return false;
   return isSupplyOrderPlaced(file) && fileSupplyOrders(file).some(isDueDeliveryOrder);
 }
 
@@ -785,6 +835,7 @@ function isDeliveryPeriodValid(file: FileRecord) {
 }
 
 function isDeliveryPeriodExpired(file: FileRecord) {
+  if (isCancelledFile(file)) return false;
   return isSupplyOrderPlaced(file) && fileSupplyOrders(file).some(isExpiredDeliveryPeriodOrder);
 }
 
@@ -903,7 +954,10 @@ function parseAmount(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function getInrAmount(value: string | undefined, file: Pick<FileRecord, "currency" | "exchangeRate">) {
+function getInrAmount(
+  value: string | undefined,
+  file: Pick<FileRecord, "currency" | "exchangeRate">,
+) {
   const amount = parseAmount(value);
   if (amount === undefined) return undefined;
   const currency = file.currency?.trim().toLowerCase();

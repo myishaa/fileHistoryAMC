@@ -1,6 +1,7 @@
 // Backend-backed store for files, divisions, users, and settings.
 import * as React from "react";
 import { defaultTableFieldPresets, type TableFieldPreset } from "@/lib/table-field-presets";
+import { isAllActiveFilesYear, isFileVisibleForYear } from "@/lib/year-filter";
 
 export type FileRecord = {
   id: string;
@@ -10,6 +11,7 @@ export type FileRecord = {
   imms?: string;
   date?: string; // ISO yyyy-mm-dd
   year?: string;
+  activeYears?: string[];
   uniqueCode?: string;
   receivedDate?: string;
   scrutinyDate?: string;
@@ -139,6 +141,19 @@ export type Division = {
   allocatedCapital?: string;
   allocatedRevenue?: string;
   ad?: string;
+  active?: boolean;
+  archivedAt?: string;
+};
+export type DivisionMergePayload = {
+  financialYear: string;
+  sourceDivisionIds: string[];
+  targetDivisionId?: string;
+  targetDivisionName?: string;
+  targetDivisionCode?: string;
+  effectiveDate?: string;
+  notes?: string;
+  moveActiveFiles: boolean;
+  deactivateSourceDivisions: boolean;
 };
 export type AppUserRole = "admin" | "sub_admin" | "division_user" | "editor" | "viewer";
 export type AppUser = {
@@ -153,6 +168,7 @@ export type AppThemeTint = "plain" | "yellow" | "green" | "blue" | "pink" | "lav
 export type AppSettings = {
   financialYear: string;
   selectedYear: string;
+  financialYears: string[];
   theme: AppTheme;
   themeTint: AppThemeTint;
   deletionPassword: string;
@@ -169,6 +185,7 @@ function currentYear() {
 const defaultSettings: AppSettings = {
   financialYear: currentYear(),
   selectedYear: currentYear(),
+  financialYears: [currentYear()],
   theme: "light",
   themeTint: "plain",
   deletionPassword: "",
@@ -241,6 +258,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+function divisionsPath(year?: string, includeInactive = false) {
+  const params = new URLSearchParams();
+  const divisionYear = isAllActiveFilesYear(year) ? state.settings.financialYear : year;
+  if (divisionYear) params.set("year", divisionYear);
+  if (includeInactive) params.set("includeInactive", "true");
+  const query = params.toString();
+  return query ? `/api/divisions?${query}` : "/api/divisions";
+}
+
 async function loadAll(force = false) {
   if (typeof window === "undefined") return;
   if (loadPromise && !force) return loadPromise;
@@ -250,10 +276,10 @@ async function loadAll(force = false) {
     try {
       const auth = await request<{ user: AppUser | null }>("/api/auth/me");
       if (!auth.user) {
-        const [divisions, settings] = await Promise.all([
-          request<{ divisions: Division[] }>("/api/divisions"),
-          request<{ settings: AppSettings }>("/api/settings"),
-        ]);
+        const settings = await request<{ settings: AppSettings }>("/api/settings");
+        const divisions = await request<{ divisions: Division[] }>(
+          divisionsPath(settings.settings.selectedYear),
+        );
         setState({
           files: [],
           divisions: divisions.divisions,
@@ -272,12 +298,12 @@ async function loadAll(force = false) {
         return;
       }
 
+      const settings = await request<{ settings: AppSettings }>("/api/settings");
       const baseRequests = [
         request<{ files: FileRecord[] }>("/api/files"),
-        request<{ divisions: Division[] }>("/api/divisions"),
-        request<{ settings: AppSettings }>("/api/settings"),
+        request<{ divisions: Division[] }>(divisionsPath(settings.settings.selectedYear)),
       ] as const;
-      const [files, divisions, settings] = await Promise.all(baseRequests);
+      const [files, divisions] = await Promise.all(baseRequests);
       const users =
         auth.user.role === "admin"
           ? await request<{ users: AppUser[] }>("/api/users")
@@ -356,6 +382,24 @@ export const store = {
         body: JSON.stringify(patch),
       }),
     );
+  },
+  addFinancialYear(label: string, select = true) {
+    runMutation(() =>
+      request("/api/settings/financial-years", {
+        method: "POST",
+        body: JSON.stringify({ label, select }),
+      }),
+    );
+  },
+  deleteFinancialYear(label: string) {
+    runMutation(() =>
+      request(`/api/settings/financial-years/${encodeURIComponent(label)}`, {
+        method: "DELETE",
+      }),
+    );
+  },
+  getDivisionsForYear(year: string, includeInactive = false) {
+    return request<{ divisions: Division[] }>(divisionsPath(year, includeInactive));
   },
   login(username: string, password: string) {
     return (async () => {
@@ -437,22 +481,56 @@ export const store = {
     allocatedCapital?: string,
     allocatedRevenue?: string,
     ad?: string,
+    financialYearOverride?: string,
   ) {
+    const selectedYear = store.getSettings().selectedYear;
+    const financialYear =
+      financialYearOverride ||
+      (isAllActiveFilesYear(selectedYear) ? store.getSettings().financialYear : selectedYear) ||
+      store.getSettings().financialYear;
     runMutation(() =>
       request("/api/divisions", {
         method: "POST",
-        body: JSON.stringify({ name, code, allocatedCapital, allocatedRevenue, ad }),
+        body: JSON.stringify({ name, code, allocatedCapital, allocatedRevenue, ad, financialYear }),
       }),
     );
   },
   updateDivision(id: string, patch: Partial<Division> & { viewerPassword?: string }) {
+    const financialYear = store.getSettings().selectedYear || store.getSettings().financialYear;
     setState({ divisions: state.divisions.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
     runMutation(() =>
       request(`/api/divisions/${id}`, {
         method: "PATCH",
-        body: JSON.stringify(patch),
+        body: JSON.stringify({ ...patch, financialYear }),
       }),
     );
+  },
+  saveDivisionAllocation(
+    id: string,
+    financialYear: string,
+    patch: Pick<Partial<Division>, "allocatedCapital" | "allocatedRevenue" | "active">,
+  ) {
+    if (financialYear === store.getSettings().selectedYear) {
+      setState({ divisions: state.divisions.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
+    }
+    return (async () => {
+      await request(`/api/divisions/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...patch, financialYear }),
+      });
+      await loadAll(true);
+    })();
+  },
+  mergeDivisions(payload: DivisionMergePayload) {
+    return (async () => {
+      await request<{
+        merge: { id: string; movedFileCount: number; targetDivision?: Division };
+      }>("/api/divisions/merge", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await loadAll(true);
+    })();
   },
   deleteDivision(id: string) {
     setState({
@@ -463,6 +541,31 @@ export const store = {
       })),
     });
     runMutation(() => request(`/api/divisions/${id}`, { method: "DELETE" }));
+  },
+  listArchivedDivisions() {
+    const financialYear = store.getSettings().selectedYear || store.getSettings().financialYear;
+    return request<{ divisions: Division[] }>(
+      `/api/divisions/archive/list?year=${encodeURIComponent(financialYear)}`,
+    );
+  },
+  restoreArchivedDivision(id: string) {
+    const financialYear = store.getSettings().selectedYear || store.getSettings().financialYear;
+    return (async () => {
+      await request<{ division: Division }>(
+        `/api/divisions/${id}/restore?year=${encodeURIComponent(financialYear)}`,
+        { method: "POST" },
+      );
+      await loadAll(true);
+    })();
+  },
+  permanentlyDeleteArchivedDivision(id: string, deletionPassword: string) {
+    return (async () => {
+      await request<{ deleted: true; division: Division }>(`/api/divisions/archive/${id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ deletionPassword }),
+      });
+      await loadAll(true);
+    })();
   },
   addUser(user: Omit<AppUser, "id"> & { password: string }) {
     runMutation(() =>
@@ -554,7 +657,8 @@ export function useActiveUser() {
 export function useAccessibleDivisions() {
   const divisions = useDivisions();
   const activeUser = useActiveUser();
-  if (!activeUser || activeUser.role === "admin" || activeUser.role === "sub_admin") return divisions;
+  if (!activeUser || activeUser.role === "admin" || activeUser.role === "sub_admin")
+    return divisions;
   return divisions.filter((division) => activeUser.divisionIds.includes(division.id));
 }
 
@@ -564,7 +668,7 @@ export function useAccessibleFiles() {
   const accessibleDivisions = useAccessibleDivisions();
   const activeUser = useActiveUser();
   const yearFilteredFiles = settings.selectedYear
-    ? files.filter((file) => file.year === settings.selectedYear)
+    ? files.filter((file) => isFileVisibleForYear(file, settings.selectedYear))
     : files;
   if (!activeUser || activeUser.role === "admin" || activeUser.role === "sub_admin") {
     return yearFilteredFiles;

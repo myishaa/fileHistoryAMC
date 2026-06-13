@@ -23,6 +23,7 @@ import { promptDeletionPassword } from "@/lib/delete-password";
 import { formatThousandsAndLakhs, getInrAmount, parseAmount } from "@/lib/money";
 import { validateMilestoneCompletionConsistency } from "@/lib/milestone-validation";
 import type { TableFieldPreset } from "@/lib/table-field-presets";
+import { isCancelledFile } from "@/lib/year-filter";
 
 export const Route = createFileRoute("/search")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -2015,6 +2016,7 @@ function isClearedMilestone(file: FileRecord, milestone: (typeof milestoneDefini
 }
 
 function isEligibleMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  if (isCancelledFile(file)) return false;
   return (
     isMilestoneApplicable(file, milestone) && isPreviousApplicableMilestoneComplete(file, milestone)
   );
@@ -2052,6 +2054,7 @@ function isMilestoneComplete(file: FileRecord, milestone: (typeof milestoneDefin
 }
 
 function isMilestoneReviewed(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  if (isCancelledFile(file)) return false;
   if (!milestone.reviewed) return false;
   return (
     isManualActiveMilestone(file, milestone) &&
@@ -2064,6 +2067,7 @@ function isManualActiveMilestone(
   file: FileRecord,
   milestone: (typeof milestoneDefinitions)[number],
 ) {
+  if (isCancelledFile(file)) return false;
   const current = normalizeMilestoneName(file.currentMilestone);
   return getMilestoneLabelAliases(milestone.key).some(
     (label) => current === normalizeMilestoneName(label),
@@ -2176,6 +2180,7 @@ function isDeliveryCompleted(file: FileRecord) {
 }
 
 function isDeliveryDue(file: FileRecord) {
+  if (isCancelledFile(file)) return false;
   return isDeliveryActive(file) && fileSupplyOrders(file).some(isDueDeliveryOrder);
 }
 
@@ -2227,6 +2232,7 @@ function isDeliveryPeriodValid(file: FileRecord) {
 }
 
 function isDeliveryPeriodExpired(file: FileRecord) {
+  if (isCancelledFile(file)) return false;
   return isDeliveryPeriodActive(file) && fileSupplyOrders(file).some(isExpiredDeliveryPeriodOrder);
 }
 
@@ -2404,7 +2410,10 @@ function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter.startsWith("mode:")) return (file.mode ?? "").trim().toUpperCase() === filter.slice(5);
   if (filter.startsWith("fileType:")) return (file.fileType ?? "").trim() === filter.slice(9);
   if (filter.startsWith("manualMilestoneCurrent:")) {
-    return file.currentMilestone === filter.slice("manualMilestoneCurrent:".length);
+    return (
+      !isCancelledFile(file) &&
+      file.currentMilestone === filter.slice("manualMilestoneCurrent:".length)
+    );
   }
   if (filter.startsWith("manualMilestoneCompleted:")) {
     return Boolean(

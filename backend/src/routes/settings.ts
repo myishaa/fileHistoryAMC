@@ -3,12 +3,19 @@ import { pool } from "../db/pool.js";
 import type { AppSettings, AppTheme, AppThemeTint } from "../types.js";
 import { requireAuth, type AuthRequest } from "../utils/auth.js";
 import { fromDbJsonArray, fromDbText, toDbText } from "../utils/db-values.js";
-import { asyncHandler, HttpError, requireObjectBody, requireString } from "../utils/http.js";
+import {
+  asyncHandler,
+  HttpError,
+  requireObjectBody,
+  requireParam,
+  requireString,
+} from "../utils/http.js";
 
 export const settingsRouter = Router();
 
 const themes = new Set<AppTheme>(["light", "dark"]);
 const themeTints = new Set<AppThemeTint>(["plain", "yellow", "green", "blue", "pink", "lavender"]);
+const allActiveFilesYear = "__all_active_files__";
 
 type SettingsRow = {
   financial_year: string;
@@ -22,21 +29,107 @@ type SettingsRow = {
   active_user_id: string | null;
 };
 
-function mapSettings(row: SettingsRow): AppSettings {
+function tagPresets(value: unknown, owner: "global" | "personal", ownerUserId?: string) {
+  return fromDbJsonArray(value).map((preset) =>
+    preset && typeof preset === "object"
+      ? {
+          ...(preset as Record<string, unknown>),
+          owner,
+          ...(ownerUserId ? { ownerUserId } : {}),
+        }
+      : preset,
+  );
+}
+
+function presetOwnerKey(user: AuthRequest["authUser"]) {
+  return user?.id;
+}
+
+function normalizeYearLabel(value: unknown, field = "financialYear") {
+  const label = requireString(value, field).trim();
+  if (!label) throw new HttpError(400, `${field} is required.`);
+  return label;
+}
+
+async function loadFinancialYears() {
+  const result = await pool.query<{ label: string }>(
+    "select label from financial_years order by label desc",
+  );
+  return result.rows.map((row) => row.label);
+}
+
+async function loadTcecCommittees(financialYear: string, fallback: unknown) {
+  const result = await pool.query<{ name: string }>(
+    `select name
+     from tcec_committees
+     where financial_year = $1
+     order by sort_order asc, name asc`,
+    [financialYear],
+  );
+  if (result.rows.length) return result.rows.map((row) => row.name);
+  return fromDbJsonArray(fallback) as string[];
+}
+
+async function ensureFinancialYear(label: string) {
+  await pool.query(
+    "insert into financial_years (label) values ($1) on conflict (label) do nothing",
+    [label],
+  );
+}
+
+async function loadUserTableFieldPresets(ownerKey: string) {
+  const result = await pool.query<{ presets: unknown }>(
+    "select presets from user_table_field_presets where owner_key = $1",
+    [ownerKey],
+  );
+  return result.rows[0]?.presets ?? [];
+}
+
+async function mapSettings(row: SettingsRow, user?: AuthRequest["authUser"]): Promise<AppSettings> {
+  const financialYears = await loadFinancialYears();
+  const mergedFinancialYears = Array.from(
+    new Set(
+      [row.financial_year, row.selected_year, ...financialYears]
+        .filter(Boolean)
+        .filter((year) => year !== allActiveFilesYear),
+    ),
+  ).sort((a, b) => b.localeCompare(a));
+  const globalPresets = tagPresets(row.table_field_presets, "global");
+  const ownerKey = presetOwnerKey(user);
+  const personalPresets =
+    user && user.role !== "admin" && ownerKey
+      ? tagPresets(await loadUserTableFieldPresets(ownerKey), "personal", ownerKey)
+      : [];
   return {
     financialYear: row.financial_year,
     selectedYear: row.selected_year,
+    financialYears: mergedFinancialYears,
     theme: row.theme,
     themeTint: row.theme_tint,
     deletionPassword: row.deletion_password,
-    tcecCommittees: fromDbJsonArray(row.tcec_committees) as string[],
+    tcecCommittees: await loadTcecCommittees(row.selected_year, row.tcec_committees),
     milestones: fromDbJsonArray(row.milestones) as string[],
-    tableFieldPresets: fromDbJsonArray(row.table_field_presets),
+    tableFieldPresets: [...globalPresets, ...personalPresets],
     activeUserId: fromDbText(row.active_user_id) || undefined,
   };
 }
 
-async function getSettings() {
+async function replaceTcecCommittees(financialYear: string, committees: unknown[]) {
+  await pool.query("delete from tcec_committees where financial_year = $1", [financialYear]);
+  let sortOrder = 0;
+  for (const committee of committees) {
+    const name = toDbText(committee);
+    if (!name) continue;
+    await pool.query(
+      `insert into tcec_committees (financial_year, name, sort_order)
+       values ($1, $2, $3)
+       on conflict do nothing`,
+      [financialYear, name, sortOrder++],
+    );
+  }
+}
+
+async function getSettings(user?: AuthRequest["authUser"]) {
   const result = await pool.query<SettingsRow>(
     `select financial_year, selected_year, theme, theme_tint, deletion_password,
             tcec_committees, milestones, table_field_presets, active_user_id
@@ -44,7 +137,7 @@ async function getSettings() {
      where id = true`,
   );
   if (!result.rows[0]) throw new HttpError(404, "Settings row not found. Run seed defaults.");
-  return mapSettings(result.rows[0]);
+  return mapSettings(result.rows[0], user);
 }
 
 function readTheme(value: unknown) {
@@ -66,11 +159,42 @@ function readArray(value: unknown, field: string) {
   return JSON.stringify(value);
 }
 
+function readArrayValue(value: unknown, field: string) {
+  if (!Array.isArray(value)) throw new HttpError(400, `${field} must be an array.`);
+  return value;
+}
+
+function normalizePresetForStorage(preset: unknown) {
+  if (!preset || typeof preset !== "object" || Array.isArray(preset)) return undefined;
+  const candidate = preset as Record<string, unknown>;
+  if (typeof candidate.id !== "string" || typeof candidate.name !== "string") return undefined;
+  if (!Array.isArray(candidate.fieldKeys)) return undefined;
+  return {
+    id: candidate.id,
+    name: candidate.name,
+    fieldKeys: candidate.fieldKeys.filter((key): key is string => typeof key === "string"),
+  };
+}
+
+function readPresetArray(value: unknown, field: string) {
+  return readArrayValue(value, field).map(normalizePresetForStorage).filter(Boolean);
+}
+
+async function replaceUserTableFieldPresets(ownerKey: string, presets: unknown[]) {
+  await pool.query(
+    `insert into user_table_field_presets (owner_key, presets)
+     values ($1, $2::jsonb)
+     on conflict (owner_key)
+     do update set presets = excluded.presets, updated_at = now()`,
+    [ownerKey, JSON.stringify(presets)],
+  );
+}
+
 settingsRouter.get(
   "/",
   asyncHandler(async (request, response) => {
-    const settings = await getSettings();
     const user = (request as AuthRequest).authUser;
+    const settings = await getSettings(user);
     response.json({
       settings:
         user?.role === "admin"
@@ -90,10 +214,20 @@ settingsRouter.patch(
     const user = requireAuth(request as AuthRequest);
     const body = requireObjectBody(request.body);
     const bodyFields = Object.keys(body);
-    const userEditableFields = new Set(["selectedYear", "theme", "themeTint"]);
+    const userEditableFields = new Set(["selectedYear", "theme", "themeTint", "tableFieldPresets"]);
+    const canUpdateTableFieldPresets =
+      !("tableFieldPresets" in body) ||
+      user.role === "admin" ||
+      user.role === "sub_admin" ||
+      user.role === "editor" ||
+      user.role === "division_user" ||
+      user.role === "viewer";
     const canUpdateUserPreference =
-      bodyFields.length > 0 && bodyFields.every((field) => userEditableFields.has(field));
-    if (user.role !== "admin" && !canUpdateUserPreference) throw new HttpError(403, "Admin access required.");
+      canUpdateTableFieldPresets &&
+      bodyFields.length > 0 &&
+      bodyFields.every((field) => userEditableFields.has(field));
+    if (user.role !== "admin" && !canUpdateUserPreference)
+      throw new HttpError(403, "Admin access required.");
     const fields: string[] = [];
     const values: unknown[] = [];
 
@@ -102,23 +236,116 @@ settingsRouter.patch(
       fields.push(`${column} = $${values.length}${cast}`);
     };
 
-    if ("financialYear" in body) addField("financial_year", requireString(body.financialYear, "financialYear"));
-    if ("selectedYear" in body) addField("selected_year", requireString(body.selectedYear, "selectedYear"));
+    if ("financialYear" in body) {
+      const financialYear = normalizeYearLabel(body.financialYear, "financialYear");
+      await ensureFinancialYear(financialYear);
+      addField("financial_year", financialYear);
+    }
+    if ("selectedYear" in body) {
+      const selectedYear = normalizeYearLabel(body.selectedYear, "selectedYear");
+      if (selectedYear !== allActiveFilesYear) await ensureFinancialYear(selectedYear);
+      addField("selected_year", selectedYear);
+    }
     if ("theme" in body) addField("theme", readTheme(body.theme));
     if ("themeTint" in body) addField("theme_tint", readThemeTint(body.themeTint));
-    if ("deletionPassword" in body) addField("deletion_password", toDbText(body.deletionPassword) ?? "");
+    if ("deletionPassword" in body)
+      addField("deletion_password", toDbText(body.deletionPassword) ?? "");
     if ("tcecCommittees" in body) {
-      addField("tcec_committees", readArray(body.tcecCommittees, "tcecCommittees"), "::jsonb");
+      await replaceTcecCommittees(
+        typeof body.selectedYear === "string" && body.selectedYear.trim()
+          ? body.selectedYear.trim()
+          : (await getSettings()).selectedYear,
+        readArrayValue(body.tcecCommittees, "tcecCommittees"),
+      );
     }
-    if ("milestones" in body) addField("milestones", readArray(body.milestones, "milestones"), "::jsonb");
-    if ("tableFieldPresets" in body) {
-      addField("table_field_presets", readArray(body.tableFieldPresets, "tableFieldPresets"), "::jsonb");
+    if ("milestones" in body)
+      addField("milestones", readArray(body.milestones, "milestones"), "::jsonb");
+    if ("tableFieldPresets" in body && user.role === "admin") {
+      addField(
+        "table_field_presets",
+        JSON.stringify(readPresetArray(body.tableFieldPresets, "tableFieldPresets")),
+        "::jsonb",
+      );
+    } else if ("tableFieldPresets" in body) {
+      const personalPresets = readArrayValue(body.tableFieldPresets, "tableFieldPresets")
+        .filter(
+          (preset) =>
+            preset &&
+            typeof preset === "object" &&
+            !Array.isArray(preset) &&
+            (preset as Record<string, unknown>).owner !== "global",
+        )
+        .map(normalizePresetForStorage)
+        .filter(Boolean);
+      const ownerKey = presetOwnerKey(user);
+      if (!ownerKey) throw new HttpError(400, "Preset owner is required.");
+      await replaceUserTableFieldPresets(ownerKey, personalPresets);
     }
     if ("activeUserId" in body) addField("active_user_id", toDbText(body.activeUserId));
 
-    if (!fields.length) throw new HttpError(400, "No settings fields provided.");
+    if (!fields.length && !("tcecCommittees" in body) && !("tableFieldPresets" in body)) {
+      throw new HttpError(400, "No settings fields provided.");
+    }
 
-    await pool.query(`update app_settings set ${fields.join(", ")} where id = true`, values);
-    response.json({ settings: await getSettings() });
+    if (fields.length) {
+      await pool.query(`update app_settings set ${fields.join(", ")} where id = true`, values);
+    }
+    response.json({ settings: await getSettings(user) });
+  }),
+);
+
+settingsRouter.post(
+  "/financial-years",
+  asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
+    if (user.role !== "admin") throw new HttpError(403, "Admin access required.");
+
+    const body = requireObjectBody(request.body);
+    const label = normalizeYearLabel(body.label, "label");
+    await ensureFinancialYear(label);
+
+    if (body.select === true) {
+      await pool.query("update app_settings set selected_year = $1 where id = true", [label]);
+    }
+
+    response.status(201).json({ settings: await getSettings(user) });
+  }),
+);
+
+settingsRouter.delete(
+  "/financial-years/:label",
+  asyncHandler(async (request, response) => {
+    const user = requireAuth(request as AuthRequest);
+    if (user.role !== "admin") throw new HttpError(403, "Admin access required.");
+
+    const label = requireParam(request.params.label, "label").trim();
+    if (!label) throw new HttpError(400, "label is required.");
+
+    const settings = await getSettings(user);
+    if (label === settings.financialYear) {
+      throw new HttpError(400, "Current financial year cannot be deleted.");
+    }
+    const fileResult = await pool.query<{ count: string }>(
+      `select count(*)
+       from files f
+       where f.year = $1
+          or exists (
+            select 1 from file_year_activity a
+            where a.file_id = f.id and a.financial_year = $1
+          )`,
+      [label],
+    );
+    if (Number(fileResult.rows[0]?.count ?? 0) > 0) {
+      throw new HttpError(400, "This year has files and cannot be deleted.");
+    }
+
+    await pool.query("delete from division_year_allocations where financial_year = $1", [label]);
+    await pool.query("delete from tcec_committees where financial_year = $1", [label]);
+    await pool.query("delete from financial_years where label = $1", [label]);
+    if (label === settings.selectedYear) {
+      await pool.query("update app_settings set selected_year = financial_year where id = true");
+    }
+
+    response.json({ settings: await getSettings(user) });
   }),
 );

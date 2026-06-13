@@ -1,10 +1,15 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { loadFiles } from "./files.js";
-import type { AppSettings, Division } from "../types.js";
+import type { AppSettings, Division, FileRecord, SupplyOrderDetail } from "../types.js";
 import { fromDbJsonArray, fromDbText } from "../utils/db-values.js";
 import { buildDashboardSummary } from "../utils/dashboard-summary.js";
-import { canUseAllDivisions, getDivisionScopeCondition, requireAuth, type AuthRequest } from "../utils/auth.js";
+import {
+  canUseAllDivisions,
+  getDivisionScopeCondition,
+  requireAuth,
+  type AuthRequest,
+} from "../utils/auth.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 
 export const dashboardRouter = Router();
@@ -45,6 +50,7 @@ function mapSettings(row: SettingsRow): AppSettings {
   return {
     financialYear: row.financial_year,
     selectedYear: row.selected_year,
+    financialYears: [row.financial_year, row.selected_year].filter(Boolean),
     theme: row.theme,
     themeTint: row.theme_tint,
     deletionPassword: row.deletion_password,
@@ -55,19 +61,32 @@ function mapSettings(row: SettingsRow): AppSettings {
   };
 }
 
-async function loadDivisions(user: ReturnType<typeof requireAuth>) {
+async function loadDivisions(user: ReturnType<typeof requireAuth>, financialYear: string) {
   const values: unknown[] = [];
-  const whereSql = canUseAllDivisions(user)
-    ? ""
-    : user.divisionIds.length
-      ? "where id = any($1::uuid[])"
-      : "where false";
-  if (!canUseAllDivisions(user) && user.divisionIds.length) values.push(user.divisionIds);
+  const conditions = ["coalesce(a.active, false)", "d.archived_at is null"];
+  if (!canUseAllDivisions(user)) {
+    if (user.divisionIds.length) {
+      values.push(user.divisionIds);
+      conditions.push(`d.id = any($${values.length}::uuid[])`);
+    } else {
+      conditions.push("false");
+    }
+  }
+  values.push(financialYear);
+  const yearParam = values.length;
   const result = await pool.query<DivisionRow>(
-    `select id, name, code, allocated_capital, allocated_revenue, ad
-     from divisions
-     ${whereSql}
-     order by name asc`,
+    `select
+       d.id,
+       d.name,
+       d.code,
+       coalesce(a.allocated_capital, d.allocated_capital) as allocated_capital,
+       coalesce(a.allocated_revenue, d.allocated_revenue) as allocated_revenue,
+       d.ad
+     from divisions d
+     left join division_year_allocations a
+       on a.division_id = d.id and a.financial_year = $${yearParam}
+     where ${conditions.join(" and ")}
+     order by d.name asc`,
     values,
   );
   return result.rows.map(mapDivision);
@@ -88,6 +107,40 @@ function readString(value: unknown) {
   return typeof value === "string" ? value : undefined;
 }
 
+const allActiveFilesYear = "__all_active_files__";
+
+function isFileActiveInYear(file: { year?: string; activeYears?: string[] }, year: string) {
+  return file.year === year || file.activeYears?.includes(year);
+}
+
+function isPaymentCompletedFile(file: { completedMilestones?: string[] }) {
+  return Boolean(
+    file.completedMilestones?.some((milestone) => milestone.trim().toLowerCase() === "payment"),
+  );
+}
+
+function isYes(value: string | undefined) {
+  return (value ?? "").trim().toLowerCase() === "yes";
+}
+
+function isInactiveFile(
+  file: Pick<
+    FileRecord,
+    "completedMilestones" | "demandCancelled" | "soCancelled" | "supplyOrders"
+  >,
+) {
+  return (
+    isPaymentCompletedFile(file) ||
+    isYes(file.demandCancelled) ||
+    isYes(file.soCancelled) ||
+    Boolean(
+      file.supplyOrders?.some(
+        (order: SupplyOrderDetail) => isYes(order.demandCancelled) || isYes(order.soCancelled),
+      ),
+    )
+  );
+}
+
 function readList(value: unknown) {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
   if (typeof value !== "string" || !value.trim()) return undefined;
@@ -102,15 +155,20 @@ dashboardRouter.get(
   asyncHandler(async (request, response) => {
     const user = requireAuth(request as AuthRequest);
     const scope = getDivisionScopeCondition(user);
-    const [files, divisions, settings] = await Promise.all([
-      loadFiles(scope.sql ? `where ${scope.sql}` : "", scope.values),
-      loadDivisions(user),
-      loadSettings(),
-    ]);
+    const settings = await loadSettings();
     const selectedYear = readString(request.query.selectedYear) ?? settings.selectedYear;
-    const selectedYearFiles = selectedYear
-      ? files.filter((file) => file.year === selectedYear)
-      : files;
+    const divisionYear =
+      selectedYear === allActiveFilesYear ? settings.financialYear : selectedYear;
+    const [files, divisions] = await Promise.all([
+      loadFiles(scope.sql ? `where ${scope.sql}` : "", scope.values),
+      loadDivisions(user, divisionYear),
+    ]);
+    const selectedYearFiles =
+      selectedYear === allActiveFilesYear
+        ? files.filter((file) => !isInactiveFile(file))
+        : selectedYear
+          ? files.filter((file) => isFileActiveInYear(file, selectedYear))
+          : files;
 
     response.json({
       summary: buildDashboardSummary({

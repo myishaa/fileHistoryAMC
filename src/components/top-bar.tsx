@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { store, useActiveUser, useFiles, useSettings } from "@/lib/files-store";
+import { ALL_ACTIVE_FILES_YEAR } from "@/lib/year-filter";
 
 const nav = [
   { to: "/add", label: "Add File", icon: FilePlus2 },
@@ -34,9 +35,11 @@ export function TopBar() {
   const canManageAdminSettings = activeUser?.role === "admin";
   const canUpdateAppearance = Boolean(activeUser);
   const canSelectYear = Boolean(activeUser);
-  const canViewUserSettings =
-    activeUser?.role === "admin" || activeUser?.role === "sub_admin" || activeUser?.role === "editor";
-  const canAddFiles = activeUser?.role === "admin" || activeUser?.role === "sub_admin" || activeUser?.role === "editor";
+  const canViewUserSettings = Boolean(activeUser);
+  const canAddFiles =
+    activeUser?.role === "admin" ||
+    activeUser?.role === "sub_admin" ||
+    activeUser?.role === "editor";
   const visibleNav = nav.filter((item) => {
     if (item.to === "/settings") return canViewUserSettings;
     if (item.to === "/add" || item.to === "/quick-entry") return canAddFiles;
@@ -44,9 +47,15 @@ export function TopBar() {
   });
   const yearOptions = Array.from(
     new Set(
-      [settings.financialYear, settings.selectedYear, ...files.map((file) => file.year)]
+      [
+        settings.financialYear,
+        settings.selectedYear,
+        ...settings.financialYears,
+        ...files.map((file) => file.year),
+        ...files.flatMap((file) => file.activeYears ?? []),
+      ]
         .map((year) => year?.trim())
-        .filter((year): year is string => Boolean(year)),
+        .filter((year): year is string => Boolean(year) && year !== ALL_ACTIVE_FILES_YEAR),
     ),
   ).sort((a, b) => b.localeCompare(a));
 
@@ -95,6 +104,7 @@ export function TopBar() {
               disabled={!canSelectYear}
               className="h-6 min-w-20 bg-transparent text-sm font-semibold text-foreground outline-none"
             >
+              <option value={ALL_ACTIVE_FILES_YEAR}>All active files</option>
               {yearOptions.map((year) => (
                 <option key={year} value={year}>
                   {year}

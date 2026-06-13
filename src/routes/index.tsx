@@ -10,6 +10,7 @@ import {
   useSettings,
 } from "@/lib/files-store";
 import { formatThousandsAndLakhs, getInrAmount, hasAmount, parseAmount } from "@/lib/money";
+import { isCancelledFile } from "@/lib/year-filter";
 import { ArrowRight, FileSpreadsheet, FileText, Search } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -287,30 +288,48 @@ export function Dashboard() {
     ),
     bookedCapital: dashboardFiles.reduce(
       (sum, file) =>
-        sum + (hasAmount(file.soValueCapital) ? 0 : (getInrAmount(file.valueCapital, file) ?? 0)),
+        sum +
+        (isCancelledFile(file)
+          ? 0
+          : hasAmount(file.soValueCapital)
+            ? 0
+            : (getInrAmount(file.valueCapital, file) ?? 0)),
       0,
     ),
     bookedRevenue: dashboardFiles.reduce(
       (sum, file) =>
-        sum + (hasAmount(file.soValueRevenue) ? 0 : (getInrAmount(file.valueRevenue, file) ?? 0)),
+        sum +
+        (isCancelledFile(file)
+          ? 0
+          : hasAmount(file.soValueRevenue)
+            ? 0
+            : (getInrAmount(file.valueRevenue, file) ?? 0)),
       0,
     ),
     projectedCapital: dashboardFiles.reduce(
       (sum, file) =>
-        sum + (!hasFilledField(file, "imms") ? (getInrAmount(file.valueCapital, file) ?? 0) : 0),
+        sum +
+        (!isCancelledFile(file) && !hasFilledField(file, "imms")
+          ? (getInrAmount(file.valueCapital, file) ?? 0)
+          : 0),
       0,
     ),
     projectedRevenue: dashboardFiles.reduce(
       (sum, file) =>
-        sum + (!hasFilledField(file, "imms") ? (getInrAmount(file.valueRevenue, file) ?? 0) : 0),
+        sum +
+        (!isCancelledFile(file) && !hasFilledField(file, "imms")
+          ? (getInrAmount(file.valueRevenue, file) ?? 0)
+          : 0),
       0,
     ),
     spentCapital: dashboardFiles.reduce(
-      (sum, file) => sum + (getInrAmount(file.soValueCapital, file) ?? 0),
+      (sum, file) =>
+        sum + (isCancelledFile(file) ? 0 : (getInrAmount(file.soValueCapital, file) ?? 0)),
       0,
     ),
     spentRevenue: dashboardFiles.reduce(
-      (sum, file) => sum + (getInrAmount(file.soValueRevenue, file) ?? 0),
+      (sum, file) =>
+        sum + (isCancelledFile(file) ? 0 : (getInrAmount(file.soValueRevenue, file) ?? 0)),
       0,
     ),
   };
@@ -1387,7 +1406,9 @@ function getLiveStatusDivisionRows(
       const counts = Object.fromEntries(
         milestoneNames.map((milestoneName) => [
           milestoneName,
-          divisionFiles.filter((file) => file.currentMilestone === milestoneName).length,
+          divisionFiles.filter(
+            (file) => !isCancelledFile(file) && file.currentMilestone === milestoneName,
+          ).length,
         ]),
       ) as Record<string, number>;
       return {
@@ -2849,10 +2870,11 @@ function getDivisionValueRanking(files: FileRecord[], divisions: Division[]) {
   files.forEach((file) => {
     const name = getAnalyticsName(file.division, "Unassigned");
     const current = getCurrent(name);
-    const demandCapital = getInrAmount(file.valueCapital, file) ?? 0;
-    const demandRevenue = getInrAmount(file.valueRevenue, file) ?? 0;
-    const committedCapital = getFileCommittedCapitalValue(file);
-    const committedRevenue = getFileCommittedRevenueValue(file);
+    const cancelled = isCancelledFile(file);
+    const demandCapital = cancelled ? 0 : (getInrAmount(file.valueCapital, file) ?? 0);
+    const demandRevenue = cancelled ? 0 : (getInrAmount(file.valueRevenue, file) ?? 0);
+    const committedCapital = cancelled ? 0 : getFileCommittedCapitalValue(file);
+    const committedRevenue = cancelled ? 0 : getFileCommittedRevenueValue(file);
     totals.set(name, {
       allocatedCapital: current.allocatedCapital,
       allocatedRevenue: current.allocatedRevenue,
@@ -3203,6 +3225,7 @@ function isSupplyOrderPlacedByDate(file: FileRecord) {
 }
 
 function isPaymentPending(file: FileRecord) {
+  if (isCancelledFile(file)) return false;
   return fileSupplyOrders(file).some(
     (order) => hasFilledString(order.materialReceiptDate) && !hasFilledString(order.paymentDate),
   );
@@ -3346,7 +3369,8 @@ function getManualMilestoneFlow(
     .filter((name) => !configured.includes(name));
   return [...configured, ...Array.from(new Set(extras)).sort()].map((name) => ({
     name,
-    current: files.filter((file) => file.currentMilestone === name).length,
+    current: files.filter((file) => !isCancelledFile(file) && file.currentMilestone === name)
+      .length,
     completed: files.filter((file) => file.completedMilestones?.includes(name)).length,
   }));
 }
@@ -3354,17 +3378,18 @@ function getManualMilestoneFlow(
 function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
   const flow = milestoneDefinitions.map((milestone) => {
     const applicableFiles = files.filter((file) => isMilestoneApplicable(file, milestone));
-    const reachedFiles = applicableFiles.filter((file) => isEligibleMilestone(file, milestone));
-    const activeFiles = applicableFiles.filter((file) => isManualActiveMilestone(file, milestone));
+    const processFiles = applicableFiles.filter((file) => !isCancelledFile(file));
+    const reachedFiles = processFiles.filter((file) => isEligibleMilestone(file, milestone));
+    const activeFiles = processFiles.filter((file) => isManualActiveMilestone(file, milestone));
     const reviewedFiles = activeFiles.filter((file) => isMilestoneReviewed(file, milestone));
-    const clearedFiles = applicableFiles.filter((file) => isMilestoneComplete(file, milestone));
+    const clearedFiles = processFiles.filter((file) => isMilestoneComplete(file, milestone));
     const pendingFiles = activeFiles.filter((file) => isPendingMilestone(file, milestone));
     const total = applicableFiles.length;
     const cleared = clearedFiles.length;
     const pending = pendingFiles.length;
 
     if (milestone.key === "bankGuarantee") {
-      const eligibleBgFiles = applicableFiles.filter(isBankGuaranteeEligible);
+      const eligibleBgFiles = processFiles.filter(isBankGuaranteeEligible);
       const activeBgFiles = eligibleBgFiles.filter((file) =>
         isManualActiveMilestone(file, milestone),
       );
@@ -3377,7 +3402,7 @@ function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
         total: eligibleBgFiles.length,
         underProcess: Math.max(
           0,
-          applicableFiles.filter((file) => !isEligibleMilestone(file, milestone)).length,
+          processFiles.filter((file) => !isEligibleMilestone(file, milestone)).length,
         ),
         active: activeBgFiles.length,
         pending: activeBgFiles.filter((file) => !hasMilestoneDate(file, milestone.current)).length,
@@ -3395,7 +3420,7 @@ function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
       totalLabel: milestone.totalLabel ?? "Total",
       pendingLabel: getMilestonePendingLabel(milestone),
       total,
-      underProcess: Math.max(0, applicableFiles.length - reachedFiles.length),
+      underProcess: Math.max(0, processFiles.length - reachedFiles.length),
       active: activeFiles.length,
       pending,
       reviewed: reviewedFiles.length,
@@ -3403,17 +3428,15 @@ function getMilestoneFlow(files: ReturnType<typeof useAccessibleFiles>) {
       cleared,
       activeLabel: "In process",
       liveBids:
-        milestone.key === "bidding" ? applicableFiles.filter(isFileTenderLive).length : undefined,
+        milestone.key === "bidding" ? processFiles.filter(isFileTenderLive).length : undefined,
       overdueBids:
-        milestone.key === "bidding" ? applicableFiles.filter(isBidOverdue).length : undefined,
+        milestone.key === "bidding" ? processFiles.filter(isBidOverdue).length : undefined,
       inProcessBids:
         milestone.key === "bidding"
           ? activeFiles.filter((file) => !isFileTenderLive(file)).length
           : undefined,
       liveSupplyOrders:
-        milestone.key === "supplyOrder"
-          ? applicableFiles.filter(isLiveSupplyOrder).length
-          : undefined,
+        milestone.key === "supplyOrder" ? processFiles.filter(isLiveSupplyOrder).length : undefined,
     };
   });
   const supplyOrderIndex = flow.findIndex((milestone) => milestone.key === "supplyOrder");
@@ -3458,6 +3481,7 @@ function getMilestonePendingLabel(milestone: (typeof milestoneDefinitions)[numbe
 }
 
 function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  if (isCancelledFile(file)) return false;
   if (milestone.reviewed) {
     return (
       isManualActiveMilestone(file, milestone) &&
@@ -3470,6 +3494,7 @@ function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefini
 }
 
 function isEligibleMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  if (isCancelledFile(file)) return false;
   return (
     isMilestoneApplicable(file, milestone) && isPreviousApplicableMilestoneComplete(file, milestone)
   );
@@ -3507,6 +3532,7 @@ function isMilestoneComplete(file: FileRecord, milestone: (typeof milestoneDefin
 }
 
 function isMilestoneReviewed(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
+  if (isCancelledFile(file)) return false;
   if (!milestone.reviewed) return false;
   return (
     isManualActiveMilestone(file, milestone) &&
@@ -3519,6 +3545,7 @@ function isManualActiveMilestone(
   file: FileRecord,
   milestone: (typeof milestoneDefinitions)[number],
 ) {
+  if (isCancelledFile(file)) return false;
   const current = normalizeMilestoneName(file.currentMilestone);
   return getMilestoneNameAliases(milestone).some(
     (name) => current === normalizeMilestoneName(name),
@@ -3639,6 +3666,7 @@ function isDeliveryCompleted(file: FileRecord) {
 }
 
 function isDeliveryDue(file: FileRecord) {
+  if (isCancelledFile(file)) return false;
   return isDeliveryActive(file) && fileSupplyOrders(file).some(isDueDeliveryOrder);
 }
 
@@ -3671,6 +3699,7 @@ function isDeliveryPeriodValid(file: FileRecord) {
 }
 
 function isDeliveryPeriodExpired(file: FileRecord) {
+  if (isCancelledFile(file)) return false;
   return isDeliveryPeriodActive(file) && fileSupplyOrders(file).some(isExpiredDeliveryPeriodOrder);
 }
 
@@ -3690,6 +3719,7 @@ function isSupplyOrderPlaced(file: FileRecord) {
 }
 
 function isBankGuaranteeEligible(file: FileRecord) {
+  if (isCancelledFile(file)) return false;
   return (
     isYes(file.bg) &&
     fileSupplyOrders(file).some((order) => hasSupplyOrderDate(order) && !isYes(order.soCancelled))

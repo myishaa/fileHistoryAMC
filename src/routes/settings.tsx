@@ -1,20 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  BarChart3,
-  Check,
-  Lock,
-  Pencil,
-  Plus,
-  QrCode,
-  ScanLine,
-  Shield,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   store,
   useActiveUser,
@@ -23,43 +9,18 @@ import {
   useSettings,
   useUsers,
   type AppUserRole,
+  type Division,
   type FileRecord,
 } from "@/lib/files-store";
 import { tableFieldPresetGroups, type TableFieldPreset } from "@/lib/table-field-presets";
 import { promptDeletionPassword, requestDeletionPassword } from "@/lib/delete-password";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { YearSetupPanel } from "@/routes/year-setup";
+import { isAllActiveFilesYear, isFileVisibleForYear } from "@/lib/year-filter";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
-
-const futureFeatures = [
-  {
-    icon: ScanLine,
-    title: "Barcode scanning",
-    desc: "Scan physical file barcodes with any USB or mobile scanner to instantly pull records.",
-  },
-  {
-    icon: QrCode,
-    title: "QR code integration",
-    desc: "Generate and print QR codes for each file folder for fast lookup.",
-  },
-  {
-    icon: Upload,
-    title: "File uploads",
-    desc: "Attach scanned PDFs, photos, and digital copies to physical file entries.",
-  },
-  {
-    icon: BarChart3,
-    title: "Analytics dashboard",
-    desc: "Deep insights on file turnaround, officer load, and division throughput.",
-  },
-  {
-    icon: Shield,
-    title: "Authentication & roles",
-    desc: "Login with role-based access for staff, supervisors, and administrators.",
-  },
-];
 
 const defaultMilestoneSequence = [
   "Scrutiny",
@@ -83,10 +44,40 @@ const defaultMilestoneSequence = [
 function SettingsPage() {
   const activeUser = useActiveUser();
   const [activeAdminSection, setActiveAdminSection] = useState("divisions");
+  if (activeUser?.role === "viewer" || activeUser?.role === "division_user") {
+    return (
+      <div className="space-y-4 max-w-6xl">
+        <Tabs defaultValue="theme" className="space-y-4">
+          <TabsList aria-label="Settings sections">
+            <TabsTrigger value="theme">UI theme</TabsTrigger>
+            <TabsTrigger value="presets">Preset table fields</TabsTrigger>
+          </TabsList>
+          <TabsContent value="theme">
+            <PreferenceSettings />
+          </TabsContent>
+          <TabsContent value="presets">
+            <TableFieldPresetSettings />
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  }
+
   if (activeUser?.role === "sub_admin" || activeUser?.role === "editor") {
     return (
-      <div className="space-y-4 max-w-3xl">
-        <AccountSettings />
+      <div className="space-y-4 max-w-6xl">
+        <Tabs defaultValue="user" className="space-y-4">
+          <TabsList aria-label="Settings sections">
+            <TabsTrigger value="user">User</TabsTrigger>
+            <TabsTrigger value="presets">Preset table fields</TabsTrigger>
+          </TabsList>
+          <TabsContent value="user">
+            <AccountSettings />
+          </TabsContent>
+          <TabsContent value="presets">
+            <TableFieldPresetSettings />
+          </TabsContent>
+        </Tabs>
       </div>
     );
   }
@@ -104,6 +95,7 @@ function SettingsPage() {
 
   const adminSections = [
     { key: "workspace", label: "Workspace", content: <WorkspaceSettings /> },
+    { key: "yearSetup", label: "Year Setup", content: <YearSetupPanel /> },
     { key: "divisions", label: "Divisions", content: <DivisionSettings /> },
     { key: "tcec", label: "TCEC Committee", content: <TcecCommitteeSettings /> },
     { key: "milestones", label: "Milestones", content: <MilestoneSettings /> },
@@ -154,40 +146,30 @@ function SettingsPage() {
           <AccountSettings />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
 
-      <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="text-sm font-semibold">Upcoming features</h2>
-            <p className="text-xs text-muted-foreground">Planned for future releases.</p>
-          </div>
-          <span className="text-[10px] uppercase tracking-wider bg-secondary text-muted-foreground rounded px-2 py-1">
-            Roadmap
-          </span>
-        </div>
+function PreferenceSettings() {
+  const settings = useSettings();
+  return (
+    <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
+      <h2 className="text-sm font-semibold mb-1">UI theme</h2>
+      <p className="text-xs text-muted-foreground mb-5">
+        Choose the display theme for your own login.
+      </p>
 
-        <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {futureFeatures.map((f) => {
-            const Icon = f.icon;
-            return (
-              <li
-                key={f.title}
-                className="flex gap-3 p-3 rounded-md border border-border bg-secondary/25"
-              >
-                <div className="size-9 rounded-md bg-background text-primary border border-border grid place-items-center shrink-0">
-                  <Icon className="size-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-medium flex items-center gap-2">
-                    {f.title}
-                    <Lock className="size-3 text-muted-foreground" />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <ThemeField
+          label="Theme"
+          value={settings.theme}
+          onChange={(value) => store.updateSettings({ theme: value })}
+        />
+        <ThemeTintField
+          label="Theme color"
+          value={settings.themeTint}
+          onChange={(value) => store.updateSettings({ themeTint: value })}
+        />
       </div>
     </div>
   );
@@ -208,9 +190,7 @@ function AccountSettings() {
   return (
     <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
       <h2 className="text-sm font-semibold mb-1">User settings</h2>
-      <p className="text-xs text-muted-foreground mb-5">
-        View your account and access details.
-      </p>
+      <p className="text-xs text-muted-foreground mb-5">View your account and access details.</p>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Name" value={activeUser?.name ?? "Not signed in"} />
@@ -234,6 +214,46 @@ function AccountSettings() {
 
 function WorkspaceSettings() {
   const settings = useSettings();
+  const files = useFiles();
+  const [newFinancialYear, setNewFinancialYear] = useState("");
+  const selectedFinancialYear = isAllActiveFilesYear(settings.selectedYear)
+    ? settings.financialYear
+    : settings.selectedYear;
+  const financialYears = Array.from(
+    new Set(
+      [settings.financialYear, selectedFinancialYear, ...settings.financialYears]
+        .filter(Boolean)
+        .filter((year) => !isAllActiveFilesYear(year)),
+    ),
+  ).sort((a, b) => b.localeCompare(a));
+  const selectedYearFileCount = files.filter((file) =>
+    isFileVisibleForYear(file, selectedFinancialYear),
+  ).length;
+  const canDeleteSelectedYear =
+    selectedFinancialYear !== settings.financialYear &&
+    selectedYearFileCount === 0 &&
+    financialYears.length > 1;
+
+  const addFinancialYear = () => {
+    const label = newFinancialYear.trim();
+    if (!label) return;
+    store.addFinancialYear(label, true);
+    setNewFinancialYear("");
+  };
+
+  const setCurrentFinancialYear = () => {
+    store.updateSettings({
+      financialYear: selectedFinancialYear,
+      selectedYear: selectedFinancialYear,
+    });
+  };
+
+  const deleteSelectedFinancialYear = () => {
+    if (!canDeleteSelectedYear) return;
+    if (requestDeletionPassword(`delete financial year "${selectedFinancialYear}"`)) {
+      store.deleteFinancialYear(selectedFinancialYear);
+    }
+  };
 
   return (
     <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
@@ -243,11 +263,82 @@ function WorkspaceSettings() {
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <EditableField
-          label="Financial year"
-          value={settings.financialYear}
-          onChange={(value) => store.updateSettings({ financialYear: value, selectedYear: value })}
-        />
+        <div className="md:col-span-2 rounded-md border border-border bg-secondary/20 p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold">Financial years</h3>
+              <p className="text-xs text-muted-foreground">
+                Select a year for allocation editing, or set it as the current file year.
+              </p>
+            </div>
+            <span className="rounded bg-background px-2 py-1 text-xs text-muted-foreground">
+              Current: {settings.financialYear}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(180px,0.8fr)_minmax(180px,1fr)_auto_auto_auto]">
+            <label className="block">
+              <div className="text-xs font-medium mb-1.5">Selected year</div>
+              <select
+                value={selectedFinancialYear}
+                onChange={(event) => store.updateSettings({ selectedYear: event.target.value })}
+                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+              >
+                {financialYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <div className="text-xs font-medium mb-1.5">Add year</div>
+              <input
+                value={newFinancialYear}
+                onChange={(event) => setNewFinancialYear(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") addFinancialYear();
+                }}
+                placeholder="2026-2027"
+                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={addFinancialYear}
+              className="mt-0 lg:mt-6 h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+            >
+              <Plus className="size-4" /> Add Year
+            </button>
+
+            <button
+              type="button"
+              onClick={setCurrentFinancialYear}
+              disabled={selectedFinancialYear === settings.financialYear}
+              className="mt-0 lg:mt-6 h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              <Check className="size-4" /> Set as current
+            </button>
+
+            <button
+              type="button"
+              onClick={deleteSelectedFinancialYear}
+              disabled={!canDeleteSelectedYear}
+              title={
+                selectedFinancialYear === settings.financialYear
+                  ? "Current financial year cannot be deleted"
+                  : selectedYearFileCount > 0
+                    ? "Years with files cannot be deleted"
+                    : "Delete selected year"
+              }
+              className="mt-0 lg:mt-6 h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-md border border-destructive/30 bg-background text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            >
+              <Trash2 className="size-4" /> Delete
+            </button>
+          </div>
+        </div>
         <ThemeField
           label="Theme"
           value={settings.theme}
@@ -481,19 +572,23 @@ function TableFieldPresetSettings() {
   const presets = settings.tableFieldPresets ?? [];
   const [selectedPresetId, setSelectedPresetId] = useState(presets[0]?.id ?? "");
   const selectedPreset = presets.find((preset) => preset.id === selectedPresetId) ?? presets[0];
+  const selectedPresetEditable =
+    activeUser?.role === "admin" || selectedPreset?.owner === "personal";
   const selectedFieldKeys = selectedPreset?.fieldKeys ?? [];
   const allFieldKeys = tableFieldPresetGroups.flatMap((group) =>
     group.fields.map((field) => field.key),
   );
 
-  if (activeUser && activeUser.role !== "admin") return null;
+  useEffect(() => {
+    if (!selectedPreset && presets[0]) setSelectedPresetId(presets[0].id);
+  }, [presets, selectedPreset]);
 
   const updatePresets = (next: TableFieldPreset[]) => {
     store.updateSettings({ tableFieldPresets: next });
   };
 
   const updateSelectedPreset = (patch: Partial<TableFieldPreset>) => {
-    if (!selectedPreset) return;
+    if (!selectedPreset || !selectedPresetEditable) return;
     updatePresets(
       presets.map((preset) => (preset.id === selectedPreset.id ? { ...preset, ...patch } : preset)),
     );
@@ -504,20 +599,22 @@ function TableFieldPresetSettings() {
       id: crypto.randomUUID(),
       name: `Preset ${presets.length + 1}`,
       fieldKeys: ["division", "indentor", "demandDescription"],
+      owner: activeUser?.role === "admin" ? "global" : "personal",
+      ownerUserId: activeUser?.role === "admin" ? undefined : activeUser?.id,
     };
     updatePresets([...presets, nextPreset]);
     setSelectedPresetId(nextPreset.id);
   };
 
   const removePreset = () => {
-    if (!selectedPreset) return;
+    if (!selectedPreset || !selectedPresetEditable) return;
     const next = presets.filter((preset) => preset.id !== selectedPreset.id);
     updatePresets(next);
     setSelectedPresetId(next[0]?.id ?? "");
   };
 
   const toggleField = (fieldKey: string) => {
-    if (!selectedPreset) return;
+    if (!selectedPreset || !selectedPresetEditable) return;
     updateSelectedPreset({
       fieldKeys: selectedFieldKeys.includes(fieldKey)
         ? selectedFieldKeys.filter((key) => key !== fieldKey)
@@ -531,7 +628,8 @@ function TableFieldPresetSettings() {
         <div>
           <h2 className="text-sm font-semibold mb-1">Preset table fields</h2>
           <p className="text-xs text-muted-foreground">
-            Create field sets like Director or Head for the Search File table.
+            Shared presets are set by admin and visible to all. Add personal presets visible only to
+            your own login.
           </p>
         </div>
         <button
@@ -563,7 +661,14 @@ function TableFieldPresetSettings() {
                       : "text-muted-foreground hover:bg-accent hover:text-foreground")
                   }
                 >
-                  {preset.name}
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="truncate">{preset.name}</span>
+                    {preset.owner === "global" && activeUser?.role !== "admin" ? (
+                      <span className="rounded bg-background/80 px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                        Shared
+                      </span>
+                    ) : null}
+                  </span>
                 </button>
               ))}
             </div>
@@ -577,31 +682,41 @@ function TableFieldPresetSettings() {
                   <input
                     value={selectedPreset.name}
                     onChange={(event) => updateSelectedPreset({ name: event.target.value })}
-                    className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    disabled={!selectedPresetEditable}
+                    className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 disabled:opacity-60"
                   />
                 </label>
                 <button
                   type="button"
                   onClick={() => updateSelectedPreset({ fieldKeys: allFieldKeys })}
-                  className="h-10 rounded-md border border-border bg-background px-3 text-xs hover:bg-accent"
+                  disabled={!selectedPresetEditable}
+                  className="h-10 rounded-md border border-border bg-background px-3 text-xs hover:bg-accent disabled:opacity-50"
                 >
                   Select all
                 </button>
                 <button
                   type="button"
                   onClick={() => updateSelectedPreset({ fieldKeys: [] })}
-                  className="h-10 rounded-md border border-border bg-background px-3 text-xs hover:bg-accent"
+                  disabled={!selectedPresetEditable}
+                  className="h-10 rounded-md border border-border bg-background px-3 text-xs hover:bg-accent disabled:opacity-50"
                 >
                   Clear
                 </button>
                 <button
                   type="button"
                   onClick={removePreset}
-                  className="h-10 rounded-md border border-destructive/40 bg-background px-3 text-xs text-destructive hover:bg-destructive/10"
+                  disabled={!selectedPresetEditable}
+                  className="h-10 rounded-md border border-destructive/40 bg-background px-3 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
                 >
                   Delete
                 </button>
               </div>
+              {!selectedPresetEditable ? (
+                <div className="rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+                  This shared preset is managed by admin. Add a preset to create your own editable
+                  version.
+                </div>
+              ) : null}
 
               <div className="space-y-4">
                 {tableFieldPresetGroups.map((group) => (
@@ -622,6 +737,7 @@ function TableFieldPresetSettings() {
                             type="checkbox"
                             checked={selectedFieldKeys.includes(field.key)}
                             onChange={() => toggleField(field.key)}
+                            disabled={!selectedPresetEditable}
                             className="size-4 rounded border-input"
                           />
                           <span>{field.label}</span>
@@ -644,30 +760,18 @@ function DivisionSettings() {
   const files = useFiles();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
-  const [allocatedCapital, setAllocatedCapital] = useState("");
-  const [allocatedRevenue, setAllocatedRevenue] = useState("");
   const [ad, setAd] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editCode, setEditCode] = useState("");
-  const [editCapital, setEditCapital] = useState("");
-  const [editRevenue, setEditRevenue] = useState("");
   const [editAd, setEditAd] = useState("");
   const [editViewerPassword, setEditViewerPassword] = useState("");
 
   const add = () => {
     if (!name.trim()) return;
-    store.addDivision(
-      name.trim(),
-      code.trim() || undefined,
-      allocatedCapital.trim() || undefined,
-      allocatedRevenue.trim() || undefined,
-      ad,
-    );
+    store.addDivision(name.trim(), code.trim() || undefined, undefined, undefined, ad);
     setName("");
     setCode("");
-    setAllocatedCapital("");
-    setAllocatedRevenue("");
     setAd("");
   };
 
@@ -675,8 +779,6 @@ function DivisionSettings() {
     setEditingId(division.id);
     setEditName(division.name);
     setEditCode(division.code ?? "");
-    setEditCapital(division.allocatedCapital ?? "");
-    setEditRevenue(division.allocatedRevenue ?? "");
     setEditAd(division.ad ?? "");
     setEditViewerPassword("");
   };
@@ -686,8 +788,6 @@ function DivisionSettings() {
     store.updateDivision(id, {
       name: editName.trim(),
       code: editCode.trim() || undefined,
-      allocatedCapital: editCapital.trim() || undefined,
-      allocatedRevenue: editRevenue.trim() || undefined,
       ad: editAd,
       ...(editViewerPassword.trim() ? { viewerPassword: editViewerPassword.trim() } : {}),
     });
@@ -698,24 +798,14 @@ function DivisionSettings() {
     <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
       <h2 className="text-sm font-semibold mb-1">Divisions</h2>
       <p className="text-xs text-muted-foreground mb-5">
-        Add and manage division details from Settings.
+        Use this page for the master list of division names, codes, AD marking, and viewer
+        passwords. Deleting a division sends it to Archive for recovery. Year-wise activation,
+        yearly funds, and merged/continued division work are handled in Year Setup.
       </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr_1fr_1fr_0.7fr_auto] gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr_0.7fr_auto]">
         <DivisionInput value={name} onChange={setName} placeholder="Division name" />
         <DivisionInput value={code} onChange={setCode} placeholder="Division code" />
-        <DivisionInput
-          value={allocatedCapital}
-          onChange={setAllocatedCapital}
-          placeholder="Allocated capital"
-          amount
-        />
-        <DivisionInput
-          value={allocatedRevenue}
-          onChange={setAllocatedRevenue}
-          placeholder="Allocated revenue"
-          amount
-        />
         <DivisionAdSelect value={ad} onChange={setAd} />
         <button
           type="button"
@@ -727,23 +817,19 @@ function DivisionSettings() {
       </div>
 
       <div className="mt-5 overflow-x-auto rounded-md border border-border">
-        <table className="w-full min-w-[1040px] table-fixed text-sm">
+        <table className="w-full min-w-[820px] table-fixed text-sm">
           <colgroup>
-            <col className="w-[18%]" />
-            <col className="w-[12%]" />
-            <col className="w-[15%]" />
-            <col className="w-[15%]" />
-            <col className="w-[8%]" />
-            <col className="w-[8%]" />
-            <col className="w-[14%]" />
-            <col className="w-[12%]" />
+            <col className="w-[24%]" />
+            <col className="w-[16%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-[24%]" />
+            <col className="w-[16%]" />
           </colgroup>
           <thead className="bg-secondary text-xs text-muted-foreground">
             <tr>
               <th className="text-left font-medium px-4 py-2.5">Division name</th>
               <th className="text-left font-medium px-4 py-2.5">Division code</th>
-              <th className="text-left font-medium px-4 py-2.5">Allocated capital</th>
-              <th className="text-left font-medium px-4 py-2.5">Allocated revenue</th>
               <th className="text-left font-medium px-4 py-2.5">AD</th>
               <th className="text-left font-medium px-4 py-2.5">Files</th>
               <th className="text-left font-medium px-4 py-2.5">Viewer password</th>
@@ -776,30 +862,6 @@ function DivisionSettings() {
                       />
                     ) : (
                       division.code || "Not set"
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {isEditing ? (
-                      <DivisionInput
-                        value={editCapital}
-                        onChange={setEditCapital}
-                        placeholder="Allocated capital"
-                        amount
-                      />
-                    ) : (
-                      formatAmountValue(division.allocatedCapital) || "Not set"
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {isEditing ? (
-                      <DivisionInput
-                        value={editRevenue}
-                        onChange={setEditRevenue}
-                        placeholder="Allocated revenue"
-                        amount
-                      />
-                    ) : (
-                      formatAmountValue(division.allocatedRevenue) || "Not set"
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
@@ -1109,6 +1171,7 @@ function UserRoleSelect({
 
 function ArchiveSettings() {
   const [archivedFiles, setArchivedFiles] = useState<FileRecord[]>([]);
+  const [archivedDivisions, setArchivedDivisions] = useState<Division[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
@@ -1116,8 +1179,12 @@ function ArchiveSettings() {
     setLoading(true);
     setError(undefined);
     try {
-      const result = await store.listArchivedFiles();
-      setArchivedFiles(result.files);
+      const [filesResult, divisionsResult] = await Promise.all([
+        store.listArchivedFiles(),
+        store.listArchivedDivisions(),
+      ]);
+      setArchivedFiles(filesResult.files);
+      setArchivedDivisions(divisionsResult.divisions);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to load archive.");
     } finally {
@@ -1134,6 +1201,20 @@ function ArchiveSettings() {
     await loadArchive();
   };
 
+  const restoreDivision = async (division: Division) => {
+    await store.restoreArchivedDivision(division.id);
+    await loadArchive();
+  };
+
+  const permanentlyDeleteDivision = async (division: Division) => {
+    const deletionPassword = promptDeletionPassword(
+      `permanently delete archived division "${division.name}"`,
+    );
+    if (deletionPassword === null) return;
+    await store.permanentlyDeleteArchivedDivision(division.id, deletionPassword);
+    await loadArchive();
+  };
+
   const permanentlyDelete = async (file: FileRecord) => {
     const label = file.uniqueCode || file.fileNo || file.indentor || file.id;
     const deletionPassword = promptDeletionPassword(`permanently delete archived file "${label}"`);
@@ -1147,9 +1228,7 @@ function ArchiveSettings() {
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold mb-1">Archive</h2>
-          <p className="text-xs text-muted-foreground">
-            Review files archived by editors or sub admins.
-          </p>
+          <p className="text-xs text-muted-foreground">Review archived files and divisions.</p>
         </div>
         <button
           type="button"
@@ -1165,6 +1244,71 @@ function ArchiveSettings() {
           {error}
         </div>
       ) : null}
+
+      <div className="mb-5 overflow-x-auto rounded-md border border-border">
+        <table className="w-full min-w-[640px] table-fixed text-sm">
+          <colgroup>
+            <col className="w-[30%]" />
+            <col className="w-[18%]" />
+            <col className="w-[18%]" />
+            <col className="w-[18%]" />
+            <col className="w-[16%]" />
+          </colgroup>
+          <thead className="bg-secondary text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2.5 text-left font-medium">Archived division</th>
+              <th className="px-4 py-2.5 text-left font-medium">Code</th>
+              <th className="px-4 py-2.5 text-left font-medium">AD</th>
+              <th className="px-4 py-2.5 text-left font-medium">Archived on</th>
+              <th className="py-2.5 pl-8 pr-4 text-right font-medium">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr className="border-t border-border">
+                <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
+                  Loading archived divisions...
+                </td>
+              </tr>
+            ) : archivedDivisions.length === 0 ? (
+              <tr className="border-t border-border">
+                <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
+                  No archived divisions.
+                </td>
+              </tr>
+            ) : (
+              archivedDivisions.map((division) => (
+                <tr key={division.id} className="border-t border-border align-top">
+                  <td className="px-4 py-3 font-medium">{division.name}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{division.code || "Not set"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{division.ad || "No"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {division.archivedAt ? formatArchiveDate(division.archivedAt) : "Not set"}
+                  </td>
+                  <td className="py-3 pl-8 pr-4">
+                    <div className="flex justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void restoreDivision(division)}
+                        className="h-8 rounded-md border border-border bg-background px-2 text-xs font-medium hover:bg-accent"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void permanentlyDeleteDivision(division)}
+                        className="h-8 rounded-md border border-destructive/30 px-2 text-xs font-medium text-destructive hover:bg-destructive/10"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full min-w-[900px] table-fixed text-sm">
@@ -1235,6 +1379,12 @@ function ArchiveSettings() {
       </div>
     </div>
   );
+}
+
+function formatArchiveDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString();
 }
 
 function DivisionAccessPicker({
@@ -1346,21 +1496,16 @@ function DivisionInput({
   value,
   onChange,
   placeholder,
-  amount = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
-  amount?: boolean;
 }) {
   return (
     <input
       value={value}
-      onChange={(event) =>
-        onChange(amount ? formatDecimalInput(event.target.value) : event.target.value)
-      }
+      onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
-      inputMode={amount ? "decimal" : undefined}
       className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
     />
   );
@@ -1455,57 +1600,4 @@ function Field({ label, value }: { label: string; value: string }) {
       />
     </label>
   );
-}
-
-function parseAmount(value: string | undefined) {
-  const cleaned = (value ?? "").replace(/,/g, "").trim();
-  if (!cleaned) return undefined;
-  const parsed = Number(cleaned);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function formatAmountValue(value: string | undefined) {
-  const amount = parseAmount(value);
-  if (amount === undefined) return value ?? "";
-  return formatThousandsAndLakhs(amount);
-}
-
-function formatDecimalInput(value: string) {
-  const digitsAndDots = value.replace(/[^\d.]/g, "");
-  const [first, ...rest] = digitsAndDots.split(".");
-  const decimalPart = rest.join("");
-  const formattedInteger = formatInputThousandsAndLakhs(first);
-  return rest.length > 0 ? `${formattedInteger}.${decimalPart}` : formattedInteger;
-}
-
-function formatInputThousandsAndLakhs(integerPart: string) {
-  const lastThree = integerPart.slice(-3);
-  const beforeThousands = integerPart.slice(0, -3);
-
-  if (!beforeThousands) return integerPart;
-
-  const lastTwoBeforeThousands = beforeThousands.slice(-2);
-  const lakhPart = beforeThousands.slice(0, -2);
-  return [lakhPart, lastTwoBeforeThousands, lastThree].filter(Boolean).join(",");
-}
-
-function formatThousandsAndLakhs(value: number, maximumFractionDigits = 2) {
-  const sign = value < 0 ? "-" : "";
-  const absoluteValue = Math.abs(value);
-  const fixedValue = Number.isInteger(absoluteValue)
-    ? String(absoluteValue)
-    : absoluteValue.toFixed(maximumFractionDigits).replace(/\.?0+$/, "");
-  const [integerPart, decimalPart] = fixedValue.split(".");
-  const lastThree = integerPart.slice(-3);
-  const beforeThousands = integerPart.slice(0, -3);
-
-  if (!beforeThousands) {
-    return `${sign}${integerPart}${decimalPart ? `.${decimalPart}` : ""}`;
-  }
-
-  const lastTwoBeforeThousands = beforeThousands.slice(-2);
-  const lakhPart = beforeThousands.slice(0, -2);
-  const formattedInteger = [lakhPart, lastTwoBeforeThousands, lastThree].filter(Boolean).join(",");
-
-  return `${sign}${formattedInteger}${decimalPart ? `.${decimalPart}` : ""}`;
 }

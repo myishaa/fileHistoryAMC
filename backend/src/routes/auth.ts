@@ -58,6 +58,7 @@ authRouter.post(
       `select id
        from divisions
        where id = $1
+         and archived_at is null
          and viewer_password_hash is not null
          and viewer_password_hash = crypt($2, viewer_password_hash)`,
       [divisionId, password],

@@ -8,6 +8,13 @@ Run these files against a new PostgreSQL database:
 psql "$DATABASE_URL" -f database/001_initial_schema.sql
 psql "$DATABASE_URL" -f database/002_seed_defaults.sql
 psql "$DATABASE_URL" -f database/003_auth_and_archive.sql
+psql "$DATABASE_URL" -f database/004_yearly_division_allocations.sql
+psql "$DATABASE_URL" -f database/005_financial_years.sql
+psql "$DATABASE_URL" -f database/006_year_context.sql
+psql "$DATABASE_URL" -f database/007_division_archive.sql
+psql "$DATABASE_URL" -f database/008_division_merges.sql
+psql "$DATABASE_URL" -f database/009_user_table_field_presets.sql
+psql "$DATABASE_URL" -f database/010_table_field_preset_owner_keys.sql
 ```
 
 The backend will read the same `DATABASE_URL` from `backend/.env`.
@@ -64,9 +71,17 @@ The file endpoints accept and return the current frontend-style camelCase shape.
 
 - `files`: core file/procurement records.
 - `divisions`: office divisions such as Mechanical, Electrical, Electronics.
+- `division_year_allocations`: year-wise active flag and capital/revenue allocation per division.
+- `division_merges`: year-wise division merge decisions.
+- `division_merge_sources`: source divisions included in each merge.
+- `file_division_history`: audit trail when files move between divisions.
+- `tcec_committees`: year-wise TCEC committee names.
+- `file_year_activity`: financial years where a file is active or continued.
+- `user_table_field_presets`: private table field presets for each editor, sub-admin, or viewer.
 - `app_users`: temporary app users and future login users.
 - `user_divisions`: division access for non-admin users.
 - `app_settings`: workspace settings currently stored in localStorage.
+- `financial_years`: saved financial years shown in year dropdowns.
 - `file_firms`: invited and bidder firm rows.
 - `supply_orders`: multiple supply order rows for a file.
 - `file_remarks`: remarks grouped by section.
