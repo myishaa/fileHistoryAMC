@@ -11,6 +11,8 @@ import {
   type AppUserRole,
   type Division,
   type FileRecord,
+  type ValueThresholdAppliesTo,
+  type ValueThresholdLevel,
 } from "@/lib/files-store";
 import { tableFieldPresetGroups, type TableFieldPreset } from "@/lib/table-field-presets";
 import { promptDeletionPassword, requestDeletionPassword } from "@/lib/delete-password";
@@ -98,6 +100,7 @@ function SettingsPage() {
     { key: "yearSetup", label: "Year Setup", content: <YearSetupPanel /> },
     { key: "divisions", label: "Divisions", content: <DivisionSettings /> },
     { key: "tcec", label: "TCEC Committee", content: <TcecCommitteeSettings /> },
+    { key: "thresholds", label: "Value thresholds", content: <ValueThresholdSettings /> },
     { key: "milestones", label: "Milestones", content: <MilestoneSettings /> },
     { key: "presets", label: "Preset table fields", content: <TableFieldPresetSettings /> },
     { key: "users", label: "Users", content: <UserSettings /> },
@@ -432,6 +435,198 @@ function TcecCommitteeSettings() {
       </div>
     </div>
   );
+}
+
+const defaultThresholdAppliesTo: ValueThresholdAppliesTo = "both";
+
+function createThresholdLevels(count: number, existing: ValueThresholdLevel[]) {
+  return Array.from({ length: count }, (_, index) => {
+    const levelNumber = index + 1;
+    const current = existing[index];
+    return {
+      label: current?.label || `Level ${levelNumber}`,
+      levelNumber,
+      minValue: current?.minValue ?? "",
+      maxValue: current?.maxValue ?? "",
+      appliesTo: current?.appliesTo ?? defaultThresholdAppliesTo,
+    };
+  });
+}
+
+function ValueThresholdSettings() {
+  const settings = useSettings();
+  const activeUser = useActiveUser();
+  const selectedYear = isAllActiveFilesYear(settings.selectedYear)
+    ? settings.financialYear
+    : settings.selectedYear;
+  const [levels, setLevels] = useState<ValueThresholdLevel[]>(settings.valueThresholdLevels ?? []);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    setLevels(settings.valueThresholdLevels ?? []);
+    setMessage("");
+  }, [settings.selectedYear, settings.valueThresholdLevels]);
+
+  if (activeUser && activeUser.role !== "admin") return null;
+
+  const levelCount = levels.length;
+  const save = (nextLevels = levels) => {
+    const normalized = nextLevels.map((level, index) => ({
+      ...level,
+      label: level.label.trim() || `Level ${index + 1}`,
+      levelNumber: index + 1,
+      minValue: level.minValue?.trim() || "",
+      maxValue: level.maxValue?.trim() || "",
+      appliesTo: level.appliesTo || defaultThresholdAppliesTo,
+    }));
+    const invalid = normalized.find((level) => {
+      const min = parseOptionalPositiveNumber(level.minValue);
+      const max = parseOptionalPositiveNumber(level.maxValue);
+      return (
+        min.invalid ||
+        max.invalid ||
+        (min.value !== undefined && max.value !== undefined && min.value > max.value)
+      );
+    });
+    if (invalid) {
+      setMessage("Check threshold values before saving.");
+      return;
+    }
+    setLevels(normalized);
+    setMessage("Thresholds saved.");
+    store.updateSettings({ selectedYear, valueThresholdLevels: normalized });
+  };
+
+  const updateCount = (count: number) => {
+    const next = createThresholdLevels(count, levels);
+    setLevels(next);
+    setMessage("");
+  };
+
+  const updateLevel = (index: number, patch: Partial<ValueThresholdLevel>) => {
+    setLevels((current) =>
+      current.map((level, levelIndex) =>
+        levelIndex === index ? { ...level, ...patch, levelNumber: levelIndex + 1 } : level,
+      ),
+    );
+    setMessage("");
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold mb-1">Value thresholds</h2>
+          <p className="text-xs text-muted-foreground">
+            Configure value levels for {selectedYear}. Files are matched by capital/revenue value.
+          </p>
+        </div>
+        <label className="block">
+          <div className="mb-1.5 text-xs font-medium text-muted-foreground">Levels</div>
+          <select
+            value={String(levelCount)}
+            onChange={(event) => updateCount(Number(event.target.value))}
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+          >
+            <option value="0">Select</option>
+            {Array.from({ length: 8 }, (_, index) => index + 1).map((count) => (
+              <option key={count} value={count}>
+                {count}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {levels.length === 0 ? (
+        <div className="rounded-md border border-border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+          Select the number of threshold levels to begin.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="min-w-[780px] w-full text-sm">
+            <thead className="bg-secondary/40 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Level</th>
+                <th className="px-3 py-2 text-left font-medium">Label</th>
+                <th className="px-3 py-2 text-left font-medium">Applies to</th>
+                <th className="px-3 py-2 text-left font-medium">Min value</th>
+                <th className="px-3 py-2 text-left font-medium">Max value</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {levels.map((level, index) => (
+                <tr key={index}>
+                  <td className="px-3 py-2 font-medium">{index + 1}</td>
+                  <td className="px-3 py-2">
+                    <input
+                      value={level.label}
+                      onChange={(event) => updateLevel(index, { label: event.target.value })}
+                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={level.appliesTo}
+                      onChange={(event) =>
+                        updateLevel(index, {
+                          appliesTo: event.target.value as ValueThresholdAppliesTo,
+                        })
+                      }
+                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                    >
+                      <option value="both">Both</option>
+                      <option value="capital">Capital</option>
+                      <option value="revenue">Revenue</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      value={level.minValue ?? ""}
+                      onChange={(event) => updateLevel(index, { minValue: event.target.value })}
+                      inputMode="decimal"
+                      placeholder="No minimum"
+                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      value={level.maxValue ?? ""}
+                      onChange={(event) => updateLevel(index, { maxValue: event.target.value })}
+                      inputMode="decimal"
+                      placeholder="No maximum"
+                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs text-muted-foreground">{message}</div>
+        <button
+          type="button"
+          onClick={() => save()}
+          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+        >
+          <Check className="size-4" /> Save thresholds
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function parseOptionalPositiveNumber(value: string | undefined) {
+  const cleaned = (value ?? "").replace(/,/g, "").trim();
+  if (!cleaned) return { value: undefined, invalid: false };
+  const parsed = Number(cleaned);
+  return {
+    value: Number.isFinite(parsed) ? parsed : undefined,
+    invalid: !Number.isFinite(parsed) || parsed < 0,
+  };
 }
 
 function MilestoneSettings() {

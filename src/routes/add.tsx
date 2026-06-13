@@ -7,6 +7,7 @@ import {
   type FileRemark,
   type FirmDetail,
   type SupplyOrderDetail,
+  type ValueThresholdLevel,
   useAccessibleDivisions,
   useAccessibleFiles,
   useActiveUser,
@@ -780,6 +781,10 @@ function AddFileEditor() {
               revenueValue={formWithLockedYear.valueRevenue}
               capitalSelected={formWithLockedYear.valueCapitalSelected === "Yes"}
               revenueSelected={formWithLockedYear.valueRevenueSelected === "Yes"}
+              thresholdMatch={findValueThresholdMatch(
+                settings.valueThresholdLevels,
+                formWithLockedYear,
+              )}
               disabled={false}
               lockFilledFields={lockFilledFields}
               onChange={(patch) => {
@@ -2839,6 +2844,50 @@ function hasNonZeroAmount(value: string | undefined) {
   return Number.isFinite(amount) && amount !== 0;
 }
 
+function findValueThresholdMatch(
+  levels: ValueThresholdLevel[] | undefined,
+  form: Pick<
+    FormState,
+    | "valueCapital"
+    | "valueRevenue"
+    | "valueCapitalSelected"
+    | "valueRevenueSelected"
+    | "currency"
+    | "exchangeRate"
+  >,
+) {
+  if (!levels?.length) return undefined;
+  const valueType =
+    form.valueCapitalSelected === "Yes"
+      ? "capital"
+      : form.valueRevenueSelected === "Yes"
+        ? "revenue"
+        : undefined;
+  if (!valueType) return undefined;
+  const amount = parseMoneyAmount(valueType === "capital" ? form.valueCapital : form.valueRevenue);
+  if (amount === undefined) return undefined;
+  const currency = (form.currency || "INR").trim().toUpperCase();
+  const exchangeRate = currency && currency !== "INR" ? parseMoneyAmount(form.exchangeRate) : 1;
+  if (exchangeRate === undefined || exchangeRate <= 0) return undefined;
+  const inrAmount = amount * exchangeRate;
+
+  return levels.find((level) => {
+    if (level.appliesTo !== "both" && level.appliesTo !== valueType) return false;
+    const min = parseMoneyAmount(level.minValue);
+    const max = parseMoneyAmount(level.maxValue);
+    if (min !== undefined && inrAmount < min) return false;
+    if (max !== undefined && inrAmount > max) return false;
+    return true;
+  });
+}
+
+function parseMoneyAmount(value: string | undefined) {
+  const cleaned = (value ?? "").replace(/,/g, "").trim();
+  if (!cleaned) return undefined;
+  const amount = Number(cleaned);
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
 function isNo(value: string) {
   return value.trim().toLowerCase() === "no";
 }
@@ -2963,6 +3012,7 @@ function ValueField({
   revenueValue,
   capitalSelected,
   revenueSelected,
+  thresholdMatch,
   disabled,
   lockFilledFields = false,
   onChange,
@@ -2971,6 +3021,7 @@ function ValueField({
   revenueValue: string;
   capitalSelected: boolean;
   revenueSelected: boolean;
+  thresholdMatch?: ValueThresholdLevel;
   disabled: boolean;
   lockFilledFields?: boolean;
   onChange: (
@@ -3046,6 +3097,13 @@ function ValueField({
           placeholder="Enter value"
           className={inputCls + disabledCls(valueDisabled)}
         />
+        <div className="min-h-5 text-xs text-muted-foreground">
+          {thresholdMatch
+            ? `Threshold: ${thresholdMatch.label}`
+            : selected
+              ? "No threshold level matched."
+              : "Select Capital or Revenue to match a threshold."}
+        </div>
       </div>
     </Field>
   );

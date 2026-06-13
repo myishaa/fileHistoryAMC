@@ -1,7 +1,13 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { loadFiles } from "./files.js";
-import type { AppSettings, Division, FileRecord, SupplyOrderDetail } from "../types.js";
+import type {
+  AppSettings,
+  Division,
+  FileRecord,
+  SupplyOrderDetail,
+  ValueThresholdLevel,
+} from "../types.js";
 import { fromDbJsonArray, fromDbText } from "../utils/db-values.js";
 import { buildDashboardSummary } from "../utils/dashboard-summary.js";
 import {
@@ -55,6 +61,7 @@ function mapSettings(row: SettingsRow): AppSettings {
     themeTint: row.theme_tint,
     deletionPassword: row.deletion_password,
     tcecCommittees: fromDbJsonArray(row.tcec_committees) as string[],
+    valueThresholdLevels: [],
     milestones: fromDbJsonArray(row.milestones) as string[],
     tableFieldPresets: fromDbJsonArray(row.table_field_presets),
     activeUserId: fromDbText(row.active_user_id) || undefined,
@@ -101,6 +108,31 @@ async function loadSettings() {
   );
   if (!result.rows[0]) throw new HttpError(404, "Settings row not found. Run seed defaults.");
   return mapSettings(result.rows[0]);
+}
+
+async function loadValueThresholdLevels(financialYear: string): Promise<ValueThresholdLevel[]> {
+  const result = await pool.query<{
+    id: string;
+    level_number: number;
+    label: string;
+    min_value: string | null;
+    max_value: string | null;
+    applies_to: ValueThresholdLevel["appliesTo"];
+  }>(
+    `select id, level_number, label, min_value, max_value, applies_to
+     from value_threshold_levels
+     where financial_year = $1
+     order by level_number asc`,
+    [financialYear],
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    levelNumber: row.level_number,
+    minValue: fromDbText(row.min_value) || undefined,
+    maxValue: fromDbText(row.max_value) || undefined,
+    appliesTo: row.applies_to,
+  }));
 }
 
 function readString(value: unknown) {
@@ -159,6 +191,7 @@ dashboardRouter.get(
     const selectedYear = readString(request.query.selectedYear) ?? settings.selectedYear;
     const divisionYear =
       selectedYear === allActiveFilesYear ? settings.financialYear : selectedYear;
+    const valueThresholdLevels = divisionYear ? await loadValueThresholdLevels(divisionYear) : [];
     const [files, divisions] = await Promise.all([
       loadFiles(scope.sql ? `where ${scope.sql}` : "", scope.values),
       loadDivisions(user, divisionYear),
@@ -174,7 +207,7 @@ dashboardRouter.get(
       summary: buildDashboardSummary({
         files: selectedYearFiles,
         divisions,
-        settings,
+        settings: { ...settings, valueThresholdLevels },
         division: readString(request.query.division) ?? "all",
         analyticsDivision: readString(request.query.analyticsDivision) ?? "all",
         liveMilestones: readList(request.query.liveMilestones),

@@ -207,10 +207,15 @@ export function buildDashboardSummary({
     ),
     statusFlow: getMilestoneFlow(dashboardFiles),
     miscellaneousCounts: getMiscellaneousCounts(dashboardFiles),
-    analytics: getAnalyticsSummary(dashboardFiles, dashboardDivisions),
+    analytics: getAnalyticsSummary(
+      dashboardFiles,
+      dashboardDivisions,
+      settings.valueThresholdLevels,
+    ),
     divisionFilteredAnalytics: getAnalyticsSummary(
       filteredAnalyticsFiles,
       filteredAnalyticsDivisions,
+      settings.valueThresholdLevels,
     ),
     financeTotals,
     financePercents: {
@@ -489,7 +494,11 @@ function getMilestonePendingLabel(milestone: (typeof milestoneDefinitions)[numbe
   return typeof milestone.pendingLabel === "string" ? milestone.pendingLabel : "Pending";
 }
 
-function getAnalyticsSummary(files: FileRecord[], divisions: Division[]) {
+function getAnalyticsSummary(
+  files: FileRecord[],
+  divisions: Division[],
+  valueThresholdLevels: AppSettings["valueThresholdLevels"] = [],
+) {
   return {
     divisionFileRanking: getDivisionFileRanking(files),
     divisionValueRanking: getDivisionValueRanking(files, divisions),
@@ -500,7 +509,7 @@ function getAnalyticsSummary(files: FileRecord[], divisions: Division[]) {
     milestoneClearingRanking: getMilestoneClearingRanking(files),
     monthlyFileInflow: getMonthlyFileInflow(files),
     biddingModeMix: getBiddingModeMix(files),
-    fileValueThresholds: getFileValueThresholds(files),
+    fileValueThresholds: getFileValueThresholds(files, valueThresholdLevels),
     divisionRiskRanking: getDivisionRiskRanking(files),
     divisionPaymentPendingRanking: getDivisionPaymentPendingRanking(files),
   };
@@ -665,20 +674,96 @@ function getBiddingModeMix(files: FileRecord[]) {
   return mapEntriesToSortedRows(counts, "count");
 }
 
-function getFileValueThresholds(files: FileRecord[]) {
-  const values = files.map(getFileTotalValue);
-  return [
-    { name: "< 10,00,000", count: values.filter((value) => value < 1_000_000).length },
-    {
-      name: "10,00,000 - 50,00,000",
-      count: values.filter((value) => value >= 1_000_000 && value < 5_000_000).length,
-    },
-    {
-      name: "50,00,000 - 1,00,00,000",
-      count: values.filter((value) => value >= 5_000_000 && value < 10_000_000).length,
-    },
-    { name: ">= 1,00,00,000", count: values.filter((value) => value >= 10_000_000).length },
-  ];
+function getFileValueThresholds(
+  files: FileRecord[],
+  levels: AppSettings["valueThresholdLevels"],
+) {
+  if (!levels.length) return [];
+  const rows = levels.map((level) => ({
+    name: level.label,
+    appliesTo: formatThresholdAppliesTo(level.appliesTo),
+    range: formatThresholdRange(level),
+    count: 0,
+    capital: 0,
+    revenue: 0,
+    value: 0,
+  }));
+  const unmatched = {
+    name: "Unmatched",
+    appliesTo: "Both",
+    range: "Outside configured ranges",
+    count: 0,
+    capital: 0,
+    revenue: 0,
+    value: 0,
+  };
+
+  files.forEach((file) => {
+    if (isCancelledFile(file)) return;
+    const capital = getInrAmount(file.valueCapital, file) ?? 0;
+    const revenue = getInrAmount(file.valueRevenue, file) ?? 0;
+    const valueType = capital > 0 ? "capital" : revenue > 0 ? "revenue" : undefined;
+    const amount = valueType === "capital" ? capital : valueType === "revenue" ? revenue : 0;
+    if (!valueType || amount <= 0) return;
+    const matchIndex = levels.findIndex((level) => isThresholdMatch(level, valueType, amount));
+    const row = matchIndex >= 0 ? rows[matchIndex] : unmatched;
+    row.count += 1;
+    row.capital += capital;
+    row.revenue += revenue;
+    row.value += capital + revenue;
+  });
+
+  const roundedRows = rows.map(roundThresholdAnalyticsRow);
+  return unmatched.count ? [...roundedRows, roundThresholdAnalyticsRow(unmatched)] : roundedRows;
+}
+
+function isThresholdMatch(
+  level: AppSettings["valueThresholdLevels"][number],
+  valueType: "capital" | "revenue",
+  value: number,
+) {
+  if (level.appliesTo !== "both" && level.appliesTo !== valueType) return false;
+  const min = parseAmount(level.minValue);
+  const max = parseAmount(level.maxValue);
+  if (min !== undefined && value < min) return false;
+  if (max !== undefined && value > max) return false;
+  return true;
+}
+
+function roundThresholdAnalyticsRow(row: {
+  name: string;
+  appliesTo: string;
+  range: string;
+  count: number;
+  capital: number;
+  revenue: number;
+  value: number;
+}) {
+  return {
+    ...row,
+    capital: Math.round(row.capital),
+    revenue: Math.round(row.revenue),
+    value: Math.round(row.value),
+  };
+}
+
+function formatThresholdAppliesTo(value: AppSettings["valueThresholdLevels"][number]["appliesTo"]) {
+  if (value === "capital") return "Capital";
+  if (value === "revenue") return "Revenue";
+  return "Both";
+}
+
+function formatThresholdRange(level: AppSettings["valueThresholdLevels"][number]) {
+  const min = parseAmount(level.minValue);
+  const max = parseAmount(level.maxValue);
+  if (min !== undefined && max !== undefined) return `${formatInr(min)} to ${formatInr(max)}`;
+  if (min !== undefined) return `Above ${formatInr(min)}`;
+  if (max !== undefined) return `Up to ${formatInr(max)}`;
+  return "Any value";
+}
+
+function formatInr(value: number) {
+  return `Rs ${Math.round(value).toLocaleString("en-IN")}`;
 }
 
 function getDivisionRiskRanking(files: FileRecord[]) {

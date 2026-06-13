@@ -15,6 +15,7 @@ psql "$DATABASE_URL" -f database/007_division_archive.sql
 psql "$DATABASE_URL" -f database/008_division_merges.sql
 psql "$DATABASE_URL" -f database/009_user_table_field_presets.sql
 psql "$DATABASE_URL" -f database/010_table_field_preset_owner_keys.sql
+psql "$DATABASE_URL" -f database/011_value_threshold_levels.sql
 ```
 
 The backend will read the same `DATABASE_URL` from `backend/.env`.
@@ -78,6 +79,7 @@ The file endpoints accept and return the current frontend-style camelCase shape.
 - `tcec_committees`: year-wise TCEC committee names.
 - `file_year_activity`: financial years where a file is active or continued.
 - `user_table_field_presets`: private table field presets for each editor, sub-admin, or viewer.
+- `value_threshold_levels`: year-wise admin-defined file value thresholds.
 - `app_users`: temporary app users and future login users.
 - `user_divisions`: division access for non-admin users.
 - `app_settings`: workspace settings currently stored in localStorage.

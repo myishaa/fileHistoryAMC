@@ -37,9 +37,21 @@ export type AppSettings = {
   themeTint: AppThemeTint;
   deletionPassword: string;
   tcecCommittees: string[];
+  valueThresholdLevels: ValueThresholdLevel[];
   milestones: string[];
   tableFieldPresets: unknown[];
   activeUserId?: string;
+};
+
+export type ValueThresholdAppliesTo = "capital" | "revenue" | "both";
+
+export type ValueThresholdLevel = {
+  id?: string;
+  label: string;
+  levelNumber: number;
+  minValue?: string;
+  maxValue?: string;
+  appliesTo: ValueThresholdAppliesTo;
 };
 
 export type FileRemark = {

@@ -1,6 +1,12 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
-import type { AppSettings, AppTheme, AppThemeTint } from "../types.js";
+import type {
+  AppSettings,
+  AppTheme,
+  AppThemeTint,
+  ValueThresholdAppliesTo,
+  ValueThresholdLevel,
+} from "../types.js";
 import { requireAuth, type AuthRequest } from "../utils/auth.js";
 import { fromDbJsonArray, fromDbText, toDbText } from "../utils/db-values.js";
 import {
@@ -15,6 +21,11 @@ export const settingsRouter = Router();
 
 const themes = new Set<AppTheme>(["light", "dark"]);
 const themeTints = new Set<AppThemeTint>(["plain", "yellow", "green", "blue", "pink", "lavender"]);
+const valueThresholdAppliesTo = new Set<ValueThresholdAppliesTo>([
+  "capital",
+  "revenue",
+  "both",
+]);
 const allActiveFilesYear = "__all_active_files__";
 
 type SettingsRow = {
@@ -70,6 +81,31 @@ async function loadTcecCommittees(financialYear: string, fallback: unknown) {
   return fromDbJsonArray(fallback) as string[];
 }
 
+async function loadValueThresholdLevels(financialYear: string): Promise<ValueThresholdLevel[]> {
+  const result = await pool.query<{
+    id: string;
+    level_number: number;
+    label: string;
+    min_value: string | null;
+    max_value: string | null;
+    applies_to: ValueThresholdAppliesTo;
+  }>(
+    `select id, level_number, label, min_value, max_value, applies_to
+     from value_threshold_levels
+     where financial_year = $1
+     order by level_number asc`,
+    [financialYear],
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    levelNumber: row.level_number,
+    minValue: fromDbText(row.min_value) || undefined,
+    maxValue: fromDbText(row.max_value) || undefined,
+    appliesTo: row.applies_to,
+  }));
+}
+
 async function ensureFinancialYear(label: string) {
   await pool.query(
     "insert into financial_years (label) values ($1) on conflict (label) do nothing",
@@ -108,6 +144,7 @@ async function mapSettings(row: SettingsRow, user?: AuthRequest["authUser"]): Pr
     themeTint: row.theme_tint,
     deletionPassword: row.deletion_password,
     tcecCommittees: await loadTcecCommittees(row.selected_year, row.tcec_committees),
+    valueThresholdLevels: await loadValueThresholdLevels(row.selected_year),
     milestones: fromDbJsonArray(row.milestones) as string[],
     tableFieldPresets: [...globalPresets, ...personalPresets],
     activeUserId: fromDbText(row.active_user_id) || undefined,
@@ -125,6 +162,63 @@ async function replaceTcecCommittees(financialYear: string, committees: unknown[
        values ($1, $2, $3)
        on conflict do nothing`,
       [financialYear, name, sortOrder++],
+    );
+  }
+}
+
+function readOptionalAmount(value: unknown, field: string) {
+  const text = toDbText(value);
+  if (!text) return null;
+  const parsed = Number(text.replace(/,/g, ""));
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new HttpError(400, `${field} must be a positive number.`);
+  }
+  return parsed.toFixed(2);
+}
+
+function readValueThresholdLevels(value: unknown) {
+  if (!Array.isArray(value)) throw new HttpError(400, "valueThresholdLevels must be an array.");
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new HttpError(400, "Each threshold level must be an object.");
+    }
+    const candidate = item as Record<string, unknown>;
+    const levelNumber = Number(candidate.levelNumber ?? index + 1);
+    if (!Number.isInteger(levelNumber) || levelNumber < 1) {
+      throw new HttpError(400, "levelNumber must be a positive integer.");
+    }
+    const label = toDbText(candidate.label) || `Level ${levelNumber}`;
+    const appliesTo =
+      typeof candidate.appliesTo === "string" &&
+      valueThresholdAppliesTo.has(candidate.appliesTo as ValueThresholdAppliesTo)
+        ? (candidate.appliesTo as ValueThresholdAppliesTo)
+        : "both";
+    const minValue = readOptionalAmount(candidate.minValue, `${label} minimum value`);
+    const maxValue = readOptionalAmount(candidate.maxValue, `${label} maximum value`);
+    if (minValue !== null && maxValue !== null && Number(minValue) > Number(maxValue)) {
+      throw new HttpError(400, `${label} minimum cannot be greater than maximum.`);
+    }
+    return { label, levelNumber, minValue, maxValue, appliesTo };
+  });
+}
+
+async function replaceValueThresholdLevels(financialYear: string, levels: unknown[]) {
+  const normalized = readValueThresholdLevels(levels);
+  await pool.query("delete from value_threshold_levels where financial_year = $1", [financialYear]);
+  for (const level of normalized) {
+    await pool.query(
+      `insert into value_threshold_levels (
+         financial_year, level_number, label, min_value, max_value, applies_to
+       )
+       values ($1, $2, $3, $4, $5, $6)`,
+      [
+        financialYear,
+        level.levelNumber,
+        level.label,
+        level.minValue,
+        level.maxValue,
+        level.appliesTo,
+      ],
     );
   }
 }
@@ -258,6 +352,14 @@ settingsRouter.patch(
         readArrayValue(body.tcecCommittees, "tcecCommittees"),
       );
     }
+    if ("valueThresholdLevels" in body) {
+      await replaceValueThresholdLevels(
+        typeof body.selectedYear === "string" && body.selectedYear.trim()
+          ? body.selectedYear.trim()
+          : (await getSettings()).selectedYear,
+        readArrayValue(body.valueThresholdLevels, "valueThresholdLevels"),
+      );
+    }
     if ("milestones" in body)
       addField("milestones", readArray(body.milestones, "milestones"), "::jsonb");
     if ("tableFieldPresets" in body && user.role === "admin") {
@@ -283,7 +385,12 @@ settingsRouter.patch(
     }
     if ("activeUserId" in body) addField("active_user_id", toDbText(body.activeUserId));
 
-    if (!fields.length && !("tcecCommittees" in body) && !("tableFieldPresets" in body)) {
+    if (
+      !fields.length &&
+      !("tcecCommittees" in body) &&
+      !("valueThresholdLevels" in body) &&
+      !("tableFieldPresets" in body)
+    ) {
       throw new HttpError(400, "No settings fields provided.");
     }
 

@@ -30,6 +30,7 @@ function mapSettings(row: SettingsRow): AppSettings {
     themeTint: row.theme_tint,
     deletionPassword: row.deletion_password,
     tcecCommittees: fromDbJsonArray(row.tcec_committees) as string[],
+    valueThresholdLevels: [],
     milestones: fromDbJsonArray(row.milestones) as string[],
     tableFieldPresets: fromDbJsonArray(row.table_field_presets),
     activeUserId: fromDbText(row.active_user_id) || undefined,

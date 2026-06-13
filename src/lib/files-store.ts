@@ -165,6 +165,15 @@ export type AppUser = {
 };
 export type AppTheme = "light" | "dark";
 export type AppThemeTint = "plain" | "yellow" | "green" | "blue" | "pink" | "lavender";
+export type ValueThresholdAppliesTo = "capital" | "revenue" | "both";
+export type ValueThresholdLevel = {
+  id?: string;
+  label: string;
+  levelNumber: number;
+  minValue?: string;
+  maxValue?: string;
+  appliesTo: ValueThresholdAppliesTo;
+};
 export type AppSettings = {
   financialYear: string;
   selectedYear: string;
@@ -173,6 +182,7 @@ export type AppSettings = {
   themeTint: AppThemeTint;
   deletionPassword: string;
   tcecCommittees: string[];
+  valueThresholdLevels: ValueThresholdLevel[];
   milestones: string[];
   tableFieldPresets: TableFieldPreset[];
   activeUserId?: string;
@@ -190,6 +200,7 @@ const defaultSettings: AppSettings = {
   themeTint: "plain",
   deletionPassword: "",
   tcecCommittees: [],
+  valueThresholdLevels: [],
   milestones: [],
   tableFieldPresets: defaultTableFieldPresets,
 };
