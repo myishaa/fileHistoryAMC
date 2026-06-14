@@ -65,6 +65,7 @@ type AnalyticsPanel = {
   key: AnalyticsPanelKey;
   title: string;
   subtitle: string;
+  exportNote?: string;
   columns: AnalyticsTableColumn[];
   rows: Array<Record<string, number | string>>;
 };
@@ -481,7 +482,7 @@ export function Dashboard() {
     {
       key: "divisionValue",
       title: "Division ranking by value",
-      subtitle: "Intended, booked, and committed value with capital/revenue breakup",
+      subtitle: "",
       columns: getDivisionValueAnalyticsColumns(),
       rows: analytics.divisionValueRanking,
     },
@@ -583,6 +584,10 @@ export function Dashboard() {
     selectedAnalyticsPanel.key === "divisionValue"
       ? {
           ...selectedAnalyticsPanel,
+          exportNote: getDivisionValueRankingCriteria(
+            divisionValueSortKey,
+            divisionValueSortMode,
+          ),
           rows: sortDivisionValueRows(
             selectedAnalyticsPanel.rows,
             divisionValueSortKey,
@@ -1650,6 +1655,17 @@ const divisionValueSortOptions = [
   { key: "committedRevenue", label: "Committed R" },
 ] satisfies Array<{ key: DivisionValueSortKey; label: string }>;
 
+const divisionValueSortExportLabels = {
+  allocatedCapital: "Allocated Capital",
+  allocatedRevenue: "Allocated Revenue",
+  intendedCapital: "Intended Capital",
+  intendedRevenue: "Intended Revenue",
+  bookedCapital: "Booked Capital",
+  bookedRevenue: "Booked Revenue",
+  committedCapital: "Committed Capital",
+  committedRevenue: "Committed Revenue",
+} satisfies Record<DivisionValueSortKey, string>;
+
 const divisionTotalValueSortOptions = [
   { key: "allocatedTotal", label: "Allocated" },
   { key: "intendedTotal", label: "Intended" },
@@ -1717,6 +1733,17 @@ function DivisionValueSortControls({
       </div>
     </div>
   );
+}
+
+function getDivisionValueRankingCriteria(
+  sortKey: DivisionValueSortKey,
+  mode: DivisionValueSortMode,
+) {
+  const label = divisionValueSortExportLabels[sortKey];
+  if (sortKey.startsWith("allocated") || mode === "value") {
+    return `Ranking criteria: ${label}`;
+  }
+  return `Ranking criteria: ${label} percentage against allocation`;
 }
 
 function DivisionTotalValueSortControls({
@@ -1797,7 +1824,7 @@ function AnalyticsChartCard({
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-bold">{title}</h3>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+          {subtitle ? <p className="text-xs text-muted-foreground">{subtitle}</p> : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
@@ -3096,14 +3123,16 @@ function formatThresholdAppliesTo(value: ValueThresholdLevel["appliesTo"]) {
 function formatThresholdRange(level: ValueThresholdLevel) {
   const min = parseAmount(level.minValue);
   const max = parseAmount(level.maxValue);
-  if (min !== undefined && max !== undefined) return `${formatInr(min)} to ${formatInr(max)}`;
-  if (min !== undefined) return `Above ${formatInr(min)}`;
-  if (max !== undefined) return `Up to ${formatInr(max)}`;
+  if (min !== undefined && max !== undefined) {
+    return `${formatPlainAmount(min)}-${formatPlainAmount(max)}`;
+  }
+  if (min !== undefined) return `${formatPlainAmount(min)}+`;
+  if (max !== undefined) return `0-${formatPlainAmount(max)}`;
   return "Any value";
 }
 
-function formatInr(value: number) {
-  return `Rs ${Math.round(value).toLocaleString("en-IN")}`;
+function formatPlainAmount(value: number) {
+  return Math.round(value).toLocaleString("en-IN");
 }
 
 function getDivisionRiskRanking(files: FileRecord[]) {
@@ -4303,7 +4332,16 @@ function exportAnalyticsPanelToExcel(panel: AnalyticsPanel) {
         <table>
           <thead>
             <tr><th class="title-heading" colspan="${panel.columns.length + 1}">${escapeHtml(panel.title)}</th></tr>
-            <tr><th class="subtitle-heading" colspan="${panel.columns.length + 1}">${escapeHtml(panel.subtitle)}</th></tr>
+            ${
+              panel.subtitle
+                ? `<tr><th class="subtitle-heading" colspan="${panel.columns.length + 1}">${escapeHtml(panel.subtitle)}</th></tr>`
+                : ""
+            }
+            ${
+              panel.exportNote
+                ? `<tr><th class="subtitle-heading" colspan="${panel.columns.length + 1}">${escapeHtml(panel.exportNote)}</th></tr>`
+                : ""
+            }
             ${getAnalyticsHeaderHtml(panel.columns, true)}
           </thead>
           <tbody>
@@ -4454,7 +4492,8 @@ function printAnalyticsPanelToPdf(panel: AnalyticsPanel) {
       </head>
       <body>
         <h1>${escapeHtml(panel.title)}</h1>
-        <p>${escapeHtml(panel.subtitle)}</p>
+        ${panel.subtitle ? `<p>${escapeHtml(panel.subtitle)}</p>` : ""}
+        ${panel.exportNote ? `<p>${escapeHtml(panel.exportNote)}</p>` : ""}
         <table>
           <thead>
             ${getAnalyticsHeaderHtml(panel.columns, true)}

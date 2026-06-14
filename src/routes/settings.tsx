@@ -1,16 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Lock, Pencil, Plus, Trash2, Unlock, X } from "lucide-react";
 import {
   store,
   useActiveUser,
   useDivisions,
   useFiles,
+  useIndentors,
   useSettings,
   useUsers,
   type AppUserRole,
   type Division,
   type FileRecord,
+  type Indentor,
   type ValueThresholdAppliesTo,
   type ValueThresholdLevel,
 } from "@/lib/files-store";
@@ -52,10 +54,14 @@ function SettingsPage() {
         <Tabs defaultValue="theme" className="space-y-4">
           <TabsList aria-label="Settings sections">
             <TabsTrigger value="theme">UI theme</TabsTrigger>
+            <TabsTrigger value="indentors">Indentors</TabsTrigger>
             <TabsTrigger value="presets">Preset table fields</TabsTrigger>
           </TabsList>
           <TabsContent value="theme">
             <PreferenceSettings />
+          </TabsContent>
+          <TabsContent value="indentors">
+            <IndentorSettings />
           </TabsContent>
           <TabsContent value="presets">
             <TableFieldPresetSettings />
@@ -71,10 +77,14 @@ function SettingsPage() {
         <Tabs defaultValue="user" className="space-y-4">
           <TabsList aria-label="Settings sections">
             <TabsTrigger value="user">User</TabsTrigger>
+            <TabsTrigger value="indentors">Indentors</TabsTrigger>
             <TabsTrigger value="presets">Preset table fields</TabsTrigger>
           </TabsList>
           <TabsContent value="user">
             <AccountSettings />
+          </TabsContent>
+          <TabsContent value="indentors">
+            <IndentorSettings />
           </TabsContent>
           <TabsContent value="presets">
             <TableFieldPresetSettings />
@@ -99,6 +109,7 @@ function SettingsPage() {
     { key: "workspace", label: "Workspace", content: <WorkspaceSettings /> },
     { key: "yearSetup", label: "Year Setup", content: <YearSetupPanel /> },
     { key: "divisions", label: "Divisions", content: <DivisionSettings /> },
+    { key: "indentors", label: "Indentors", content: <IndentorSettings /> },
     { key: "tcec", label: "TCEC Committee", content: <TcecCommitteeSettings /> },
     { key: "thresholds", label: "Value thresholds", content: <ValueThresholdSettings /> },
     { key: "milestones", label: "Milestones", content: <MilestoneSettings /> },
@@ -251,6 +262,10 @@ function WorkspaceSettings() {
     });
   };
 
+  const toggleYearSelectionLock = () => {
+    store.updateSettings({ yearSelectionLocked: !settings.yearSelectionLocked });
+  };
+
   const deleteSelectedFinancialYear = () => {
     if (!canDeleteSelectedYear) return;
     if (requestDeletionPassword(`delete financial year "${selectedFinancialYear}"`)) {
@@ -279,7 +294,7 @@ function WorkspaceSettings() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(180px,0.8fr)_minmax(180px,1fr)_auto_auto_auto]">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(220px,0.7fr)_minmax(260px,1fr)]">
             <label className="block">
               <div className="text-xs font-medium mb-1.5">Selected year</div>
               <select
@@ -308,38 +323,61 @@ function WorkspaceSettings() {
               />
             </label>
 
-            <button
-              type="button"
-              onClick={addFinancialYear}
-              className="mt-0 lg:mt-6 h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
-            >
-              <Plus className="size-4" /> Add Year
-            </button>
+            <div className="flex flex-wrap items-center gap-3 xl:col-span-2">
+              <button
+                type="button"
+                onClick={addFinancialYear}
+                className="h-10 min-w-32 px-4 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+              >
+                <Plus className="size-4" /> Add Year
+              </button>
 
-            <button
-              type="button"
-              onClick={setCurrentFinancialYear}
-              disabled={selectedFinancialYear === settings.financialYear}
-              className="mt-0 lg:mt-6 h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent disabled:opacity-50"
-            >
-              <Check className="size-4" /> Set as current
-            </button>
+              <button
+                type="button"
+                onClick={setCurrentFinancialYear}
+                disabled={selectedFinancialYear === settings.financialYear}
+                className="h-10 min-w-40 px-4 inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent disabled:opacity-50"
+              >
+                <Check className="size-4" /> Set as current
+              </button>
 
-            <button
-              type="button"
-              onClick={deleteSelectedFinancialYear}
-              disabled={!canDeleteSelectedYear}
-              title={
-                selectedFinancialYear === settings.financialYear
-                  ? "Current financial year cannot be deleted"
-                  : selectedYearFileCount > 0
-                    ? "Years with files cannot be deleted"
-                    : "Delete selected year"
-              }
-              className="mt-0 lg:mt-6 h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-md border border-destructive/30 bg-background text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-            >
-              <Trash2 className="size-4" /> Delete
-            </button>
+              <button
+                type="button"
+                onClick={toggleYearSelectionLock}
+                className={
+                  "h-10 min-w-36 px-4 inline-flex items-center justify-center gap-1.5 rounded-md border text-sm font-medium " +
+                  (settings.yearSelectionLocked
+                    ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+                    : "border-border bg-background hover:bg-accent")
+                }
+              >
+                {settings.yearSelectionLocked ? (
+                  <>
+                    <Lock className="size-4" /> Locked
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="size-4" /> Unlocked
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={deleteSelectedFinancialYear}
+                disabled={!canDeleteSelectedYear}
+                title={
+                  selectedFinancialYear === settings.financialYear
+                    ? "Current financial year cannot be deleted"
+                    : selectedYearFileCount > 0
+                      ? "Years with files cannot be deleted"
+                      : "Delete selected year"
+                }
+                className="h-10 min-w-32 px-4 inline-flex items-center justify-center gap-1.5 rounded-md border border-destructive/30 bg-background text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+              >
+                <Trash2 className="size-4" /> Delete
+              </button>
+            </div>
           </div>
         </div>
         <ThemeField
@@ -952,7 +990,6 @@ function TableFieldPresetSettings() {
 
 function DivisionSettings() {
   const divisions = useDivisions();
-  const files = useFiles();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [ad, setAd] = useState("");
@@ -1012,13 +1049,12 @@ function DivisionSettings() {
       </div>
 
       <div className="mt-5 overflow-x-auto rounded-md border border-border">
-        <table className="w-full min-w-[820px] table-fixed text-sm">
+        <table className="w-full min-w-[720px] table-fixed text-sm">
           <colgroup>
-            <col className="w-[24%]" />
-            <col className="w-[16%]" />
-            <col className="w-[10%]" />
-            <col className="w-[10%]" />
-            <col className="w-[24%]" />
+            <col className="w-[28%]" />
+            <col className="w-[18%]" />
+            <col className="w-[12%]" />
+            <col className="w-[26%]" />
             <col className="w-[16%]" />
           </colgroup>
           <thead className="bg-secondary text-xs text-muted-foreground">
@@ -1026,7 +1062,6 @@ function DivisionSettings() {
               <th className="text-left font-medium px-4 py-2.5">Division name</th>
               <th className="text-left font-medium px-4 py-2.5">Division code</th>
               <th className="text-left font-medium px-4 py-2.5">AD</th>
-              <th className="text-left font-medium px-4 py-2.5">Files</th>
               <th className="text-left font-medium px-4 py-2.5">Viewer password</th>
               <th className="text-right font-medium px-4 py-2.5">Action</th>
             </tr>
@@ -1034,7 +1069,6 @@ function DivisionSettings() {
           <tbody>
             {divisions.map((division) => {
               const isEditing = editingId === division.id;
-              const count = files.filter((file) => file.division === division.name).length;
               return (
                 <tr key={division.id} className="border-t border-border">
                   <td className="px-4 py-3">
@@ -1066,7 +1100,6 @@ function DivisionSettings() {
                       division.ad || "No"
                     )}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{count}</td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {isEditing ? (
                       <DivisionInput
@@ -1124,6 +1157,326 @@ function DivisionSettings() {
                 </tr>
               );
             })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+type IndentorDraft = Pick<
+  Indentor,
+  "divisionId" | "name" | "sfId" | "designation" | "mobileNo" | "landlineNo" | "email"
+>;
+
+const emptyIndentorDraft: IndentorDraft = {
+  divisionId: "",
+  name: "",
+  sfId: "",
+  designation: "",
+  mobileNo: "",
+  landlineNo: "",
+  email: "",
+};
+
+const indentorDesignationOptions = [
+  "TO 'A'",
+  "TO 'B'",
+  "TO 'C'",
+  "TO 'D'",
+  "Sc. B",
+  "Sc. C",
+  "Sc. D",
+  "Sc. E",
+  "Sc. F",
+  "Sc. G",
+  "Sc. H",
+];
+
+function IndentorSettings() {
+  const activeUser = useActiveUser();
+  const divisions = useDivisions();
+  const indentors = useIndentors();
+  const canManage = activeUser?.role === "admin" || activeUser?.role === "sub_admin";
+  const availableDivisions =
+    !activeUser || canManage
+      ? divisions
+      : divisions.filter((division) => activeUser.divisionIds.includes(division.id));
+  const [draft, setDraft] = useState<IndentorDraft>(emptyIndentorDraft);
+  const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<IndentorDraft>(emptyIndentorDraft);
+
+  useEffect(() => {
+    if (!draft.divisionId && availableDivisions[0]) {
+      setDraft((current) => ({ ...current, divisionId: availableDivisions[0].id }));
+    }
+  }, [availableDivisions, draft.divisionId]);
+
+  const visibleIndentors = indentors
+    .filter((indentor) =>
+      canManage || !activeUser
+        ? true
+        : activeUser.divisionIds.includes(indentor.divisionId),
+    )
+    .filter((indentor) => indentor.name.toLowerCase().includes(search.trim().toLowerCase()));
+
+  const updateDraft = (key: keyof IndentorDraft, value: string) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateEditDraft = (key: keyof IndentorDraft, value: string) => {
+    setEditDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const isComplete = (value: IndentorDraft) =>
+    value.divisionId &&
+    value.name.trim() &&
+    value.sfId.trim() &&
+    value.designation.trim() &&
+    value.mobileNo.trim() &&
+    value.landlineNo.trim() &&
+    value.email.trim();
+
+  const resetDraft = () =>
+    setDraft({ ...emptyIndentorDraft, divisionId: availableDivisions[0]?.id ?? "" });
+
+  const addIndentor = () => {
+    if (!isComplete(draft)) return;
+    if (
+      activeUser?.role === "viewer" &&
+      !window.confirm(
+        "Please confirm all indentor details are correct. Once added by a viewer, these details cannot be edited or deleted by the viewer.",
+      )
+    ) {
+      return;
+    }
+    store.addIndentor({
+      divisionId: draft.divisionId,
+      name: draft.name.trim(),
+      sfId: draft.sfId.trim(),
+      designation: draft.designation.trim(),
+      mobileNo: draft.mobileNo.trim(),
+      landlineNo: draft.landlineNo.trim(),
+      email: draft.email.trim(),
+    });
+    resetDraft();
+  };
+
+  const startEdit = (indentor: Indentor) => {
+    setEditingId(indentor.id);
+    setEditDraft({
+      divisionId: indentor.divisionId,
+      name: indentor.name,
+      sfId: indentor.sfId,
+      designation: indentor.designation,
+      mobileNo: indentor.mobileNo,
+      landlineNo: indentor.landlineNo,
+      email: indentor.email,
+    });
+  };
+
+  const saveEdit = (id: string) => {
+    if (!isComplete(editDraft)) return;
+    store.updateIndentor(id, {
+      divisionId: editDraft.divisionId,
+      name: editDraft.name.trim(),
+      sfId: editDraft.sfId.trim(),
+      designation: editDraft.designation.trim(),
+      mobileNo: editDraft.mobileNo.trim(),
+      landlineNo: editDraft.landlineNo.trim(),
+      email: editDraft.email.trim(),
+    });
+    setEditingId(null);
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold mb-1">Indentors</h2>
+          <p className="text-xs text-muted-foreground">
+            Add and search division-wise indentors used when files are created.
+          </p>
+        </div>
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by name"
+          className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 sm:max-w-xs"
+        />
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <IndentorDivisionSelect
+          value={draft.divisionId}
+          divisions={availableDivisions}
+          disabled={availableDivisions.length <= 1}
+          onChange={(value) => updateDraft("divisionId", value)}
+        />
+        <DivisionInput
+          value={draft.name}
+          onChange={(value) => updateDraft("name", value)}
+          placeholder="Name"
+        />
+        <DivisionInput
+          value={draft.sfId}
+          onChange={(value) => updateDraft("sfId", value)}
+          placeholder="SF ID"
+        />
+        <IndentorDesignationField
+          value={draft.designation}
+          onChange={(value) => updateDraft("designation", value)}
+        />
+        <DivisionInput
+          value={draft.mobileNo}
+          onChange={(value) => updateDraft("mobileNo", value)}
+          placeholder="Mobile no."
+        />
+        <DivisionInput
+          value={draft.landlineNo}
+          onChange={(value) => updateDraft("landlineNo", value)}
+          placeholder="Landline no."
+        />
+        <DivisionInput
+          value={draft.email}
+          onChange={(value) => updateDraft("email", value)}
+          placeholder="Email id"
+        />
+        <button
+          type="button"
+          onClick={addIndentor}
+          disabled={!isComplete(draft)}
+          className="h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Plus className="size-4" /> Add indentor
+        </button>
+      </div>
+
+      <div className="mt-5 overflow-x-auto rounded-md border border-border">
+        <table className="w-full min-w-[1050px] table-fixed text-sm">
+          <colgroup>
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col className="w-[12%]" />
+            <col className="w-[14%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
+            <col className="w-[14%]" />
+            <col className="w-[8%]" />
+          </colgroup>
+          <thead className="bg-secondary text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2.5 text-left font-medium">Division</th>
+              <th className="px-4 py-2.5 text-left font-medium">Name</th>
+              <th className="px-4 py-2.5 text-left font-medium">SF ID</th>
+              <th className="px-4 py-2.5 text-left font-medium">Designation</th>
+              <th className="px-4 py-2.5 text-left font-medium">Mobile</th>
+              <th className="px-4 py-2.5 text-left font-medium">Landline</th>
+              <th className="px-4 py-2.5 text-left font-medium">Email</th>
+              <th className="px-4 py-2.5 text-right font-medium">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleIndentors.length === 0 ? (
+              <tr className="border-t border-border">
+                <td className="px-4 py-6 text-center text-muted-foreground" colSpan={8}>
+                  No indentors found.
+                </td>
+              </tr>
+            ) : (
+              visibleIndentors.map((indentor) => {
+                const isEditing = editingId === indentor.id;
+                return (
+                  <tr key={indentor.id} className="border-t border-border align-top">
+                    <td className="px-4 py-3">
+                      {isEditing ? (
+                        <IndentorDivisionSelect
+                          value={editDraft.divisionId}
+                          divisions={divisions}
+                          onChange={(value) => updateEditDraft("divisionId", value)}
+                        />
+                      ) : (
+                        indentor.divisionName
+                      )}
+                    </td>
+                    <IndentorCell
+                      editing={isEditing}
+                      value={isEditing ? editDraft.name : indentor.name}
+                      onChange={(value) => updateEditDraft("name", value)}
+                    />
+                    <IndentorCell
+                      editing={isEditing}
+                      value={isEditing ? editDraft.sfId : indentor.sfId}
+                      onChange={(value) => updateEditDraft("sfId", value)}
+                    />
+                    <IndentorDesignationCell
+                      editing={isEditing}
+                      value={isEditing ? editDraft.designation : indentor.designation}
+                      onChange={(value) => updateEditDraft("designation", value)}
+                    />
+                    <IndentorCell
+                      editing={isEditing}
+                      value={isEditing ? editDraft.mobileNo : indentor.mobileNo}
+                      onChange={(value) => updateEditDraft("mobileNo", value)}
+                    />
+                    <IndentorCell
+                      editing={isEditing}
+                      value={isEditing ? editDraft.landlineNo : indentor.landlineNo}
+                      onChange={(value) => updateEditDraft("landlineNo", value)}
+                    />
+                    <IndentorCell
+                      editing={isEditing}
+                      value={isEditing ? editDraft.email : indentor.email}
+                      onChange={(value) => updateEditDraft("email", value)}
+                    />
+                    <td className="px-4 py-3">
+                      {canManage ? (
+                        <div className="flex justify-end gap-1">
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => saveEdit(indentor.id)}
+                                className="size-8 grid place-items-center rounded-md text-success hover:bg-success/10"
+                              >
+                                <Check className="size-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingId(null)}
+                                className="size-8 grid place-items-center rounded-md hover:bg-accent"
+                              >
+                                <X className="size-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => startEdit(indentor)}
+                                className="size-8 grid place-items-center rounded-md hover:bg-accent"
+                              >
+                                <Pencil className="size-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => store.deleteIndentor(indentor.id)}
+                                className="size-8 grid place-items-center rounded-md text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="block text-right text-xs text-muted-foreground">View</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
@@ -1703,6 +2056,112 @@ function DivisionInput({
       placeholder={placeholder}
       className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
     />
+  );
+}
+
+function IndentorDivisionSelect({
+  value,
+  divisions,
+  disabled = false,
+  onChange,
+}: {
+  value: string;
+  divisions: Division[];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-70"
+    >
+      <option value="">Select division</option>
+      {divisions.map((division) => (
+        <option key={division.id} value={division.id}>
+          {division.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function IndentorDesignationField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const isPreset = indentorDesignationOptions.includes(value);
+  const [otherMode, setOtherMode] = useState(Boolean(value && !isPreset));
+  const selected = otherMode ? "Other" : value;
+
+  useEffect(() => {
+    if (value && !indentorDesignationOptions.includes(value)) {
+      setOtherMode(true);
+    }
+    if (indentorDesignationOptions.includes(value)) {
+      setOtherMode(false);
+    }
+  }, [value]);
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={selected}
+        onChange={(event) => {
+          const next = event.target.value;
+          setOtherMode(next === "Other");
+          onChange(next === "Other" ? "" : next);
+        }}
+        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+      >
+        <option value="">Designation</option>
+        {indentorDesignationOptions.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+        <option value="Other">Other</option>
+      </select>
+      {selected === "Other" ? (
+        <DivisionInput value={value} onChange={onChange} placeholder="Type designation" />
+      ) : null}
+    </div>
+  );
+}
+
+function IndentorCell({
+  editing,
+  value,
+  onChange,
+}: {
+  editing: boolean;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <td className="px-4 py-3 text-muted-foreground">
+      {editing ? <DivisionInput value={value} onChange={onChange} placeholder="" /> : value}
+    </td>
+  );
+}
+
+function IndentorDesignationCell({
+  editing,
+  value,
+  onChange,
+}: {
+  editing: boolean;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <td className="px-4 py-3 text-muted-foreground">
+      {editing ? <IndentorDesignationField value={value} onChange={onChange} /> : value}
+    </td>
   );
 }
 

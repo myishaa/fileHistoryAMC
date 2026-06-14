@@ -16,6 +16,8 @@ psql "$DATABASE_URL" -f database/008_division_merges.sql
 psql "$DATABASE_URL" -f database/009_user_table_field_presets.sql
 psql "$DATABASE_URL" -f database/010_table_field_preset_owner_keys.sql
 psql "$DATABASE_URL" -f database/011_value_threshold_levels.sql
+psql "$DATABASE_URL" -f database/012_year_selection_lock.sql
+psql "$DATABASE_URL" -f database/013_indentors.sql
 ```
 
 The backend will read the same `DATABASE_URL` from `backend/.env`.
@@ -76,6 +78,7 @@ The file endpoints accept and return the current frontend-style camelCase shape.
 - `division_merges`: year-wise division merge decisions.
 - `division_merge_sources`: source divisions included in each merge.
 - `file_division_history`: audit trail when files move between divisions.
+- `indentors`: division-wise indentor master list used when adding or editing files.
 - `tcec_committees`: year-wise TCEC committee names.
 - `file_year_activity`: financial years where a file is active or continued.
 - `user_table_field_presets`: private table field presets for each editor, sub-admin, or viewer.

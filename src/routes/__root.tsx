@@ -143,7 +143,7 @@ function LoginScreen() {
   const navigate = useNavigate();
   const divisions = useDivisions();
   const [mode, setMode] = useState<"staff" | "viewer">("staff");
-  const [username, setUsername] = useState("ovais");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [divisionId, setDivisionId] = useState("");
   const [ipAddress, setIpAddress] = useState("checking...");

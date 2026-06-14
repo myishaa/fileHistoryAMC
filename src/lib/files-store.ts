@@ -144,6 +144,21 @@ export type Division = {
   active?: boolean;
   archivedAt?: string;
 };
+export type Indentor = {
+  id: string;
+  divisionId: string;
+  divisionName: string;
+  name: string;
+  sfId: string;
+  designation: string;
+  mobileNo: string;
+  landlineNo: string;
+  email: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+};
 export type DivisionMergePayload = {
   financialYear: string;
   sourceDivisionIds: string[];
@@ -154,6 +169,19 @@ export type DivisionMergePayload = {
   notes?: string;
   moveActiveFiles: boolean;
   deactivateSourceDivisions: boolean;
+};
+export type DivisionSplitTransferPayload = {
+  financialYear: string;
+  sourceDivisionId: string;
+  indentorIds: string[];
+  targetDivisionId?: string;
+  targetDivisionName?: string;
+  targetDivisionCode?: string;
+  allocatedCapital: string;
+  allocatedRevenue: string;
+  effectiveDate?: string;
+  notes?: string;
+  deactivateSourceDivision: boolean;
 };
 export type AppUserRole = "admin" | "sub_admin" | "division_user" | "editor" | "viewer";
 export type AppUser = {
@@ -178,6 +206,7 @@ export type AppSettings = {
   financialYear: string;
   selectedYear: string;
   financialYears: string[];
+  yearSelectionLocked: boolean;
   theme: AppTheme;
   themeTint: AppThemeTint;
   deletionPassword: string;
@@ -196,6 +225,7 @@ const defaultSettings: AppSettings = {
   financialYear: currentYear(),
   selectedYear: currentYear(),
   financialYears: [currentYear()],
+  yearSelectionLocked: false,
   theme: "light",
   themeTint: "plain",
   deletionPassword: "",
@@ -220,6 +250,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:300
 type StoreState = {
   files: FileRecord[];
   divisions: Division[];
+  indentors: Indentor[];
   settings: AppSettings;
   users: AppUser[];
   authUser?: AppUser;
@@ -231,6 +262,7 @@ type StoreState = {
 let state: StoreState = {
   files: [],
   divisions: [],
+  indentors: [],
   settings: defaultSettings,
   users: defaultUsers,
   authUser: undefined,
@@ -294,6 +326,7 @@ async function loadAll(force = false) {
         setState({
           files: [],
           divisions: divisions.divisions,
+          indentors: [],
           users: [],
           authUser: undefined,
           settings: {
@@ -313,8 +346,9 @@ async function loadAll(force = false) {
       const baseRequests = [
         request<{ files: FileRecord[] }>("/api/files"),
         request<{ divisions: Division[] }>(divisionsPath(settings.settings.selectedYear)),
+        request<{ indentors: Indentor[] }>("/api/indentors"),
       ] as const;
-      const [files, divisions] = await Promise.all(baseRequests);
+      const [files, divisions, indentors] = await Promise.all(baseRequests);
       const users =
         auth.user.role === "admin"
           ? await request<{ users: AppUser[] }>("/api/users")
@@ -323,6 +357,7 @@ async function loadAll(force = false) {
       setState({
         files: files.files,
         divisions: divisions.divisions,
+        indentors: indentors.indentors,
         users: users.users,
         authUser: auth.user,
         settings: {
@@ -375,6 +410,10 @@ export const store = {
   getDivisions(): Division[] {
     ensureLoaded();
     return state.divisions;
+  },
+  getIndentors(): Indentor[] {
+    ensureLoaded();
+    return state.indentors;
   },
   getSettings(): AppSettings {
     ensureLoaded();
@@ -435,6 +474,7 @@ export const store = {
       await request<{ ok: true }>("/api/auth/logout", { method: "POST" });
       setState({
         files: [],
+        indentors: [],
         users: [],
         authUser: undefined,
         loaded: false,
@@ -543,9 +583,26 @@ export const store = {
       await loadAll(true);
     })();
   },
+  splitTransferDivision(payload: DivisionSplitTransferPayload) {
+    return (async () => {
+      await request<{
+        transfer: {
+          movedFileCount: number;
+          movedIndentorCount: number;
+          sourceDivision?: Division;
+          targetDivision?: Division;
+        };
+      }>("/api/divisions/split-transfer", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await loadAll(true);
+    })();
+  },
   deleteDivision(id: string) {
     setState({
       divisions: state.divisions.filter((d) => d.id !== id),
+      indentors: state.indentors.filter((indentor) => indentor.divisionId !== id),
       users: state.users.map((user) => ({
         ...user,
         divisionIds: user.divisionIds.filter((divId) => divId !== id),
@@ -577,6 +634,42 @@ export const store = {
       });
       await loadAll(true);
     })();
+  },
+  addIndentor(
+    indentor: Pick<
+      Indentor,
+      "divisionId" | "name" | "sfId" | "designation" | "mobileNo" | "landlineNo" | "email"
+    >,
+  ) {
+    runMutation(() =>
+      request("/api/indentors", {
+        method: "POST",
+        body: JSON.stringify(indentor),
+      }),
+    );
+  },
+  updateIndentor(
+    id: string,
+    patch: Pick<
+      Indentor,
+      "divisionId" | "name" | "sfId" | "designation" | "mobileNo" | "landlineNo" | "email"
+    >,
+  ) {
+    setState({
+      indentors: state.indentors.map((indentor) =>
+        indentor.id === id ? { ...indentor, ...patch } : indentor,
+      ),
+    });
+    runMutation(() =>
+      request(`/api/indentors/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    );
+  },
+  deleteIndentor(id: string) {
+    setState({ indentors: state.indentors.filter((indentor) => indentor.id !== id) });
+    runMutation(() => request(`/api/indentors/${id}`, { method: "DELETE" }));
   },
   addUser(user: Omit<AppUser, "id"> & { password: string }) {
     runMutation(() =>
@@ -629,6 +722,17 @@ export function useDivisions() {
     };
   }, []);
   return store.getDivisions();
+}
+
+export function useIndentors() {
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const u = store.subscribe(() => setTick((t) => t + 1));
+    return () => {
+      u();
+    };
+  }, []);
+  return store.getIndentors();
 }
 
 export function useSettings() {

@@ -31,6 +31,7 @@ const allActiveFilesYear = "__all_active_files__";
 type SettingsRow = {
   financial_year: string;
   selected_year: string;
+  year_selection_locked: boolean;
   theme: AppTheme;
   theme_tint: AppThemeTint;
   deletion_password: string;
@@ -140,6 +141,7 @@ async function mapSettings(row: SettingsRow, user?: AuthRequest["authUser"]): Pr
     financialYear: row.financial_year,
     selectedYear: row.selected_year,
     financialYears: mergedFinancialYears,
+    yearSelectionLocked: row.year_selection_locked,
     theme: row.theme,
     themeTint: row.theme_tint,
     deletionPassword: row.deletion_password,
@@ -225,7 +227,7 @@ async function replaceValueThresholdLevels(financialYear: string, levels: unknow
 
 async function getSettings(user?: AuthRequest["authUser"]) {
   const result = await pool.query<SettingsRow>(
-    `select financial_year, selected_year, theme, theme_tint, deletion_password,
+    `select financial_year, selected_year, year_selection_locked, theme, theme_tint, deletion_password,
             tcec_committees, milestones, table_field_presets, active_user_id
      from app_settings
      where id = true`,
@@ -340,6 +342,8 @@ settingsRouter.patch(
       if (selectedYear !== allActiveFilesYear) await ensureFinancialYear(selectedYear);
       addField("selected_year", selectedYear);
     }
+    if ("yearSelectionLocked" in body)
+      addField("year_selection_locked", body.yearSelectionLocked === true);
     if ("theme" in body) addField("theme", readTheme(body.theme));
     if ("themeTint" in body) addField("theme_tint", readThemeTint(body.themeTint));
     if ("deletionPassword" in body)

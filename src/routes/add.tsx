@@ -13,6 +13,7 @@ import {
   useActiveUser,
   useDivisions,
   useFiles,
+  useIndentors,
   useSettings,
 } from "@/lib/files-store";
 import { Save, Eraser, Lock, Plus, Printer, Trash2, Unlock } from "lucide-react";
@@ -173,6 +174,24 @@ function normalizeCompletedMilestones(value: string[] | undefined) {
 function normalizeActiveYears(file: FileRecord | undefined, financialYear: string) {
   const years = file?.activeYears?.length ? file.activeYears : [file?.year ?? financialYear];
   return Array.from(new Set(years.filter(Boolean)));
+}
+
+function getLatestTwoYears(financialYear: string, financialYears: string[]) {
+  return Array.from(new Set([financialYear, ...financialYears].filter(Boolean)))
+    .sort((a, b) => b.localeCompare(a))
+    .slice(0, 2);
+}
+
+function normalizeSelectableActiveYears(
+  years: string[],
+  options: string[],
+  fallbackYear: string,
+  locked: boolean,
+) {
+  if (locked) return [fallbackYear].filter(Boolean);
+  const allowed = new Set(options);
+  const selected = years.filter((year) => allowed.has(year));
+  return selected.length ? [selected[0]] : [fallbackYear].filter(Boolean);
 }
 
 function getAutoCompletedMilestones(
@@ -447,6 +466,7 @@ function AddFileEditor() {
   const divisions = useAccessibleDivisions();
   const files = useAccessibleFiles();
   const allFiles = useFiles();
+  const indentors = useIndentors();
   const settings = useSettings();
   const { fileId, section, quickFocus } = Route.useSearch();
   const navigate = useNavigate();
@@ -473,7 +493,12 @@ function AddFileEditor() {
     normalizeCompletedMilestones(editingFile?.completedMilestones),
   );
   const [activeYears, setActiveYears] = useState<string[]>(() =>
-    normalizeActiveYears(editingFile, settings.financialYear),
+    normalizeSelectableActiveYears(
+      normalizeActiveYears(editingFile, settings.financialYear),
+      getLatestTwoYears(settings.financialYear, settings.financialYears),
+      settings.financialYear,
+      settings.yearSelectionLocked,
+    ),
   );
   const [saved, setSaved] = useState(false);
   const [unlockedSections, setUnlockedSections] = useState<Set<string>>(() => new Set());
@@ -494,11 +519,18 @@ function AddFileEditor() {
     setFileRemarks(createRemarksFromFile(editingFile));
     setCurrentMilestone(editingFile?.currentMilestone ?? "");
     setCompletedMilestones(normalizeCompletedMilestones(editingFile?.completedMilestones));
-    setActiveYears(normalizeActiveYears(editingFile, settings.financialYear));
+    setActiveYears(
+      normalizeSelectableActiveYears(
+        normalizeActiveYears(editingFile, settings.financialYear),
+        getLatestTwoYears(settings.financialYear, settings.financialYears),
+        settings.financialYear,
+        settings.yearSelectionLocked,
+      ),
+    );
     setUnlockedSections(new Set());
     // The file object is re-read from localStorage on each render; reset only when the edited id changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingFile?.id, settings.financialYear]);
+  }, [editingFile?.id, settings.financialYear, settings.financialYears, settings.yearSelectionLocked]);
 
   useEffect(() => {
     setActiveBoardSection(section ?? "File details");
@@ -506,10 +538,10 @@ function AddFileEditor() {
 
   const generatedUniqueCode = isEditing
     ? form.uniqueCode
-    : generateUniqueCode(settings.financialYear, form.division, allDivisions, allFiles);
+    : generateUniqueCode(activeYears[0] || settings.financialYear, form.division, allDivisions, allFiles);
   const originYear = isEditing
     ? form.year || editingFile?.year || settings.financialYear
-    : settings.financialYear;
+    : activeYears[0] || settings.financialYear;
   const formWithLockedYear = useMemo(
     () => ({
       ...form,
@@ -519,19 +551,18 @@ function AddFileEditor() {
     [form, generatedUniqueCode, originYear],
   );
   const activeYearOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          [
-            settings.financialYear,
-            settings.selectedYear,
-            ...settings.financialYears,
-            originYear,
-          ].filter(Boolean),
-        ),
-      ).sort((a, b) => b.localeCompare(a)),
-    [originYear, settings.financialYear, settings.financialYears, settings.selectedYear],
+    () => getLatestTwoYears(settings.financialYear, settings.financialYears),
+    [settings.financialYear, settings.financialYears],
   );
+  const selectedDivision = divisions.find(
+    (division) =>
+      division.name.trim().toLowerCase() === formWithLockedYear.division.trim().toLowerCase(),
+  );
+  const indentorOptions = selectedDivision
+    ? indentors
+        .filter((indentor) => indentor.divisionId === selectedDivision.id)
+        .map((indentor) => indentor.name)
+    : [];
   const tcecIsNo = isNo(formWithLockedYear.tcec);
   const gemIsNo = isNo(formWithLockedYear.gem);
   const highValueIsNo = isNo(formWithLockedYear.highValue);
@@ -551,6 +582,17 @@ function AddFileEditor() {
     supplyOrders,
     divisions,
   );
+
+  useEffect(() => {
+    setActiveYears((current) =>
+      normalizeSelectableActiveYears(
+        current,
+        activeYearOptions,
+        settings.financialYear,
+        settings.yearSelectionLocked,
+      ),
+    );
+  }, [activeYearOptions, settings.financialYear, settings.yearSelectionLocked]);
 
   useEffect(() => {
     setCurrentMilestone((current) =>
@@ -641,6 +683,19 @@ function AddFileEditor() {
       }
       if (k === "gem" && isYes(v)) {
         patch.paymentMode = "Online";
+      }
+      if (k === "division") {
+        const nextDivision = divisions.find(
+          (division) => division.name.trim().toLowerCase() === v.trim().toLowerCase(),
+        );
+        const nextIndentorNames = nextDivision
+          ? indentors
+              .filter((indentor) => indentor.divisionId === nextDivision.id)
+              .map((indentor) => indentor.name)
+          : [];
+        if (!nextIndentorNames.includes(f.indentor)) {
+          patch.indentor = "";
+        }
       }
       const next = applyConditionalRules({ ...f, ...patch });
       return isDivisionAdNo(next.division, divisions) ? { ...next, adVettingDate: "" } : next;
@@ -762,6 +817,15 @@ function AddFileEditor() {
                 placeholder: "Type or select division",
                 typeahead: true,
               }
+            : field.key === "indentor"
+              ? {
+                  ...field,
+                  options: indentorOptions,
+                  placeholder: selectedDivision
+                    ? "Type or select indentor"
+                    : "Select division first",
+                  typeahead: true,
+                }
             : tcecCommitteeKeys.includes(field.key)
               ? {
                   ...field,
@@ -1091,6 +1155,7 @@ function AddFileEditor() {
                       years={activeYearOptions}
                       selectedYears={activeYears}
                       originYear={formWithLockedYear.year}
+                      locked={settings.yearSelectionLocked}
                       onChange={setActiveYears}
                     />
                   ) : null}
@@ -1265,35 +1330,42 @@ function ActiveYearsField({
   years,
   selectedYears,
   originYear,
+  locked,
   onChange,
 }: {
   years: string[];
   selectedYears: string[];
   originYear: string;
+  locked: boolean;
   onChange: (years: string[]) => void;
 }) {
   const toggleYear = (year: string) => {
-    if (year === originYear) return;
-    if (selectedYears.includes(year)) {
-      onChange(selectedYears.filter((item) => item !== year));
-      return;
-    }
-    onChange([...selectedYears, year].sort((a, b) => b.localeCompare(a)));
+    if (locked) return;
+    onChange([year]);
   };
 
   return (
     <div className="rounded-md border border-border bg-secondary/20 p-3">
-      <div className="mb-2 text-xs font-medium text-muted-foreground">Active years</div>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-medium text-muted-foreground">Active year</div>
+        {locked ? (
+          <div className="text-xs text-muted-foreground">Locked by admin</div>
+        ) : null}
+      </div>
       <div className="flex flex-wrap gap-2">
         {years.map((year) => (
           <label
             key={year}
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm"
+            className={
+              "inline-flex h-8 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm " +
+              (locked ? "opacity-70" : "")
+            }
           >
             <input
-              type="checkbox"
+              type="radio"
+              name="activeYear"
               checked={selectedYears.includes(year) || year === originYear}
-              disabled={year === originYear}
+              disabled={locked}
               onChange={() => toggleYear(year)}
               className="size-4 rounded border-input"
             />

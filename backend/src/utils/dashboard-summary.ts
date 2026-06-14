@@ -756,14 +756,16 @@ function formatThresholdAppliesTo(value: AppSettings["valueThresholdLevels"][num
 function formatThresholdRange(level: AppSettings["valueThresholdLevels"][number]) {
   const min = parseAmount(level.minValue);
   const max = parseAmount(level.maxValue);
-  if (min !== undefined && max !== undefined) return `${formatInr(min)} to ${formatInr(max)}`;
-  if (min !== undefined) return `Above ${formatInr(min)}`;
-  if (max !== undefined) return `Up to ${formatInr(max)}`;
+  if (min !== undefined && max !== undefined) {
+    return `${formatPlainAmount(min)}-${formatPlainAmount(max)}`;
+  }
+  if (min !== undefined) return `${formatPlainAmount(min)}+`;
+  if (max !== undefined) return `0-${formatPlainAmount(max)}`;
   return "Any value";
 }
 
-function formatInr(value: number) {
-  return `Rs ${Math.round(value).toLocaleString("en-IN")}`;
+function formatPlainAmount(value: number) {
+  return Math.round(value).toLocaleString("en-IN");
 }
 
 function getDivisionRiskRanking(files: FileRecord[]) {

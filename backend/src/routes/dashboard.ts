@@ -32,6 +32,7 @@ type DivisionRow = {
 type SettingsRow = {
   financial_year: string;
   selected_year: string;
+  year_selection_locked: boolean;
   theme: AppSettings["theme"];
   theme_tint: AppSettings["themeTint"];
   deletion_password: string;
@@ -57,6 +58,7 @@ function mapSettings(row: SettingsRow): AppSettings {
     financialYear: row.financial_year,
     selectedYear: row.selected_year,
     financialYears: [row.financial_year, row.selected_year].filter(Boolean),
+    yearSelectionLocked: row.year_selection_locked,
     theme: row.theme,
     themeTint: row.theme_tint,
     deletionPassword: row.deletion_password,
@@ -101,7 +103,7 @@ async function loadDivisions(user: ReturnType<typeof requireAuth>, financialYear
 
 async function loadSettings() {
   const result = await pool.query<SettingsRow>(
-    `select financial_year, selected_year, theme, theme_tint, deletion_password,
+    `select financial_year, selected_year, year_selection_locked, theme, theme_tint, deletion_password,
             tcec_committees, milestones, table_field_presets, active_user_id
      from app_settings
      where id = true`,

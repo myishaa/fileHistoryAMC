@@ -13,6 +13,22 @@ export type Division = {
   archivedAt?: string;
 };
 
+export type Indentor = {
+  id: string;
+  divisionId: string;
+  divisionName: string;
+  name: string;
+  sfId: string;
+  designation: string;
+  mobileNo: string;
+  landlineNo: string;
+  email: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AppUser = {
   id: string;
   name: string;
@@ -33,6 +49,7 @@ export type AppSettings = {
   financialYear: string;
   selectedYear: string;
   financialYears: string[];
+  yearSelectionLocked: boolean;
   theme: AppTheme;
   themeTint: AppThemeTint;
   deletionPassword: string;

@@ -232,12 +232,53 @@ divisionsRouter.post(
         }
       }
 
+      if (resolvedTargetDivisionId && sourceDivisionIds.includes(resolvedTargetDivisionId)) {
+        throw new HttpError(400, "Target division cannot also be a source division.");
+      }
+
       await client.query(
-        `insert into division_year_allocations (division_id, financial_year, active)
-         values ($1, $2, true)
+        `with allocation_totals as (
+           select
+             coalesce(
+               sum(
+                 coalesce(a.allocated_capital, d.allocated_capital, 0)
+               ) filter (where d.id = any($3::uuid[])),
+               0
+             ) +
+             coalesce(
+               sum(
+                 coalesce(a.allocated_capital, d.allocated_capital, 0)
+               ) filter (where d.id = $1),
+               0
+             ) as allocated_capital,
+             coalesce(
+               sum(
+                 coalesce(a.allocated_revenue, d.allocated_revenue, 0)
+               ) filter (where d.id = any($3::uuid[])),
+               0
+             ) +
+             coalesce(
+               sum(
+                 coalesce(a.allocated_revenue, d.allocated_revenue, 0)
+               ) filter (where d.id = $1),
+               0
+             ) as allocated_revenue
+           from divisions d
+           left join division_year_allocations a
+             on a.division_id = d.id and a.financial_year = $2
+           where d.id = $1 or d.id = any($3::uuid[])
+         )
+         insert into division_year_allocations (
+           division_id, financial_year, allocated_capital, allocated_revenue, active
+         )
+         select $1, $2, allocated_capital, allocated_revenue, true
+         from allocation_totals
          on conflict (division_id, financial_year)
-         do update set active = true`,
-        [resolvedTargetDivisionId, financialYear],
+         do update set
+           allocated_capital = excluded.allocated_capital,
+           allocated_revenue = excluded.allocated_revenue,
+           active = true`,
+        [resolvedTargetDivisionId, financialYear, sourceDivisionIds],
       );
 
       const mergeResult = await client.query<{ id: string }>(
@@ -347,6 +388,278 @@ divisionsRouter.post(
       merge: {
         id: mergeId,
         movedFileCount,
+        targetDivision: await getDivision(resolvedTargetDivisionId!, financialYear),
+      },
+    });
+  }),
+);
+
+divisionsRouter.post(
+  "/split-transfer",
+  asyncHandler(async (request, response) => {
+    requireAdmin(request as AuthRequest);
+    const body = requireObjectBody(request.body);
+    const financialYear = await readAllocationYear(body.financialYear);
+    if (!financialYear) throw new HttpError(400, "financialYear is required.");
+
+    const sourceDivisionId = requireString(body.sourceDivisionId, "sourceDivisionId");
+    if (!Array.isArray(body.indentorIds)) {
+      throw new HttpError(400, "indentorIds must be an array.");
+    }
+    const indentorIds = Array.from(
+      new Set(body.indentorIds.filter((id): id is string => typeof id === "string")),
+    );
+    if (!indentorIds.length) throw new HttpError(400, "Select at least one indentor.");
+
+    const targetDivisionId =
+      typeof body.targetDivisionId === "string" && body.targetDivisionId.trim()
+        ? body.targetDivisionId.trim()
+        : undefined;
+    const targetDivisionName =
+      typeof body.targetDivisionName === "string" && body.targetDivisionName.trim()
+        ? body.targetDivisionName.trim()
+        : undefined;
+    const targetDivisionCode =
+      typeof body.targetDivisionCode === "string" && body.targetDivisionCode.trim()
+        ? body.targetDivisionCode.trim()
+        : undefined;
+    if (!targetDivisionId && !targetDivisionName) {
+      throw new HttpError(400, "Choose a target division or enter a new division name.");
+    }
+    if (targetDivisionId === sourceDivisionId) {
+      throw new HttpError(400, "Target division cannot be the source division.");
+    }
+
+    const transferCapital = toDbNumber(body.allocatedCapital) ?? 0;
+    const transferRevenue = toDbNumber(body.allocatedRevenue) ?? 0;
+    if (transferCapital < 0 || transferRevenue < 0) {
+      throw new HttpError(400, "Transfer amounts cannot be negative.");
+    }
+    if (transferCapital === 0 && transferRevenue === 0) {
+      throw new HttpError(400, "Enter capital or revenue amount to transfer.");
+    }
+
+    const effectiveDate =
+      typeof body.effectiveDate === "string" && body.effectiveDate.trim()
+        ? body.effectiveDate.trim()
+        : undefined;
+    const notes =
+      typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : undefined;
+    const deactivateSourceDivision = body.deactivateSourceDivision === true;
+
+    const client = await pool.connect();
+    let resolvedTargetDivisionId = targetDivisionId;
+    let movedFileCount = 0;
+
+    try {
+      await client.query("begin");
+
+      const source = await client.query<{ id: string }>(
+        "select id from divisions where id = $1 and archived_at is null",
+        [sourceDivisionId],
+      );
+      if (!source.rows[0]) throw new HttpError(400, "Source division was not found.");
+
+      const indentorResult = await client.query<{
+        id: string;
+        name: string;
+        sf_id: string;
+      }>(
+        `select id, name, sf_id
+         from indentors
+         where id = any($1::uuid[]) and division_id = $2`,
+        [indentorIds, sourceDivisionId],
+      );
+      if (indentorResult.rows.length !== indentorIds.length) {
+        throw new HttpError(400, "One or more indentors were not found in the source division.");
+      }
+
+      if (resolvedTargetDivisionId) {
+        const targetCheck = await client.query<{ id: string }>(
+          "select id from divisions where id = $1 and archived_at is null",
+          [resolvedTargetDivisionId],
+        );
+        if (!targetCheck.rows[0]) throw new HttpError(400, "Target division was not found.");
+      } else {
+        const existingTarget = await client.query<{ id: string }>(
+          "select id from divisions where lower(name) = lower($1) and archived_at is null",
+          [targetDivisionName],
+        );
+        if (existingTarget.rows[0]) {
+          resolvedTargetDivisionId = existingTarget.rows[0].id;
+        } else {
+          const createdTarget = await client.query<{ id: string }>(
+            `insert into divisions (name, code, ad)
+             values ($1, $2, 'No')
+             returning id`,
+            [targetDivisionName, targetDivisionCode ?? null],
+          );
+          resolvedTargetDivisionId = createdTarget.rows[0].id;
+        }
+      }
+
+      if (resolvedTargetDivisionId === sourceDivisionId) {
+        throw new HttpError(400, "Target division cannot be the source division.");
+      }
+
+      const conflict = await client.query<{ count: string }>(
+        `select count(*)::text as count
+         from indentors
+         where division_id = $1
+           and sf_id = any($2::text[])
+           and id <> all($3::uuid[])`,
+        [
+          resolvedTargetDivisionId,
+          indentorResult.rows.map((indentor) => indentor.sf_id),
+          indentorIds,
+        ],
+      );
+      if (Number(conflict.rows[0]?.count ?? 0) > 0) {
+        throw new HttpError(400, "Target division already has one or more selected SF IDs.");
+      }
+
+      const allocationResult = await client.query<{
+        source_capital: string;
+        source_revenue: string;
+        source_active: boolean;
+        target_capital: string;
+        target_revenue: string;
+      }>(
+        `select
+           coalesce(sa.allocated_capital, sd.allocated_capital, 0)::text as source_capital,
+           coalesce(sa.allocated_revenue, sd.allocated_revenue, 0)::text as source_revenue,
+           coalesce(sa.active, false) as source_active,
+           coalesce(ta.allocated_capital, td.allocated_capital, 0)::text as target_capital,
+           coalesce(ta.allocated_revenue, td.allocated_revenue, 0)::text as target_revenue
+         from divisions sd
+         join divisions td on td.id = $3
+         left join division_year_allocations sa
+           on sa.division_id = sd.id and sa.financial_year = $2
+         left join division_year_allocations ta
+           on ta.division_id = td.id and ta.financial_year = $2
+         where sd.id = $1`,
+        [sourceDivisionId, financialYear, resolvedTargetDivisionId],
+      );
+      const allocation = allocationResult.rows[0];
+      if (!allocation) throw new HttpError(400, "Allocation context was not found.");
+      const sourceCapital = Number(allocation.source_capital);
+      const sourceRevenue = Number(allocation.source_revenue);
+      const targetCapital = Number(allocation.target_capital);
+      const targetRevenue = Number(allocation.target_revenue);
+      if (transferCapital > sourceCapital || transferRevenue > sourceRevenue) {
+        throw new HttpError(400, "Transfer amount exceeds source division allocation.");
+      }
+
+      await client.query(
+        `insert into division_year_allocations (
+           division_id, financial_year, allocated_capital, allocated_revenue, active
+         )
+         values ($1, $2, $3, $4, $5)
+         on conflict (division_id, financial_year)
+         do update set
+           allocated_capital = excluded.allocated_capital,
+           allocated_revenue = excluded.allocated_revenue,
+           active = excluded.active`,
+        [
+          sourceDivisionId,
+          financialYear,
+          sourceCapital - transferCapital,
+          sourceRevenue - transferRevenue,
+          deactivateSourceDivision ? false : allocation.source_active,
+        ],
+      );
+
+      await client.query(
+        `insert into division_year_allocations (
+           division_id, financial_year, allocated_capital, allocated_revenue, active
+         )
+         values ($1, $2, $3, $4, true)
+         on conflict (division_id, financial_year)
+         do update set
+           allocated_capital = excluded.allocated_capital,
+           allocated_revenue = excluded.allocated_revenue,
+           active = true`,
+        [
+          resolvedTargetDivisionId,
+          financialYear,
+          targetCapital + transferCapital,
+          targetRevenue + transferRevenue,
+        ],
+      );
+
+      await client.query("update indentors set division_id = $1 where id = any($2::uuid[])", [
+        resolvedTargetDivisionId,
+        indentorIds,
+      ]);
+
+      const movedFiles = await client.query<{ file_id: string }>(
+        `with candidates as (
+           select f.id, f.division_id
+           from files f
+           where f.archived_at is null
+             and f.division_id = $2
+             and f.indentor = any($3::text[])
+             and (
+               f.year = $1
+               or exists (
+                 select 1
+                 from file_year_activity activity
+                 where activity.file_id = f.id
+                   and activity.financial_year = $1
+                   and activity.status = 'active'
+               )
+             )
+         ),
+         history as (
+           insert into file_division_history (
+             file_id,
+             from_division_id,
+             to_division_id,
+             financial_year,
+             effective_date,
+             reason
+           )
+           select id, division_id, $4, $1, $5, $6
+           from candidates
+           returning file_id
+         ),
+         moved as (
+           update files f
+           set division_id = $4
+           from candidates c
+           where f.id = c.id
+           returning f.id
+         )
+         insert into file_year_activity (file_id, financial_year, status)
+         select id, $1, 'active'
+         from moved
+         on conflict (file_id, financial_year)
+         do update set status = 'active'
+         returning file_id`,
+        [
+          financialYear,
+          sourceDivisionId,
+          indentorResult.rows.map((indentor) => indentor.name),
+          resolvedTargetDivisionId,
+          effectiveDate ?? null,
+          notes ?? "Division split / indentor transfer",
+        ],
+      );
+      movedFileCount = movedFiles.rowCount ?? 0;
+
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    response.status(201).json({
+      transfer: {
+        movedFileCount,
+        movedIndentorCount: indentorIds.length,
+        sourceDivision: await getDivision(sourceDivisionId, financialYear),
         targetDivision: await getDivision(resolvedTargetDivisionId!, financialYear),
       },
     });
