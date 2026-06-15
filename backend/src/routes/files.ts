@@ -348,6 +348,24 @@ function readQueryList(value: unknown) {
     .filter(Boolean);
 }
 
+function readAnalyticsType(value: unknown) {
+  return value === "firm" || value === "indentor" ? value : undefined;
+}
+
+function readAnalyticsNameList(value: unknown) {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === "string" && Boolean(item));
+    }
+  } catch {
+    return readQueryList(value);
+  }
+  return [];
+}
+
 function readSearchParams(query: Record<string, unknown>): FileSearchParams {
   return {
     yearFilter: readQueryString(query.yearFilter),
@@ -380,6 +398,8 @@ function readSearchParams(query: Record<string, unknown>): FileSearchParams {
     freeText: readQueryString(query.freeText),
     freeDate: readQueryString(query.freeDate),
     dashboardFilter: readQueryString(query.dashboardFilter),
+    analyticsType: readAnalyticsType(query.analyticsType),
+    analyticsNames: readAnalyticsNameList(query.analyticsNames),
     sortColumnKey: readQueryString(query.sortColumnKey),
     sortDirection: readQueryString(query.sortDirection) === "desc" ? "desc" : "asc",
     divisionWiseSort: readQueryBoolean(query.divisionWiseSort),

@@ -615,7 +615,7 @@ function getTopFirmSupplyOrders(files: FileRecord[]) {
       totals.set(name, (totals.get(name) ?? 0) + value);
     });
   });
-  return mapEntriesToSortedRows(totals, "value").slice(0, 20);
+  return mapEntriesToSortedRows(totals, "value");
 }
 
 function getTopIndentorsByFiles(files: FileRecord[]) {
@@ -624,7 +624,7 @@ function getTopIndentorsByFiles(files: FileRecord[]) {
     const name = getAnalyticsName(file.indentor, "Unassigned indentor");
     counts.set(name, (counts.get(name) ?? 0) + 1);
   });
-  return mapEntriesToSortedRows(counts, "count").slice(0, 10);
+  return mapEntriesToSortedRows(counts, "count");
 }
 
 function getTopIndentorsByValue(files: FileRecord[]) {
@@ -633,7 +633,7 @@ function getTopIndentorsByValue(files: FileRecord[]) {
     const name = getAnalyticsName(file.indentor, "Unassigned indentor");
     totals.set(name, (totals.get(name) ?? 0) + getFileTotalValue(file));
   });
-  return mapEntriesToSortedRows(totals, "value").slice(0, 10);
+  return mapEntriesToSortedRows(totals, "value");
 }
 
 function getMilestoneClearingRanking(files: FileRecord[]) {
@@ -674,10 +674,7 @@ function getBiddingModeMix(files: FileRecord[]) {
   return mapEntriesToSortedRows(counts, "count");
 }
 
-function getFileValueThresholds(
-  files: FileRecord[],
-  levels: AppSettings["valueThresholdLevels"],
-) {
+function getFileValueThresholds(files: FileRecord[], levels: AppSettings["valueThresholdLevels"]) {
   if (!levels.length) return [];
   const rows = levels.map((level) => ({
     name: level.label,

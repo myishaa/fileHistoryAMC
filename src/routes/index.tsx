@@ -23,6 +23,7 @@ export const Route = createFileRoute("/")({
 type DashboardTab = "snapshot" | "status" | "liveStatus" | "analytics" | "finance";
 type StatusActionMode = "pdf" | "excel" | "search";
 type DivisionValueSortMode = "value" | "percent";
+type AnalyticsResultLimitKey = "5" | "10" | "20" | "50" | "all";
 type DivisionValueSortKey =
   | "allocatedCapital"
   | "allocatedRevenue"
@@ -149,6 +150,13 @@ const divisionFilterableAnalyticsPanels: AnalyticsPanelKey[] = [
   "paymentPending",
   "milestoneClearingTable",
 ];
+const analyticsResultLimitOptions = [
+  { value: "5", label: "Top 5" },
+  { value: "10", label: "Top 10" },
+  { value: "20", label: "Top 20" },
+  { value: "50", label: "Top 50" },
+  { value: "all", label: "All" },
+] satisfies Array<{ value: AnalyticsResultLimitKey; label: string }>;
 
 function isDivisionFilterableAnalyticsPanel(panelKey: AnalyticsPanelKey) {
   return divisionFilterableAnalyticsPanels.includes(panelKey);
@@ -173,6 +181,9 @@ export function Dashboard() {
     useState<DivisionValueSortMode>("value");
   const [divisionTotalValueSortKey, setDivisionTotalValueSortKey] =
     useState<DivisionTotalValueSortKey>("allocatedTotal");
+  const [topFirmLimit, setTopFirmLimit] = useState<AnalyticsResultLimitKey>("20");
+  const [indentorsByFilesLimit, setIndentorsByFilesLimit] = useState<AnalyticsResultLimitKey>("10");
+  const [indentorsByValueLimit, setIndentorsByValueLimit] = useState<AnalyticsResultLimitKey>("10");
   const [selectedAnalyticsDivision, setSelectedAnalyticsDivision] = useState("all");
   const [selectedLiveMilestones, setSelectedLiveMilestones] = useState<string[] | undefined>();
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummaryPayload | undefined>();
@@ -471,6 +482,18 @@ export function Dashboard() {
       )}`,
     },
   ];
+  const topFirmRows = applyAnalyticsResultLimit(
+    divisionFilteredAnalytics.topFirmSupplyOrders,
+    topFirmLimit,
+  );
+  const topIndentorsByFilesRows = applyAnalyticsResultLimit(
+    divisionFilteredAnalytics.topIndentorsByFiles,
+    indentorsByFilesLimit,
+  );
+  const topIndentorsByValueRows = applyAnalyticsResultLimit(
+    divisionFilteredAnalytics.topIndentorsByValue,
+    indentorsByValueLimit,
+  );
   const analyticsPanels: AnalyticsPanel[] = [
     {
       key: "divisionFiles",
@@ -509,24 +532,24 @@ export function Dashboard() {
     },
     {
       key: "topFirms",
-      title: "Top 20 firms by S.O. value",
+      title: "Firms ranking by S.O. value",
       subtitle: "Supply order value, capital plus revenue",
       columns: getValueAnalyticsColumns("Firm", "S.O. value"),
-      rows: divisionFilteredAnalytics.topFirmSupplyOrders,
+      rows: topFirmRows,
     },
     {
       key: "indentorsByFiles",
-      title: "Top 10 indentors by files",
+      title: "Top indentors by files",
       subtitle: "Number of files raised",
       columns: getCountAnalyticsColumns("Indentor"),
-      rows: divisionFilteredAnalytics.topIndentorsByFiles,
+      rows: topIndentorsByFilesRows,
     },
     {
       key: "indentorsByValue",
-      title: "Top 10 indentors by value",
+      title: "Top indentors by value",
       subtitle: "Total demand value",
       columns: getValueAnalyticsColumns("Indentor", "Total value"),
-      rows: divisionFilteredAnalytics.topIndentorsByValue,
+      rows: topIndentorsByValueRows,
     },
     {
       key: "milestoneClearing",
@@ -584,10 +607,7 @@ export function Dashboard() {
     selectedAnalyticsPanel.key === "divisionValue"
       ? {
           ...selectedAnalyticsPanel,
-          exportNote: getDivisionValueRankingCriteria(
-            divisionValueSortKey,
-            divisionValueSortMode,
-          ),
+          exportNote: getDivisionValueRankingCriteria(divisionValueSortKey, divisionValueSortMode),
           rows: sortDivisionValueRows(
             selectedAnalyticsPanel.rows,
             divisionValueSortKey,
@@ -607,6 +627,33 @@ export function Dashboard() {
   const analyticsDivisionFilterEnabled = isDivisionFilterableAnalyticsPanel(
     selectedAnalyticsPanel.key,
   );
+  const analyticsLimitControl =
+    selectedAnalyticsPanel.key === "topFirms"
+      ? {
+          value: topFirmLimit,
+          onChange: setTopFirmLimit,
+          total: divisionFilteredAnalytics.topFirmSupplyOrders.length,
+        }
+      : selectedAnalyticsPanel.key === "indentorsByFiles"
+        ? {
+            value: indentorsByFilesLimit,
+            onChange: setIndentorsByFilesLimit,
+            total: divisionFilteredAnalytics.topIndentorsByFiles.length,
+          }
+        : selectedAnalyticsPanel.key === "indentorsByValue"
+          ? {
+              value: indentorsByValueLimit,
+              onChange: setIndentorsByValueLimit,
+              total: divisionFilteredAnalytics.topIndentorsByValue.length,
+            }
+          : undefined;
+  const analyticsTransferType =
+    selectedAnalyticsPanel.key === "topFirms"
+      ? "firm"
+      : selectedAnalyticsPanel.key === "indentorsByFiles" ||
+          selectedAnalyticsPanel.key === "indentorsByValue"
+        ? "indentor"
+        : undefined;
 
   const openSearchFilter = (dashboardFilter: string) => {
     navigate({
@@ -623,6 +670,18 @@ export function Dashboard() {
       search: {
         dashboardFilter: `manualMilestoneCurrent:${milestoneName}`,
         division,
+      },
+    });
+  };
+  const openAnalyticsResultsInSearch = () => {
+    if (!analyticsTransferType || displayedAnalyticsPanel.rows.length === 0) return;
+    navigate({
+      to: "/search",
+      search: {
+        dashboardFilter: undefined,
+        division: activeAnalyticsDivision === "all" ? undefined : activeAnalyticsDivision,
+        analyticsType: analyticsTransferType,
+        analyticsNames: JSON.stringify(displayedAnalyticsPanel.rows.map((row) => String(row.name))),
       },
     });
   };
@@ -972,6 +1031,40 @@ export function Dashboard() {
                           ))}
                         </select>
                       </label>
+                    ) : null}
+                    {analyticsLimitControl ? (
+                      <label className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium">
+                        <span className="text-muted-foreground">Show</span>
+                        <select
+                          value={analyticsLimitControl.value}
+                          onChange={(event) =>
+                            analyticsLimitControl.onChange(
+                              event.target.value as AnalyticsResultLimitKey,
+                            )
+                          }
+                          className="h-6 min-w-20 bg-transparent text-xs text-foreground outline-none"
+                        >
+                          {analyticsResultLimitOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-muted-foreground">
+                          of {analyticsLimitControl.total}
+                        </span>
+                      </label>
+                    ) : null}
+                    {analyticsTransferType ? (
+                      <button
+                        type="button"
+                        onClick={openAnalyticsResultsInSearch}
+                        disabled={displayedAnalyticsPanel.rows.length === 0}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Search className="size-3.5" />
+                        Send to Search Files
+                      </button>
                     ) : null}
                     <button
                       type="button"
@@ -2984,7 +3077,7 @@ function getTopFirmSupplyOrders(files: FileRecord[]) {
       totals.set(name, (totals.get(name) ?? 0) + value);
     });
   });
-  return mapEntriesToSortedRows(totals, "value").slice(0, 20);
+  return mapEntriesToSortedRows(totals, "value");
 }
 
 function getTopIndentorsByFiles(files: FileRecord[]) {
@@ -2993,7 +3086,7 @@ function getTopIndentorsByFiles(files: FileRecord[]) {
     const name = getAnalyticsName(file.indentor, "Unassigned indentor");
     counts.set(name, (counts.get(name) ?? 0) + 1);
   });
-  return mapEntriesToSortedRows(counts, "count").slice(0, 10);
+  return mapEntriesToSortedRows(counts, "count");
 }
 
 function getTopIndentorsByValue(files: FileRecord[]) {
@@ -3002,7 +3095,14 @@ function getTopIndentorsByValue(files: FileRecord[]) {
     const name = getAnalyticsName(file.indentor, "Unassigned indentor");
     totals.set(name, (totals.get(name) ?? 0) + getFileTotalValue(file));
   });
-  return mapEntriesToSortedRows(totals, "value").slice(0, 10);
+  return mapEntriesToSortedRows(totals, "value");
+}
+
+function applyAnalyticsResultLimit(
+  rows: Array<Record<string, number | string>>,
+  limit: AnalyticsResultLimitKey,
+) {
+  return limit === "all" ? rows : rows.slice(0, Number(limit));
 }
 
 function getMilestoneClearingRanking(files: FileRecord[]) {

@@ -26,11 +26,22 @@ import type { TableFieldPreset } from "@/lib/table-field-presets";
 import { isCancelledFile } from "@/lib/year-filter";
 
 export const Route = createFileRoute("/search")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    dashboardFilter:
-      typeof search.dashboardFilter === "string" ? search.dashboardFilter : undefined,
-    division: typeof search.division === "string" ? search.division : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>) => {
+    const validated: {
+      dashboardFilter?: string;
+      division?: string;
+      analyticsType?: "firm" | "indentor";
+      analyticsNames?: string;
+    } = {};
+    if (typeof search.dashboardFilter === "string")
+      validated.dashboardFilter = search.dashboardFilter;
+    if (typeof search.division === "string") validated.division = search.division;
+    if (search.analyticsType === "firm" || search.analyticsType === "indentor") {
+      validated.analyticsType = search.analyticsType;
+    }
+    if (typeof search.analyticsNames === "string") validated.analyticsNames = search.analyticsNames;
+    return validated;
+  },
   component: SearchPage,
 });
 
@@ -508,7 +519,8 @@ function SearchPage() {
     soCancelledFilter ||
     freeText ||
     freeDate ||
-    search.dashboardFilter;
+    search.dashboardFilter ||
+    search.analyticsNames;
 
   const searchQuery = useMemo(() => {
     const params = new URLSearchParams();
@@ -544,6 +556,8 @@ function SearchPage() {
     appendSearchParam(params, "freeDate", freeDate);
     appendSearchParam(params, "selectedYear", settings.selectedYear);
     appendSearchParam(params, "dashboardFilter", search.dashboardFilter);
+    appendSearchParam(params, "analyticsType", search.analyticsType);
+    appendSearchParam(params, "analyticsNames", search.analyticsNames);
     appendSearchParam(params, "sortColumnKey", activeSortColumnKey);
     appendSearchParam(params, "sortDirection", sortDirection);
     appendSearchBool(params, "divisionWiseSort", divisionWiseSort);
@@ -584,6 +598,8 @@ function SearchPage() {
     freeText,
     freeDate,
     settings.selectedYear,
+    search.analyticsType,
+    search.analyticsNames,
   ]);
 
   useEffect(() => {
@@ -722,8 +738,21 @@ function SearchPage() {
     setSortColumnKey("none");
     setSortDirection("asc");
     setDivisionWiseSort(false);
-    if (search.dashboardFilter || search.division) {
-      navigate({ to: "/search", search: { dashboardFilter: undefined, division: undefined } });
+    if (
+      search.dashboardFilter ||
+      search.division ||
+      search.analyticsType ||
+      search.analyticsNames
+    ) {
+      navigate({
+        to: "/search",
+        search: {
+          dashboardFilter: undefined,
+          division: undefined,
+          analyticsType: undefined,
+          analyticsNames: undefined,
+        },
+      });
     }
   };
 

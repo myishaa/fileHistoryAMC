@@ -31,6 +31,8 @@ export type FileSearchParams = {
   freeText?: string;
   freeDate?: string;
   dashboardFilter?: string;
+  analyticsType?: "firm" | "indentor";
+  analyticsNames?: string[];
   sortColumnKey?: string;
   sortDirection?: "asc" | "desc";
   divisionWiseSort?: boolean;
@@ -240,11 +242,32 @@ export function searchFiles(files: FileRecord[], params: FileSearchParams) {
   const maxValue = parseAmount(params.valueTo);
   const selectedModes = params.selectedModes ?? [];
   const selectedFileTypes = params.selectedFileTypes ?? [];
+  const analyticsNameSet = new Set((params.analyticsNames ?? []).map(normalizeAnalyticsName));
 
   const filtered = files.filter((file) => {
     if (params.yearFilter && !includesText(file.year, params.yearFilter)) return false;
     if (params.dashboardFilter && !matchesDashboardFilter(file, params.dashboardFilter))
       return false;
+    if (
+      analyticsNameSet.size > 0 &&
+      params.analyticsType === "indentor" &&
+      !analyticsNameSet.has(
+        normalizeAnalyticsName(getAnalyticsName(file.indentor, "Unassigned indentor")),
+      )
+    ) {
+      return false;
+    }
+    if (
+      analyticsNameSet.size > 0 &&
+      params.analyticsType === "firm" &&
+      !fileSupplyOrders(file).some((order) =>
+        analyticsNameSet.has(
+          normalizeAnalyticsName(getAnalyticsName(order.firm, "Unassigned firm")),
+        ),
+      )
+    ) {
+      return false;
+    }
     if (params.indentor && !includesText(file.indentor, params.indentor)) return false;
     if (params.divisionFilter && !includesText(file.division, params.divisionFilter)) return false;
     if (params.description && !includesText(file.demandDescription, params.description))
@@ -933,6 +956,14 @@ function getMilestoneLabelAliases(key: string) {
     payment: "Payment",
   };
   return key === "control" ? [labels[key], "Controlled"] : [labels[key] ?? key];
+}
+
+function getAnalyticsName(value: string | undefined, fallback: string) {
+  return value?.trim() || fallback;
+}
+
+function normalizeAnalyticsName(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function normalizeMilestoneName(value: string | undefined) {
