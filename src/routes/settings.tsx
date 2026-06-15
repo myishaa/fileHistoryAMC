@@ -122,44 +122,31 @@ function SettingsPage() {
 
   return (
     <div className="space-y-4 max-w-6xl">
-      <Tabs defaultValue="admin" className="space-y-4">
-        <TabsList aria-label="Settings sections">
-          <TabsTrigger value="admin">Admin</TabsTrigger>
-          <TabsTrigger value="user">User</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="admin">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[230px_minmax(0,1fr)]">
-            <aside className="rounded-md border border-border bg-card p-3 shadow-[var(--shadow-card)]">
-              <div className="space-y-1">
-                {adminSections.map((section) => {
-                  const selected = selectedAdminSection.key === section.key;
-                  return (
-                    <button
-                      key={section.key}
-                      type="button"
-                      onClick={() => setActiveAdminSection(section.key)}
-                      className={
-                        "w-full rounded-md px-3 py-2 text-left text-sm font-medium transition " +
-                        (selected
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground")
-                      }
-                    >
-                      {section.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </aside>
-            <div className="min-w-0">{selectedAdminSection.content}</div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[230px_minmax(0,1fr)]">
+        <aside className="rounded-md border border-border bg-card p-3 shadow-[var(--shadow-card)]">
+          <div className="space-y-1">
+            {adminSections.map((section) => {
+              const selected = selectedAdminSection.key === section.key;
+              return (
+                <button
+                  key={section.key}
+                  type="button"
+                  onClick={() => setActiveAdminSection(section.key)}
+                  className={
+                    "w-full rounded-md px-3 py-2 text-left text-sm font-medium transition " +
+                    (selected
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground")
+                  }
+                >
+                  {section.label}
+                </button>
+              );
+            })}
           </div>
-        </TabsContent>
-
-        <TabsContent value="user">
-          <AccountSettings />
-        </TabsContent>
-      </Tabs>
+        </aside>
+        <div className="min-w-0">{selectedAdminSection.content}</div>
+      </div>
     </div>
   );
 }

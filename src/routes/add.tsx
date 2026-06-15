@@ -505,6 +505,25 @@ function AddFileEditor() {
   const [activeBoardSection, setActiveBoardSection] = useState(section ?? "File details");
   const quickFieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const quickFocusAppliedRef = useRef("");
+  const savedFormForLocks = useMemo(
+    () =>
+      editingFile
+        ? applyConditionalRules(createFormFromFile(editingFile, settings.financialYear))
+        : createEmptyForm(settings.financialYear),
+    [editingFile, settings.financialYear],
+  );
+  const savedFirmDetailsForLocks = useMemo(
+    () => createFirmDetailsFromFile(editingFile),
+    [editingFile],
+  );
+  const savedSupplyOrdersForLocks = useMemo(
+    () => createSupplyOrdersFromFile(editingFile),
+    [editingFile],
+  );
+  const savedCompletedMilestonesForLocks = useMemo(
+    () => normalizeCompletedMilestones(editingFile?.completedMilestones),
+    [editingFile?.completedMilestones],
+  );
 
   useEffect(() => {
     setForm(
@@ -530,7 +549,12 @@ function AddFileEditor() {
     setUnlockedSections(new Set());
     // The file object is re-read from localStorage on each render; reset only when the edited id changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingFile?.id, settings.financialYear, settings.financialYears, settings.yearSelectionLocked]);
+  }, [
+    editingFile?.id,
+    settings.financialYear,
+    settings.financialYears,
+    settings.yearSelectionLocked,
+  ]);
 
   useEffect(() => {
     setActiveBoardSection(section ?? "File details");
@@ -538,7 +562,12 @@ function AddFileEditor() {
 
   const generatedUniqueCode = isEditing
     ? form.uniqueCode
-    : generateUniqueCode(activeYears[0] || settings.financialYear, form.division, allDivisions, allFiles);
+    : generateUniqueCode(
+        activeYears[0] || settings.financialYear,
+        form.division,
+        allDivisions,
+        allFiles,
+      );
   const originYear = isEditing
     ? form.year || editingFile?.year || settings.financialYear
     : activeYears[0] || settings.financialYear;
@@ -826,15 +855,15 @@ function AddFileEditor() {
                     : "Select division first",
                   typeahead: true,
                 }
-            : tcecCommitteeKeys.includes(field.key)
-              ? {
-                  ...field,
-                  options: getTcecCommitteeOptions(
-                    settings.tcecCommittees,
-                    formWithLockedYear[field.key],
-                  ),
-                }
-              : field;
+              : tcecCommitteeKeys.includes(field.key)
+                ? {
+                    ...field,
+                    options: getTcecCommitteeOptions(
+                      settings.tcecCommittees,
+                      formWithLockedYear[field.key],
+                    ),
+                  }
+                : field;
         const lockFilledFields = isEditing && !unlockedSections.has(section.title);
 
         if (field.key === "valueCapital") {
@@ -851,6 +880,14 @@ function AddFileEditor() {
               )}
               disabled={false}
               lockFilledFields={lockFilledFields}
+              lockedSelectionFilled={
+                hasFileValueForLock(savedFormForLocks, "valueCapital") ||
+                hasFileValueForLock(savedFormForLocks, "valueRevenue")
+              }
+              lockedValueFilled={
+                hasFileValueForLock(savedFormForLocks, "valueCapital") ||
+                hasFileValueForLock(savedFormForLocks, "valueRevenue")
+              }
               onChange={(patch) => {
                 setForm((current) => applyConditionalRules({ ...current, ...patch }));
                 setSupplyOrders((current) =>
@@ -877,6 +914,10 @@ function AddFileEditor() {
               revenueValue={formWithLockedYear.soValueRevenue}
               disabled={false}
               lockFilledFields={lockFilledFields}
+              lockedValueFilled={
+                hasFileValueForLock(savedFormForLocks, "soValueCapital") ||
+                hasFileValueForLock(savedFormForLocks, "soValueRevenue")
+              }
               onChange={(patch) =>
                 setForm((current) => applyConditionalRules({ ...current, ...patch }))
               }
@@ -889,7 +930,7 @@ function AddFileEditor() {
             <FileTypeField
               key={field.key}
               value={formWithLockedYear.fileType}
-              disabled={lockFilledFields && hasFilledValue(formWithLockedYear.fileType)}
+              disabled={lockFilledFields && hasFileValueForLock(savedFormForLocks, "fileType")}
               onChange={(value) => update("fileType", value)}
               inputRef={(element) => {
                 quickFieldRefs.current[field.key] = element;
@@ -907,7 +948,7 @@ function AddFileEditor() {
               field.key === "year" ||
               field.key === "uniqueCode" ||
               field.key === "tenderLive" ||
-              (lockFilledFields && hasFilledValue(formWithLockedYear[field.key])) ||
+              (lockFilledFields && hasFileValueForLock(savedFormForLocks, field.key)) ||
               (field.key === "adVettingDate" && adVettingDisabled) ||
               (tcecIsNo && tcecDisabledKeys.includes(field.key)) ||
               (gemIsNo && gemDisabledKeys.includes(field.key)) ||
@@ -1100,6 +1141,8 @@ function AddFileEditor() {
                 applicableMilestones,
                 formWithLockedYear,
               )}
+              lockedCurrentMilestone={editingFile?.currentMilestone ?? ""}
+              lockedCompletedMilestones={savedCompletedMilestonesForLocks}
               disabled={false}
               lockFilledFields={milestonesLocked}
               lockControl={renderSectionUnlockButton("Milestones")}
@@ -1122,6 +1165,7 @@ function AddFileEditor() {
               {activeSection.title === "Firm details" ? (
                 <FirmDetailsBlock
                   details={firmDetails}
+                  lockedDetails={savedFirmDetailsForLocks}
                   disabled={false}
                   lockFilledFields={firmDetailsLocked}
                   quickFocus={Boolean(quickFocus && activeSection.title === "Firm details")}
@@ -1133,7 +1177,9 @@ function AddFileEditor() {
               ) : activeSection.title === "Supply order and payment" ? (
                 <SupplyOrdersBlock
                   form={formWithLockedYear}
+                  lockedForm={savedFormForLocks}
                   orders={supplyOrders}
+                  lockedOrders={savedSupplyOrdersForLocks}
                   disabled={false}
                   lockFilledFields={supplyOrdersLocked}
                   gemDisabled={gemIsNo}
@@ -1142,7 +1188,7 @@ function AddFileEditor() {
                     quickFocus && activeSection.title === "Supply order and payment",
                   )}
                   onCountChange={
-                    supplyOrdersLocked && hasFilledValue(formWithLockedYear.noOfSo)
+                    supplyOrdersLocked && hasFileValueForLock(savedFormForLocks, "noOfSo")
                       ? () => undefined
                       : (value) => update("noOfSo", value)
                   }
@@ -1348,9 +1394,7 @@ function ActiveYearsField({
     <div className="rounded-md border border-border bg-secondary/20 p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-medium text-muted-foreground">Active year</div>
-        {locked ? (
-          <div className="text-xs text-muted-foreground">Locked by admin</div>
-        ) : null}
+        {locked ? <div className="text-xs text-muted-foreground">Locked by admin</div> : null}
       </div>
       <div className="flex flex-wrap gap-2">
         {years.map((year) => (
@@ -1379,6 +1423,7 @@ function ActiveYearsField({
 
 function FirmDetailsBlock({
   details,
+  lockedDetails,
   disabled,
   lockFilledFields,
   quickFocus,
@@ -1388,6 +1433,7 @@ function FirmDetailsBlock({
   onDeleteSelected,
 }: {
   details: FirmDetailsState;
+  lockedDetails: FirmDetailsState;
   disabled: boolean;
   lockFilledFields: boolean;
   quickFocus?: boolean;
@@ -1531,11 +1577,16 @@ function FirmDetailsBlock({
 
       <div className="space-y-3">
         {rows.map((row, index) => {
+          const lockedRow = lockedDetails[activeTab][index];
           const rowHasValue =
-            hasFilledValue(row.firmName) || hasFilledValue(row.city) || hasFilledValue(row.emailId);
-          const firmNameDisabled = disabled || (lockFilledFields && hasFilledValue(row.firmName));
-          const cityDisabled = disabled || (lockFilledFields && hasFilledValue(row.city));
-          const emailDisabled = disabled || (lockFilledFields && hasFilledValue(row.emailId));
+            hasFilledValue(lockedRow?.firmName) ||
+            hasFilledValue(lockedRow?.city) ||
+            hasFilledValue(lockedRow?.emailId);
+          const firmNameDisabled =
+            disabled || (lockFilledFields && hasFilledValue(lockedRow?.firmName));
+          const cityDisabled = disabled || (lockFilledFields && hasFilledValue(lockedRow?.city));
+          const emailDisabled =
+            disabled || (lockFilledFields && hasFilledValue(lockedRow?.emailId));
           const rowActionDisabled = disabled || (lockFilledFields && rowHasValue);
           return (
             <div
@@ -1627,7 +1678,9 @@ function FirmDetailsBlock({
 
 function SupplyOrdersBlock({
   form,
+  lockedForm,
   orders,
+  lockedOrders,
   disabled,
   lockFilledFields,
   gemDisabled,
@@ -1637,7 +1690,9 @@ function SupplyOrdersBlock({
   onOrderChange,
 }: {
   form: FormState;
+  lockedForm: FormState;
   orders: SupplyOrderDetail[];
+  lockedOrders: SupplyOrderDetail[];
   disabled: boolean;
   lockFilledFields: boolean;
   gemDisabled: boolean;
@@ -1691,7 +1746,7 @@ function SupplyOrdersBlock({
       <DynamicField
         field={{ key: "noOfSo", label: "No. of S.O.", type: "number" }}
         value={form.noOfSo}
-        disabled={disabled || (lockFilledFields && hasFilledValue(form.noOfSo))}
+        disabled={disabled || (lockFilledFields && hasFilledValue(lockedForm.noOfSo))}
         onChange={onCountChange}
         inputRef={(element) => {
           orderFieldRefs.current.noOfSo = element;
@@ -1706,6 +1761,7 @@ function SupplyOrdersBlock({
           <div className="grid grid-cols-1 gap-4">
             {supplyOrderFields.map((field) => {
               const key = field.key as SupplyOrderKey;
+              const lockedOrder = lockedOrders[index];
 
               if (field.key === "soValueCapital") {
                 return (
@@ -1717,6 +1773,10 @@ function SupplyOrdersBlock({
                     revenueValue={order.soValueRevenue ?? ""}
                     disabled={disabled}
                     lockFilledFields={lockFilledFields}
+                    lockedValueFilled={
+                      hasFilledValue(lockedOrder?.soValueCapital) ||
+                      hasFilledValue(lockedOrder?.soValueRevenue)
+                    }
                     onChange={(patch) => {
                       if ("soValueCapital" in patch) {
                         onOrderChange(index, "soValueCapital", patch.soValueCapital);
@@ -1736,7 +1796,7 @@ function SupplyOrdersBlock({
                   value={String(order[key] ?? "")}
                   disabled={
                     disabled ||
-                    (lockFilledFields && hasFilledValue(String(order[key] ?? ""))) ||
+                    (lockFilledFields && hasFilledValue(String(lockedOrder?.[key] ?? ""))) ||
                     (gemDisabled && key === "gemSoNo") ||
                     (bgDisabled && supplyOrderBgDisabledKeys.includes(key))
                   }
@@ -1986,6 +2046,8 @@ function MilestonesBlock({
   currentMilestone,
   completedMilestones,
   autoCompletedMilestones,
+  lockedCurrentMilestone,
+  lockedCompletedMilestones,
   disabled,
   lockFilledFields,
   lockControl,
@@ -1997,6 +2059,8 @@ function MilestonesBlock({
   currentMilestone: string;
   completedMilestones: string[];
   autoCompletedMilestones: string[];
+  lockedCurrentMilestone: string;
+  lockedCompletedMilestones: string[];
   disabled: boolean;
   lockFilledFields: boolean;
   lockControl: ReactNode;
@@ -2005,6 +2069,7 @@ function MilestonesBlock({
 }) {
   const completedSet = new Set([...completedMilestones, ...autoCompletedMilestones]);
   const autoCompletedSet = new Set(autoCompletedMilestones);
+  const lockedCompletedSet = new Set(lockedCompletedMilestones);
   const applicableMilestoneList = milestones.filter((milestone) =>
     applicableMilestones.has(milestone),
   );
@@ -2072,9 +2137,13 @@ function MilestonesBlock({
             const isAutoCompleted = autoCompletedSet.has(milestone);
             const isCurrent = currentMilestone === milestone;
             const currentDisabled =
-              disabled || isCompleted || (lockFilledFields && hasFilledValue(currentMilestone));
+              disabled ||
+              isCompleted ||
+              (lockFilledFields && hasFilledValue(lockedCurrentMilestone));
             const completedDisabled =
-              disabled || isAutoCompleted || (lockFilledFields && isCompleted);
+              disabled ||
+              isAutoCompleted ||
+              (lockFilledFields && lockedCompletedSet.has(milestone));
             return (
               <div
                 key={milestone}
@@ -3087,6 +3156,8 @@ function ValueField({
   thresholdMatch,
   disabled,
   lockFilledFields = false,
+  lockedSelectionFilled = false,
+  lockedValueFilled = false,
   onChange,
 }: {
   capitalValue: string;
@@ -3096,6 +3167,8 @@ function ValueField({
   thresholdMatch?: ValueThresholdLevel;
   disabled: boolean;
   lockFilledFields?: boolean;
+  lockedSelectionFilled?: boolean;
+  lockedValueFilled?: boolean;
   onChange: (
     patch: Pick<
       FormState,
@@ -3105,8 +3178,8 @@ function ValueField({
 }) {
   const value = capitalSelected ? capitalValue : revenueSelected ? revenueValue : "";
   const selected = capitalSelected || revenueSelected;
-  const selectionDisabled = disabled || (lockFilledFields && selected);
-  const valueDisabled = disabled || !selected || (lockFilledFields && hasFilledValue(value));
+  const selectionDisabled = disabled || (lockFilledFields && lockedSelectionFilled);
+  const valueDisabled = disabled || !selected || (lockFilledFields && lockedValueFilled);
 
   const updateCapital = (checked: boolean) => {
     onChange({
@@ -3188,6 +3261,7 @@ function SoValueField({
   revenueValue,
   disabled,
   lockFilledFields = false,
+  lockedValueFilled = false,
   onChange,
 }: {
   capitalSelected: boolean;
@@ -3196,11 +3270,12 @@ function SoValueField({
   revenueValue: string;
   disabled: boolean;
   lockFilledFields?: boolean;
+  lockedValueFilled?: boolean;
   onChange: (patch: Pick<FormState, "soValueCapital" | "soValueRevenue">) => void;
 }) {
   const selectedType = capitalSelected ? "Capital" : revenueSelected ? "Revenue" : "";
   const value = capitalSelected ? capitalValue : revenueSelected ? revenueValue : "";
-  const fieldDisabled = disabled || !selectedType || (lockFilledFields && hasFilledValue(value));
+  const fieldDisabled = disabled || !selectedType || (lockFilledFields && lockedValueFilled);
 
   const updateValue = (nextValue: string) => {
     const cleanedValue = formatDecimalInput(nextValue);
@@ -3400,6 +3475,10 @@ function disabledCls(disabled: boolean) {
 
 function hasFilledValue(value: string | undefined) {
   return Boolean(value?.trim());
+}
+
+function hasFileValueForLock(form: FormState, key: FieldKey) {
+  return hasFilledValue(String(form[key] ?? ""));
 }
 
 function getUnfilledFieldKeys(
