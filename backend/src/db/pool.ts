@@ -10,6 +10,9 @@ if (!connectionString) {
 
 export const pool = new Pool({
   connectionString,
+  max: 30,
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
 });
 
 export async function checkDatabaseConnection() {

@@ -269,104 +269,146 @@ export function Dashboard() {
     };
   }, [dashboardSummaryQuery]);
 
-  const localModeCounts = getModeCounts(dashboardFiles);
-  const localManualMilestoneFlow = getManualMilestoneFlow(
-    dashboardFiles,
-    getConfiguredMilestones(settings.milestones),
-  );
+  const needsLocalDashboardFallback = !dashboardSummary;
+  const localModeCounts = needsLocalDashboardFallback ? getModeCounts(dashboardFiles) : undefined;
+  const localManualMilestoneFlow = needsLocalDashboardFallback
+    ? getManualMilestoneFlow(dashboardFiles, getConfiguredMilestones(settings.milestones))
+    : undefined;
   const localVisibleLiveMilestoneNames =
-    selectedLiveMilestones?.filter((name) =>
-      localManualMilestoneFlow.some((milestone) => milestone.name === name),
-    ) ?? localManualMilestoneFlow.map((milestone) => milestone.name);
-  const localLiveStatusRows = getLiveStatusDivisionRows(
-    dashboardFiles,
-    dashboardDivisions,
-    localVisibleLiveMilestoneNames,
-  );
-  const localStatusFlow = getMilestoneFlow(dashboardFiles);
-  const localMiscellaneousCounts = getMiscellaneousCounts(dashboardFiles);
-  const localAnalytics = getAnalyticsSummary(
-    dashboardFiles,
-    dashboardDivisions,
-    settings.valueThresholdLevels,
-  );
-  const localDivisionFilteredAnalytics = getAnalyticsSummary(
-    filteredAnalyticsFiles,
-    filteredAnalyticsDivisions,
-    settings.valueThresholdLevels,
-  );
-  const localFinanceTotals = {
-    allocatedCapital: dashboardDivisions.reduce(
-      (sum, division) => sum + (parseAmount(division.allocatedCapital) ?? 0),
-      0,
-    ),
-    allocatedRevenue: dashboardDivisions.reduce(
-      (sum, division) => sum + (parseAmount(division.allocatedRevenue) ?? 0),
-      0,
-    ),
-    bookedCapital: dashboardFiles.reduce(
-      (sum, file) =>
-        sum +
-        (isCancelledFile(file)
-          ? 0
-          : hasAmount(file.soValueCapital)
-            ? 0
-            : (getInrAmount(file.valueCapital, file) ?? 0)),
-      0,
-    ),
-    bookedRevenue: dashboardFiles.reduce(
-      (sum, file) =>
-        sum +
-        (isCancelledFile(file)
-          ? 0
-          : hasAmount(file.soValueRevenue)
-            ? 0
-            : (getInrAmount(file.valueRevenue, file) ?? 0)),
-      0,
-    ),
-    projectedCapital: dashboardFiles.reduce(
-      (sum, file) =>
-        sum +
-        (!isCancelledFile(file) && !hasFilledField(file, "imms")
-          ? (getInrAmount(file.valueCapital, file) ?? 0)
-          : 0),
-      0,
-    ),
-    projectedRevenue: dashboardFiles.reduce(
-      (sum, file) =>
-        sum +
-        (!isCancelledFile(file) && !hasFilledField(file, "imms")
-          ? (getInrAmount(file.valueRevenue, file) ?? 0)
-          : 0),
-      0,
-    ),
-    spentCapital: dashboardFiles.reduce(
-      (sum, file) =>
-        sum + (isCancelledFile(file) ? 0 : (getInrAmount(file.soValueCapital, file) ?? 0)),
-      0,
-    ),
-    spentRevenue: dashboardFiles.reduce(
-      (sum, file) =>
-        sum + (isCancelledFile(file) ? 0 : (getInrAmount(file.soValueRevenue, file) ?? 0)),
-      0,
-    ),
-  };
+    needsLocalDashboardFallback && localManualMilestoneFlow
+      ? (selectedLiveMilestones?.filter((name) =>
+          localManualMilestoneFlow.some((milestone) => milestone.name === name),
+        ) ?? localManualMilestoneFlow.map((milestone) => milestone.name))
+      : undefined;
+  const localLiveStatusRows =
+    needsLocalDashboardFallback && localVisibleLiveMilestoneNames
+      ? getLiveStatusDivisionRows(
+          dashboardFiles,
+          dashboardDivisions,
+          localVisibleLiveMilestoneNames,
+        )
+      : undefined;
+  const localStatusFlow = needsLocalDashboardFallback ? getMilestoneFlow(dashboardFiles) : undefined;
+  const localMiscellaneousCounts = needsLocalDashboardFallback
+    ? getMiscellaneousCounts(dashboardFiles)
+    : undefined;
+  const localAnalytics = needsLocalDashboardFallback
+    ? getAnalyticsSummary(dashboardFiles, dashboardDivisions, settings.valueThresholdLevels)
+    : undefined;
+  const localDivisionFilteredAnalytics = needsLocalDashboardFallback
+    ? getAnalyticsSummary(
+        filteredAnalyticsFiles,
+        filteredAnalyticsDivisions,
+        settings.valueThresholdLevels,
+      )
+    : undefined;
+  const localFinanceTotals = needsLocalDashboardFallback
+    ? {
+        allocatedCapital: dashboardDivisions.reduce(
+          (sum, division) => sum + (parseAmount(division.allocatedCapital) ?? 0),
+          0,
+        ),
+        allocatedRevenue: dashboardDivisions.reduce(
+          (sum, division) => sum + (parseAmount(division.allocatedRevenue) ?? 0),
+          0,
+        ),
+        bookedCapital: dashboardFiles.reduce(
+          (sum, file) =>
+            sum +
+            (isCancelledFile(file)
+              ? 0
+              : hasAmount(file.soValueCapital)
+                ? 0
+                : (getInrAmount(file.valueCapital, file) ?? 0)),
+          0,
+        ),
+        bookedRevenue: dashboardFiles.reduce(
+          (sum, file) =>
+            sum +
+            (isCancelledFile(file)
+              ? 0
+              : hasAmount(file.soValueRevenue)
+                ? 0
+                : (getInrAmount(file.valueRevenue, file) ?? 0)),
+          0,
+        ),
+        projectedCapital: dashboardFiles.reduce(
+          (sum, file) =>
+            sum +
+            (!isCancelledFile(file) && !hasFilledField(file, "imms")
+              ? (getInrAmount(file.valueCapital, file) ?? 0)
+              : 0),
+          0,
+        ),
+        projectedRevenue: dashboardFiles.reduce(
+          (sum, file) =>
+            sum +
+            (!isCancelledFile(file) && !hasFilledField(file, "imms")
+              ? (getInrAmount(file.valueRevenue, file) ?? 0)
+              : 0),
+          0,
+        ),
+        spentCapital: dashboardFiles.reduce(
+          (sum, file) =>
+            sum + (isCancelledFile(file) ? 0 : (getInrAmount(file.soValueCapital, file) ?? 0)),
+          0,
+        ),
+        spentRevenue: dashboardFiles.reduce(
+          (sum, file) =>
+            sum + (isCancelledFile(file) ? 0 : (getInrAmount(file.soValueRevenue, file) ?? 0)),
+          0,
+        ),
+      }
+    : undefined;
   const dashboardFileCount = dashboardSummary?.dashboardFileCount ?? dashboardFiles.length;
   const dashboardDivisionsForView = dashboardSummary?.dashboardDivisions ?? dashboardDivisions;
-  const modeCounts = dashboardSummary?.modeCounts ?? localModeCounts;
-  const fileTypeCounts = dashboardSummary?.fileTypeCounts ?? getFileTypeCounts(dashboardFiles);
+  const modeCounts = dashboardSummary?.modeCounts ?? localModeCounts ?? [];
+  const fileTypeCounts =
+    dashboardSummary?.fileTypeCounts ??
+    (needsLocalDashboardFallback ? getFileTypeCounts(dashboardFiles) : []);
   const topSummaryStats =
-    dashboardSummary?.topSummaryStats ?? getAttributeSummaryStats(dashboardFiles);
+    dashboardSummary?.topSummaryStats ??
+    (needsLocalDashboardFallback ? getAttributeSummaryStats(dashboardFiles) : []);
   const manualMilestoneFlow = dashboardSummary?.manualMilestoneFlow ?? localManualMilestoneFlow;
   const visibleLiveMilestoneNames =
-    dashboardSummary?.visibleLiveMilestoneNames ?? localVisibleLiveMilestoneNames;
-  const liveStatusRows = dashboardSummary?.liveStatusRows ?? localLiveStatusRows;
-  const statusFlow = dashboardSummary?.statusFlow ?? localStatusFlow;
-  const miscellaneousCounts = dashboardSummary?.miscellaneousCounts ?? localMiscellaneousCounts;
-  const analytics = dashboardSummary?.analytics ?? localAnalytics;
+    dashboardSummary?.visibleLiveMilestoneNames ?? localVisibleLiveMilestoneNames ?? [];
+  const liveStatusRows = dashboardSummary?.liveStatusRows ?? localLiveStatusRows ?? [];
+  const statusFlow = dashboardSummary?.statusFlow ?? localStatusFlow ?? [];
+  const miscellaneousCounts = dashboardSummary?.miscellaneousCounts ??
+    localMiscellaneousCounts ?? {
+      ld: 0,
+      demandCancelled: 0,
+      soCancelled: 0,
+      multipleSupplyOrders: 0,
+    };
+  const analytics = dashboardSummary?.analytics ??
+    localAnalytics ?? {
+      divisionFileRanking: [],
+      divisionValueRanking: [],
+      divisionTurnaroundRanking: [],
+      topFirmSupplyOrders: [],
+      topIndentorsByFiles: [],
+      topIndentorsByValue: [],
+      milestoneClearingRanking: [],
+      monthlyFileInflow: [],
+      biddingModeMix: [],
+      fileValueThresholds: [],
+      divisionRiskRanking: [],
+      divisionPaymentPendingRanking: [],
+    };
   const divisionFilteredAnalytics =
-    dashboardSummary?.divisionFilteredAnalytics ?? localDivisionFilteredAnalytics;
-  const financeTotals = dashboardSummary?.financeTotals ?? localFinanceTotals;
+    dashboardSummary?.divisionFilteredAnalytics ?? localDivisionFilteredAnalytics ?? analytics;
+  const financeTotals = dashboardSummary?.financeTotals ??
+    localFinanceTotals ?? {
+      allocatedCapital: 0,
+      allocatedRevenue: 0,
+      bookedCapital: 0,
+      bookedRevenue: 0,
+      projectedCapital: 0,
+      projectedRevenue: 0,
+      spentCapital: 0,
+      spentRevenue: 0,
+    };
   const statusPageExportTitle =
     activeUser?.role === "admin"
       ? "ASL Buildup"

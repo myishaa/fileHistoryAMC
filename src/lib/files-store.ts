@@ -52,6 +52,7 @@ export type FileRecord = {
   rfpVettingInitiationDate?: string;
   rfpVettingApprovalDate?: string;
   tenderLive?: string;
+  bidNumber?: string;
   bidDate?: string;
   bidOpeningDate?: string;
   bidOpened?: string;
@@ -310,6 +311,13 @@ function divisionsPath(year?: string, includeInactive = false) {
   return query ? `/api/divisions?${query}` : "/api/divisions";
 }
 
+function filesPath(year?: string) {
+  const params = new URLSearchParams();
+  if (year) params.set("year", year);
+  const query = params.toString();
+  return query ? `/api/files?${query}` : "/api/files";
+}
+
 async function loadAll(force = false) {
   if (typeof window === "undefined") return;
   if (loadPromise && !force) return loadPromise;
@@ -344,7 +352,7 @@ async function loadAll(force = false) {
 
       const settings = await request<{ settings: AppSettings }>("/api/settings");
       const baseRequests = [
-        request<{ files: FileRecord[] }>("/api/files"),
+        request<{ files: FileRecord[] }>(filesPath(settings.settings.selectedYear)),
         request<{ divisions: Division[] }>(divisionsPath(settings.settings.selectedYear)),
         request<{ indentors: Indentor[] }>("/api/indentors"),
       ] as const;

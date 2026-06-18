@@ -91,6 +91,7 @@ create table files (
   rfp_vetting_initiation_date date,
   rfp_vetting_approval_date date,
   tender_live text,
+  bid_number text,
   bid_date date,
   bid_opening_date date,
   bid_opened text,

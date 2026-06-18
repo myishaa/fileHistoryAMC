@@ -225,6 +225,7 @@ const fieldSections: { title: string; fields: FieldDef[] }[] = [
       { key: "rfpVettingInitiationDate", label: "RFP vetting initiation", type: "date" },
       { key: "rfpVettingApprovalDate", label: "RFP vetting approval", type: "date" },
       { key: "tenderLive", label: "Tender Live (Yes/No)", options: yesNo },
+      { key: "bidNumber", label: "Bid number" },
       { key: "bidDate", label: "Bid date", type: "date" },
       { key: "bidOpeningDate", label: "Bid opening Date", type: "date" },
       { key: "bidOpened", label: "Bid opened (YES/NO)", options: yesNoCaps },
@@ -381,7 +382,12 @@ async function fetchBackendSearchResults(query: string, signal: AbortSignal) {
     const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
     throw new Error(body?.error ?? `Search request failed: ${response.status}`);
   }
-  return (await response.json()) as { files: FileRecord[]; total: number };
+  return (await response.json()) as {
+    files: FileRecord[];
+    total: number;
+    page: number;
+    pageSize: number;
+  };
 }
 
 function SearchPage() {
@@ -435,6 +441,9 @@ function SearchPage() {
   );
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const [backendResults, setBackendResults] = useState<FileRecord[]>([]);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasLoadedSearchResults, setHasLoadedSearchResults] = useState(false);
   const [searchError, setSearchError] = useState<string | undefined>();
@@ -522,7 +531,7 @@ function SearchPage() {
     search.dashboardFilter ||
     search.analyticsNames;
 
-  const searchQuery = useMemo(() => {
+  const searchFilterQuery = useMemo(() => {
     const params = new URLSearchParams();
 
     appendSearchParam(params, "yearFilter", yearFilter);
@@ -603,6 +612,17 @@ function SearchPage() {
   ]);
 
   useEffect(() => {
+    setPage(1);
+  }, [searchFilterQuery]);
+
+  const searchQuery = useMemo(() => {
+    const params = new URLSearchParams(searchFilterQuery);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    return params.toString();
+  }, [page, pageSize, searchFilterQuery]);
+
+  useEffect(() => {
     const controller = new AbortController();
     const delay = hasLoadedSearchResultsRef.current ? 180 : 0;
     const timeoutId = window.setTimeout(() => {
@@ -611,6 +631,9 @@ function SearchPage() {
       fetchBackendSearchResults(searchQuery, controller.signal)
         .then((payload) => {
           setBackendResults(payload.files);
+          setSearchTotal(payload.total);
+          if (payload.page !== page) setPage(payload.page);
+          if (payload.pageSize !== pageSize) setPageSize(payload.pageSize);
           setHasLoadedSearchResults(true);
           hasLoadedSearchResultsRef.current = true;
           setSelectedFileIds((current) =>
@@ -634,6 +657,10 @@ function SearchPage() {
   }, [searchQuery]);
 
   const results = backendResults;
+  const totalPages = Math.max(1, Math.ceil(searchTotal / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const firstResultNumber = searchTotal === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const lastResultNumber = Math.min(searchTotal, (currentPage - 1) * pageSize + results.length);
 
   const valueTotals = useMemo(() => getValueTotals(results), [results]);
   const allValueTotals = useMemo(() => getValueTotals(files), [files]);
@@ -954,8 +981,14 @@ function SearchPage() {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <span className="inline-flex items-center gap-1.5">
                 <Filter className="size-3.5" />
-                <span className="font-medium text-foreground">{results.length}</span> result
-                {results.length !== 1 && "s"}
+                <span className="font-medium text-foreground">{searchTotal}</span> result
+                {searchTotal !== 1 && "s"}
+              </span>
+              <span>
+                Showing{" "}
+                <span className="font-medium text-foreground">
+                  {firstResultNumber}-{lastResultNumber}
+                </span>
               </span>
               <span>
                 Capital INR:{" "}
@@ -1065,6 +1098,46 @@ function SearchPage() {
               >
                 <SlidersHorizontal className="size-3.5" /> Table fields
               </button>
+              <label className="inline-flex items-center gap-2">
+                <span>Rows</span>
+                <select
+                  value={pageSize}
+                  onChange={(event) => {
+                    setPageSize(Number(event.target.value));
+                    setPage(1);
+                  }}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"
+                >
+                  {[50, 100, 200, 500].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="inline-flex h-8 overflow-hidden rounded-md border border-border bg-card">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={currentPage <= 1 || searchLoading}
+                  className="px-2.5 text-xs font-medium text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-card"
+                >
+                  Previous
+                </button>
+                <div className="flex items-center border-x border-border px-2.5 text-xs text-muted-foreground">
+                  Page <span className="ml-1 font-medium text-foreground">{currentPage}</span>
+                  <span className="mx-1">of</span>
+                  <span className="font-medium text-foreground">{totalPages}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={currentPage >= totalPages || searchLoading}
+                  className="px-2.5 text-xs font-medium text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-card"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
 

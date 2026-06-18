@@ -126,6 +126,7 @@ const searchableFileKeys = [
   "rfpVettingInitiationDate",
   "rfpVettingApprovalDate",
   "tenderLive",
+  "bidNumber",
   "bidDate",
   "bidOpeningDate",
   "bidOpened",

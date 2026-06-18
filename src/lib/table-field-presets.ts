@@ -48,6 +48,7 @@ export const tableFieldPresetGroups: TableFieldPresetGroup[] = [
       { key: "cfaSentDate", label: "CFA sent date" },
       { key: "cfaDate", label: "CFA approval date" },
       { key: "tenderLive", label: "Tender Live (Yes/No)" },
+      { key: "bidNumber", label: "Bid number" },
       { key: "bidDate", label: "Bid date" },
       { key: "bidOpeningDate", label: "Bid opening Date" },
       { key: "biddingStageOver", label: "Bidding stage over" },

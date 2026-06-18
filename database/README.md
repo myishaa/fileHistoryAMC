@@ -18,6 +18,8 @@ psql "$DATABASE_URL" -f database/010_table_field_preset_owner_keys.sql
 psql "$DATABASE_URL" -f database/011_value_threshold_levels.sql
 psql "$DATABASE_URL" -f database/012_year_selection_lock.sql
 psql "$DATABASE_URL" -f database/013_indentors.sql
+psql "$DATABASE_URL" -f database/014_bid_number.sql
+psql "$DATABASE_URL" -f database/015_search_indexes.sql
 ```
 
 The backend will read the same `DATABASE_URL` from `backend/.env`.

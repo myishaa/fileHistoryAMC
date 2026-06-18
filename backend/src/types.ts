@@ -156,6 +156,7 @@ export type FileRecord = {
   rfpVettingInitiationDate?: string;
   rfpVettingApprovalDate?: string;
   tenderLive?: string;
+  bidNumber?: string;
   bidDate?: string;
   bidOpeningDate?: string;
   bidOpened?: string;

@@ -71,6 +71,7 @@ const fileFields = {
   rfpVettingInitiationDate: ["rfp_vetting_initiation_date", "date"],
   rfpVettingApprovalDate: ["rfp_vetting_approval_date", "date"],
   tenderLive: ["tender_live", "text"],
+  bidNumber: ["bid_number", "text"],
   bidDate: ["bid_date", "date"],
   bidOpeningDate: ["bid_opening_date", "date"],
   bidOpened: ["bid_opened", "text"],
@@ -110,6 +111,16 @@ const fileFields = {
   soCancelledDate: ["so_cancelled_date", "date"],
   currentMilestone: ["current_milestone", "text"],
 } as const satisfies Record<string, readonly [string, ValueKind]>;
+
+type SearchSql = {
+  whereSql: string;
+  values: unknown[];
+  orderSql: string;
+  limit: number;
+  offset: number;
+  page: number;
+  pageSize: number;
+};
 
 const supplyOrderFields = {
   soNo: ["so_no", "text"],
@@ -331,6 +342,35 @@ export async function loadFiles(whereSql = "", values: unknown[] = [], includeAr
   return result.rows.map((row) => mapFile(row, children));
 }
 
+async function loadSearchFiles(searchSql: SearchSql) {
+  const countResult = await pool.query<{ total: string }>(
+    `select count(*)::text as total
+     from files f
+     left join divisions d on d.id = f.division_id
+     ${combineWhere(searchSql.whereSql, false)}`,
+    searchSql.values,
+  );
+
+  const resultValues = [...searchSql.values, searchSql.limit, searchSql.offset];
+  const limitPlaceholder = `$${searchSql.values.length + 1}`;
+  const offsetPlaceholder = `$${searchSql.values.length + 2}`;
+  const result = await pool.query<FileRow>(
+    `select f.*, d.name as division
+     from files f
+     left join divisions d on d.id = f.division_id
+     ${combineWhere(searchSql.whereSql, false)}
+     ${searchSql.orderSql}
+     limit ${limitPlaceholder}
+     offset ${offsetPlaceholder}`,
+    resultValues,
+  );
+  const children = await loadChildren(result.rows.map((row) => row.id));
+  return {
+    files: result.rows.map((row) => mapFile(row, children)),
+    total: Number(countResult.rows[0]?.total ?? 0),
+  };
+}
+
 function readQueryString(value: unknown) {
   return typeof value === "string" ? value : undefined;
 }
@@ -403,6 +443,596 @@ function readSearchParams(query: Record<string, unknown>): FileSearchParams {
     sortColumnKey: readQueryString(query.sortColumnKey),
     sortDirection: readQueryString(query.sortDirection) === "desc" ? "desc" : "asc",
     divisionWiseSort: readQueryBoolean(query.divisionWiseSort),
+  };
+}
+
+function readPositiveInteger(value: unknown, fallback: number, max: number) {
+  const parsed = typeof value === "string" ? Number.parseInt(value, 10) : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
+function isYesSql(expression: string) {
+  return `lower(coalesce(${expression}, '')) in ('yes', 'y')`;
+}
+
+function isNoSql(expression: string) {
+  return `lower(coalesce(${expression}, '')) = 'no'`;
+}
+
+function hasTextSql(expression: string) {
+  return `coalesce(${expression}::text, '') <> ''`;
+}
+
+function normalizedSql(expression: string) {
+  return `regexp_replace(lower(coalesce(${expression}, '')), '[^a-z0-9]+', '', 'g')`;
+}
+
+function sqlLike(query: string) {
+  return `%${query.trim().toLowerCase()}%`;
+}
+
+function isValidDate(value: string | undefined) {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function parseSearchAmount(value: string | undefined) {
+  const cleaned = (value ?? "").replace(/,/g, "").trim();
+  if (!cleaned) return undefined;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function addSqlValue(values: unknown[], value: unknown) {
+  values.push(value);
+  return `$${values.length}`;
+}
+
+function supplyOrderExists(condition: string) {
+  return `exists (select 1 from supply_orders so where so.file_id = f.id and ${condition})`;
+}
+
+function completedMilestoneExists(condition: string) {
+  return `exists (
+    select 1 from file_completed_milestones completed
+    where completed.file_id = f.id and ${condition}
+  )`;
+}
+
+function supplyOrderTextExpression(column: string) {
+  return `(select string_agg(coalesce(so.${column}::text, ''), ' ' order by so.sort_order, so.id)
+    from supply_orders so
+    where so.file_id = f.id)`;
+}
+
+const fileSearchColumns = {
+  title: "f.title",
+  division: "d.name",
+  officer: "f.officer",
+  imms: "f.imms",
+  date: "f.file_date",
+  year: "f.year",
+  uniqueCode: "f.unique_code",
+  receivedDate: "f.received_date",
+  scrutinyDate: "f.scrutiny_date",
+  scrutinyResponseDate: "f.scrutiny_response_date",
+  scrutinyCompletionDate: "f.scrutiny_completion_date",
+  immsDate: "f.imms_date",
+  fileNo: "f.file_no",
+  indentor: "f.indentor",
+  demandDescription: "f.demand_description",
+  valueCapital: "f.value_capital",
+  valueRevenue: "f.value_revenue",
+  currency: "f.currency",
+  exchangeRate: "f.exchange_rate",
+  gte: "f.gte",
+  fileType: "f.file_type",
+  tcec: "f.tcec",
+  mode: "f.mode",
+  gem: "f.gem",
+  highValue: "f.high_value",
+  ad: "f.ad",
+  rqa: "f.rqa",
+  ifa: "f.ifa",
+  psb: "f.psb",
+  bg: "f.bg",
+  rfpVetting: "f.rfp_vetting",
+  highValueMeetingDate: "f.high_value_meeting_date",
+  highValueMinutesDate: "f.high_value_minutes_date",
+  preTcecDate: "f.pre_tcec_date",
+  preTcecMinutesDate: "f.pre_tcec_minutes_date",
+  preTcecCommitteeNo: "f.pre_tcec_committee_no",
+  adVettingDate: "f.ad_vetting_date",
+  rqaApprovalDate: "f.rqa_approval_date",
+  ifaSentDate: "f.ifa_sent_date",
+  ifaFinalDate: "f.ifa_final_date",
+  cfaSentDate: "f.cfa_sent_date",
+  cfaDate: "f.cfa_date",
+  gemUndertakingDate: "f.gem_undertaking_date",
+  rfpVettingInitiationDate: "f.rfp_vetting_initiation_date",
+  rfpVettingApprovalDate: "f.rfp_vetting_approval_date",
+  tenderLive: "f.tender_live",
+  bidNumber: "f.bid_number",
+  bidDate: "f.bid_date",
+  bidOpeningDate: "f.bid_opening_date",
+  bidOpened: "f.bid_opened",
+  refloat: "f.refloat",
+  postTcecDate: "f.post_tcec_date",
+  postTcecMinutesDate: "f.post_tcec_minutes_date",
+  postTcecCommitteeNumber: "f.post_tcec_committee_number",
+  refloatBiddingDate: "f.refloat_bidding_date",
+  refloatBidOpeningDate: "f.refloat_bid_opening_date",
+  refloatPostTcecDate: "f.refloat_post_tcec_date",
+  refloatPostTcecMinutesDate: "f.refloat_post_tcec_minutes_date",
+  refloatPostTcecCommitteeNo: "f.refloat_post_tcec_committee_no",
+  rst: "f.rst",
+  biddingStageOver: "f.bidding_stage_over",
+  cncDate: "f.cnc_date",
+  cncApprovalDate: "f.cnc_approval_date",
+  noOfSo: "f.no_of_so",
+  soNo: "f.so_no",
+  gemSoNo: "f.gem_so_no",
+  soDate: "f.so_date",
+  soValueCapital: "f.so_value_capital",
+  soValueRevenue: "f.so_value_revenue",
+  dpDate: "f.dp_date",
+  firm: "f.firm",
+  bgValidityDate: "f.bg_validity_date",
+  dpExtension: "f.dp_extension",
+  dpExtensionCount: "f.dp_extension_count",
+  ld: "f.ld",
+  revisedDp: "f.revised_dp",
+  materialReceiptDate: "f.material_receipt_date",
+  billSentForPaymentDate: "f.bill_sent_for_payment_date",
+  paymentDate: "f.payment_date",
+  paymentMode: "f.payment_mode",
+  bgReturnDate: "f.bg_return_date",
+  demandCancelled: "f.demand_cancelled",
+  soCancelled: "f.so_cancelled",
+  soCancelledDate: "f.so_cancelled_date",
+  currentMilestone: "f.current_milestone",
+} as const;
+
+const supplyOrderSearchColumns = {
+  soNo: "so_no",
+  gemSoNo: "gem_so_no",
+  soDate: "so_date",
+  soValueCapital: "so_value_capital",
+  soValueRevenue: "so_value_revenue",
+  dpDate: "dp_date",
+  firm: "firm",
+  bgValidityDate: "bg_validity_date",
+  dpExtension: "dp_extension",
+  dpExtensionCount: "dp_extension_count",
+  ld: "ld",
+  revisedDp: "revised_dp",
+  materialReceiptDate: "material_receipt_date",
+  billSentForPaymentDate: "bill_sent_for_payment_date",
+  paymentDate: "payment_date",
+  paymentMode: "payment_mode",
+  bgReturnDate: "bg_return_date",
+  demandCancelled: "demand_cancelled",
+  soCancelled: "so_cancelled",
+  soCancelledDate: "so_cancelled_date",
+} as const;
+
+const dateSearchColumns = [
+  "f.file_date",
+  "f.received_date",
+  "f.scrutiny_date",
+  "f.scrutiny_response_date",
+  "f.scrutiny_completion_date",
+  "f.imms_date",
+  "f.high_value_meeting_date",
+  "f.high_value_minutes_date",
+  "f.pre_tcec_date",
+  "f.pre_tcec_minutes_date",
+  "f.ad_vetting_date",
+  "f.rqa_approval_date",
+  "f.ifa_sent_date",
+  "f.ifa_final_date",
+  "f.cfa_sent_date",
+  "f.cfa_date",
+  "f.gem_undertaking_date",
+  "f.rfp_vetting_initiation_date",
+  "f.rfp_vetting_approval_date",
+  "f.bid_date",
+  "f.bid_opening_date",
+  "f.post_tcec_date",
+  "f.post_tcec_minutes_date",
+  "f.refloat_bidding_date",
+  "f.refloat_bid_opening_date",
+  "f.refloat_post_tcec_date",
+  "f.refloat_post_tcec_minutes_date",
+  "f.cnc_date",
+  "f.cnc_approval_date",
+  "f.so_date",
+  "f.dp_date",
+  "f.bg_validity_date",
+  "f.revised_dp",
+  "f.material_receipt_date",
+  "f.bill_sent_for_payment_date",
+  "f.payment_date",
+  "f.bg_return_date",
+  "f.so_cancelled_date",
+];
+
+function fileHasAny(keys: Array<keyof typeof fileSearchColumns>) {
+  return `(${keys.map((key) => hasTextSql(fileSearchColumns[key])).join(" or ")})`;
+}
+
+function anySupplyOrderDate(field: keyof typeof supplyOrderSearchColumns) {
+  return supplyOrderExists(hasTextSql(`so.${supplyOrderSearchColumns[field]}`));
+}
+
+function legacyOrSupplyDate(field: keyof typeof supplyOrderSearchColumns) {
+  return `(${hasTextSql(fileSearchColumns[field as keyof typeof fileSearchColumns])} or ${anySupplyOrderDate(field)})`;
+}
+
+function isCancelledFileSql() {
+  return `(${isYesSql("f.demand_cancelled")} or ${isYesSql("f.so_cancelled")} or ${supplyOrderExists(
+    `${isYesSql("so.demand_cancelled")} or ${isYesSql("so.so_cancelled")}`,
+  )})`;
+}
+
+function supplyOrderPlacedSql() {
+  return legacyOrSupplyDate("soDate");
+}
+
+function deliveryDueOrderSql(extra = "true") {
+  return supplyOrderExists(
+    `${hasTextSql("so.so_date")} and not ${hasTextSql("so.material_receipt_date")} and not ${isYesSql(
+      "so.so_cancelled",
+    )} and ${extra}`,
+  );
+}
+
+function dashboardFilterSql(filter: string, values: unknown[]) {
+  const today = "current_date";
+  if (filter.startsWith("delayFile:")) {
+    const placeholder = addSqlValue(values, filter.slice("delayFile:".length));
+    return `f.id = ${placeholder}`;
+  }
+  if (filter.startsWith("attribute:")) {
+    const [, key, value] = filter.split(":");
+    const column = fileSearchColumns[key as keyof typeof fileSearchColumns];
+    if (!column) return "true";
+    if (value === "yes") return isYesSql(column);
+    if (value === "no") return isNoSql(column);
+    return "true";
+  }
+  if (filter.startsWith("mode:")) {
+    const placeholder = addSqlValue(values, filter.slice(5).trim().toUpperCase());
+    return `upper(trim(coalesce(f.mode, ''))) = ${placeholder}`;
+  }
+  if (filter.startsWith("fileType:")) {
+    const placeholder = addSqlValue(values, filter.slice(9).trim());
+    return `trim(coalesce(f.file_type, '')) = ${placeholder}`;
+  }
+  if (filter.startsWith("manualMilestoneCurrent:")) {
+    const placeholder = addSqlValue(values, filter.slice("manualMilestoneCurrent:".length));
+    return `not ${isCancelledFileSql()} and f.current_milestone = ${placeholder}`;
+  }
+  if (filter.startsWith("manualMilestoneCompleted:")) {
+    const placeholder = addSqlValue(values, filter.slice("manualMilestoneCompleted:".length));
+    return completedMilestoneExists(`completed.milestone = ${placeholder}`);
+  }
+  if (filter === "totalFiles") return "true";
+  if (filter === "demandsControlled") return hasTextSql("f.imms");
+  if (filter === "tcecFiles") return isYesSql("f.tcec");
+  if (filter === "nonTcecFiles") return isNoSql("f.tcec");
+  if (filter === "highValueFiles") return isYesSql("f.high_value");
+  if (filter === "adYes") return isYesSql("f.ad");
+  if (filter === "rqaVetting") return isYesSql("f.rqa");
+  if (filter === "ifaConcurrence") return isYesSql("f.ifa");
+  if (filter === "liveBids") return isYesSql("f.tender_live");
+  if (filter === "bidOverdue")
+    return `${isNoSql("f.bid_opened")} and (f.bid_opening_date < ${today} or f.refloat_bid_opening_date < ${today})`;
+  if (filter === "supplyOrders") return supplyOrderPlacedSql();
+  if (filter === "liveSupplyOrders") return deliveryDueOrderSql();
+  if (filter === "bgToBeReceived")
+    return `${isYesSql("f.bg")} and ${supplyOrderPlacedSql()} and not (${legacyOrSupplyDate(
+      "bgValidityDate",
+    )})`;
+  if (filter === "bgToBeReturned")
+    return supplyOrderExists(
+      `${isYesSql("f.bg")} and ${hasTextSql("so.bg_validity_date")} and so.bg_validity_date < ${today} and not ${hasTextSql(
+        "so.bg_return_date",
+      )}`,
+    );
+  if (filter === "dpExtension") return isYesSql("f.dp_extension");
+  if (filter === "dpExpired")
+    return supplyOrderExists(`so.dp_date < ${today} and not ${hasTextSql("so.revised_dp")}`);
+  if (filter === "deliveryOverdue")
+    return `${supplyOrderPlacedSql()} and ${deliveryDueOrderSql(
+      "coalesce(so.revised_dp, so.dp_date) < current_date",
+    )}`;
+  if (filter === "deliveryDueToday")
+    return `${supplyOrderPlacedSql()} and ${deliveryDueOrderSql(
+      "coalesce(so.revised_dp, so.dp_date) = current_date",
+    )}`;
+  if (filter === "deliveryUpcoming")
+    return `${supplyOrderPlacedSql()} and ${deliveryDueOrderSql(
+      "coalesce(so.revised_dp, so.dp_date) > current_date",
+    )}`;
+  if (filter === "deliveryCompleted")
+    return `${supplyOrderPlacedSql()} and ${supplyOrderExists(
+      `${hasTextSql("so.so_date")} and ${hasTextSql("so.material_receipt_date")}`,
+    )}`;
+  if (filter === "deliveryDeliveredLate")
+    return `${supplyOrderPlacedSql()} and ${supplyOrderExists(
+      `${hasTextSql("so.so_date")} and ${hasTextSql("so.material_receipt_date")} and coalesce(so.revised_dp, so.dp_date) is not null and so.material_receipt_date > coalesce(so.revised_dp, so.dp_date)`,
+    )}`;
+  if (filter === "deliveryDue")
+    return `not ${isCancelledFileSql()} and ${supplyOrderPlacedSql()} and ${deliveryDueOrderSql()}`;
+  if (filter === "deliveryPeriodValid")
+    return `${supplyOrderPlacedSql()} and ${supplyOrderExists(
+      `${hasTextSql("so.so_date")} and not ${hasTextSql("so.revised_dp")} and so.dp_date > current_date and not ${hasTextSql(
+        "so.material_receipt_date",
+      )}`,
+    )}`;
+  if (filter === "deliveryPeriodExpired")
+    return `not ${isCancelledFileSql()} and ${supplyOrderPlacedSql()} and ${supplyOrderExists(
+      `${hasTextSql("so.so_date")} and coalesce(so.revised_dp, so.dp_date) is not null and coalesce(so.revised_dp, so.dp_date) < current_date and not ${hasTextSql(
+        "so.material_receipt_date",
+      )}`,
+    )}`;
+  if (filter === "deliveryPeriodExtended")
+    return `${supplyOrderPlacedSql()} and ${supplyOrderExists(
+      `${hasTextSql("so.so_date")} and ${hasTextSql("so.revised_dp")} and so.revised_dp > current_date and not ${hasTextSql(
+        "so.material_receipt_date",
+      )}`,
+    )}`;
+  if (filter === "paymentDue")
+    return supplyOrderExists(`${hasTextSql("so.material_receipt_date")} and not ${hasTextSql("so.payment_date")}`);
+  if (filter === "miscLd") return supplyOrderExists(isYesSql("so.ld"));
+  if (filter === "miscDemandCancelled") return supplyOrderExists(isYesSql("so.demand_cancelled"));
+  if (filter === "miscSoCancelled") return supplyOrderExists(isYesSql("so.so_cancelled"));
+  if (filter === "miscMultipleSupplyOrders")
+    return `(select count(*) from supply_orders so where so.file_id = f.id) > 1`;
+  if (filter === "scrutinyCompleted") return hasTextSql("f.scrutiny_completion_date");
+  if (filter === "scrutinyUnderProgress") return `not ${hasTextSql("f.scrutiny_date")}`;
+  if (filter === "preTcecCompleted")
+    return `${isYesSql("f.tcec")} and ${hasTextSql("f.pre_tcec_minutes_date")}`;
+  if (filter === "preTcecRemaining")
+    return `${isYesSql("f.tcec")} and not ${hasTextSql("f.pre_tcec_minutes_date")}`;
+  if (filter === "highValueCompleted") return hasTextSql("f.high_value_minutes_date");
+  if (filter === "highValueRemaining") return hasTextSql("f.high_value_meeting_date");
+  if (filter === "adCompleted") return hasTextSql("f.ad_vetting_date");
+  if (filter === "adRemaining")
+    return `${hasTextSql("f.pre_tcec_date")} and not ${hasTextSql("f.ad_vetting_date")}`;
+  if (filter === "rqaCompleted") return hasTextSql("f.rqa_approval_date");
+  if (filter === "rqaRemaining")
+    return `${isYesSql("f.rqa")} and not ${hasTextSql("f.rqa_approval_date")}`;
+  if (filter === "ifaCompleted") return hasTextSql("f.ifa_final_date");
+  if (filter === "ifaRemaining") return hasTextSql("f.ifa_sent_date");
+  if (filter === "cfaCompleted") return hasTextSql("f.cfa_date");
+  if (filter === "soCompleted") return hasTextSql("f.so_no");
+  if (filter === "soRemaining") return `not ${hasTextSql("f.so_no")}`;
+  return "true";
+}
+
+function getSortSql(sortColumnKey: string | undefined, direction: "asc" | "desc") {
+  const dir = direction === "desc" ? "desc" : "asc";
+  if (!sortColumnKey || sortColumnKey === "none") return "";
+  if (sortColumnKey === "division") return `lower(coalesce(d.name, '')) ${dir}`;
+  if (sortColumnKey === "noOfSo") {
+    return `(select count(*) from supply_orders so where so.file_id = f.id and ${hasTextSql(
+      "so.so_date",
+    )}) ${dir}`;
+  }
+  if (sortColumnKey === "invitedFirms" || sortColumnKey === "bidderFirms") {
+    const type = sortColumnKey === "invitedFirms" ? "invited" : "bidder";
+    return `(select count(*) from file_firms ff where ff.file_id = f.id and ff.firm_type = '${type}' and (${hasTextSql(
+      "ff.firm_name",
+    )} or ${hasTextSql("ff.city")} or ${hasTextSql("ff.email_id")})) ${dir}`;
+  }
+  const supplyColumn = supplyOrderSearchColumns[sortColumnKey as keyof typeof supplyOrderSearchColumns];
+  if (supplyColumn) return `lower(coalesce(${supplyOrderTextExpression(supplyColumn)}, '')) ${dir}`;
+  const column = fileSearchColumns[sortColumnKey as keyof typeof fileSearchColumns];
+  if (!column) return "";
+  return `lower(coalesce(${column}::text, '')) ${dir}`;
+}
+
+function buildSearchSql(
+  baseConditions: string[],
+  baseValues: unknown[],
+  params: FileSearchParams,
+  query: Record<string, unknown>,
+): SearchSql {
+  const conditions = [...baseConditions];
+  const values = [...baseValues];
+  const selectedModes = params.selectedModes ?? [];
+  const selectedFileTypes = params.selectedFileTypes ?? [];
+  const page = readPositiveInteger(query.page, 1, 1_000_000);
+  const pageSize = readPositiveInteger(query.pageSize, 100, 500);
+  const limit = pageSize;
+  const offset = (page - 1) * pageSize;
+
+  if (params.yearFilter?.trim()) {
+    const placeholder = addSqlValue(values, sqlLike(params.yearFilter));
+    conditions.push(`lower(coalesce(f.year, '')) like ${placeholder}`);
+  }
+  if (params.dashboardFilter?.trim()) {
+    conditions.push(`(${dashboardFilterSql(params.dashboardFilter.trim(), values)})`);
+  }
+  const analyticsNames = (params.analyticsNames ?? []).map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (analyticsNames.length && params.analyticsType === "indentor") {
+    const placeholder = addSqlValue(values, analyticsNames);
+    conditions.push(`lower(coalesce(nullif(trim(f.indentor), ''), 'Unassigned indentor')) = any(${placeholder}::text[])`);
+  }
+  if (analyticsNames.length && params.analyticsType === "firm") {
+    const placeholder = addSqlValue(values, analyticsNames);
+    conditions.push(supplyOrderExists(`lower(coalesce(nullif(trim(so.firm), ''), 'Unassigned firm')) = any(${placeholder}::text[])`));
+  }
+  if (params.indentor?.trim()) {
+    const placeholder = addSqlValue(values, sqlLike(params.indentor));
+    conditions.push(`lower(coalesce(f.indentor, '')) like ${placeholder}`);
+  }
+  if (params.divisionFilter?.trim()) {
+    const placeholder = addSqlValue(values, sqlLike(params.divisionFilter));
+    conditions.push(`lower(coalesce(d.name, '')) like ${placeholder}`);
+  }
+  if (params.description?.trim()) {
+    const placeholder = addSqlValue(values, sqlLike(params.description));
+    conditions.push(`lower(coalesce(f.demand_description, '')) like ${placeholder}`);
+  }
+  if (params.firm?.trim()) {
+    const placeholder = addSqlValue(values, sqlLike(params.firm));
+    conditions.push(`(${supplyOrderExists(`lower(coalesce(so.firm, '')) like ${placeholder}`)} or lower(coalesce(f.firm, '')) like ${placeholder})`);
+  }
+  if (selectedModes.length) {
+    const placeholder = addSqlValue(values, selectedModes.map((mode) => mode.trim().toUpperCase()));
+    conditions.push(`upper(trim(coalesce(f.mode, ''))) = any(${placeholder}::text[])`);
+  }
+  if (selectedFileTypes.length) {
+    const placeholder = addSqlValue(values, selectedFileTypes.map((fileType) => fileType.trim()));
+    conditions.push(`trim(coalesce(f.file_type, '')) = any(${placeholder}::text[])`);
+  }
+
+  if (params.highValue) conditions.push(isYesSql("f.high_value"));
+  if (params.gte) conditions.push(isYesSql("f.gte"));
+  if (params.ad) conditions.push(isYesSql("f.ad"));
+  if (params.rqa) conditions.push(isYesSql("f.rqa"));
+  if (params.ifaFilter) conditions.push(isYesSql("f.ifa"));
+  if (params.psbFilter) conditions.push(isYesSql("f.psb"));
+  if (params.bgFilter) conditions.push(isYesSql("f.bg"));
+  if (params.rfpVettingFilter) conditions.push(isYesSql("f.rfp_vetting"));
+  if (params.refloat) {
+    conditions.push(
+      `(${isYesSql("f.refloat")} or ${fileHasAny([
+        "refloatBiddingDate",
+        "refloatBidOpeningDate",
+        "refloatPostTcecDate",
+        "refloatPostTcecCommitteeNo",
+      ])})`,
+    );
+  }
+  if (params.cnc) conditions.push(fileHasAny(["cncDate", "cncApprovalDate"]));
+  if (params.tcec) {
+    conditions.push(
+      `(${isYesSql("f.tcec")} or ${fileHasAny([
+        "preTcecDate",
+        "preTcecMinutesDate",
+        "postTcecDate",
+        "postTcecMinutesDate",
+      ])})`,
+    );
+  }
+  if (params.rstFilter) conditions.push(isYesSql("f.rst"));
+  if (params.demandCancelledFilter)
+    conditions.push(`(${supplyOrderExists(isYesSql("so.demand_cancelled"))} or ${isYesSql("f.demand_cancelled")})`);
+  if (params.soCancelledFilter)
+    conditions.push(`(${supplyOrderExists(isYesSql("so.so_cancelled"))} or ${isYesSql("f.so_cancelled")})`);
+
+  if (params.capitalOnly && params.revenueOnly) {
+    conditions.push("(coalesce(f.value_capital, 0) <> 0 or coalesce(f.value_revenue, 0) <> 0)");
+  } else if (params.capitalOnly) {
+    conditions.push("coalesce(f.value_capital, 0) <> 0");
+  } else if (params.revenueOnly) {
+    conditions.push("coalesce(f.value_revenue, 0) <> 0");
+  }
+
+  const valueFactor = `case
+    when upper(trim(coalesce(f.currency, 'INR'))) in ('', 'INR') then 1
+    when f.exchange_rate > 0 then f.exchange_rate
+    else null
+  end`;
+  const totalValue = `(coalesce(f.value_capital * ${valueFactor}, 0) + coalesce(f.value_revenue * ${valueFactor}, 0))`;
+  const minValue = parseSearchAmount(params.valueFrom);
+  const maxValue = parseSearchAmount(params.valueTo);
+  if (minValue !== undefined) {
+    const placeholder = addSqlValue(values, minValue);
+    conditions.push(`${totalValue} >= ${placeholder}`);
+  }
+  if (maxValue !== undefined) {
+    const placeholder = addSqlValue(values, maxValue);
+    conditions.push(`${totalValue} <= ${placeholder}`);
+  }
+
+  if (isValidDate(params.dpFrom) || isValidDate(params.dpTo)) {
+    const dpConditions: string[] = [];
+    if (isValidDate(params.dpFrom)) {
+      const placeholder = addSqlValue(values, params.dpFrom);
+      dpConditions.push(`so.dp_date >= ${placeholder}::date`);
+    }
+    if (isValidDate(params.dpTo)) {
+      const placeholder = addSqlValue(values, params.dpTo);
+      dpConditions.push(`so.dp_date <= ${placeholder}::date`);
+    }
+    conditions.push(supplyOrderExists(dpConditions.join(" and ")));
+  }
+
+  if (params.freeText?.trim()) {
+    const placeholder = addSqlValue(values, sqlLike(params.freeText));
+    const fileTextColumns = Object.values(fileSearchColumns)
+      .map((column) => `coalesce(${column}::text, '')`)
+      .join(", ");
+    conditions.push(`lower(concat_ws(' ', ${fileTextColumns},
+      coalesce((select string_agg(concat_ws(' ', so.so_no, so.gem_so_no, so.so_date, so.so_value_capital, so.so_value_revenue, so.dp_date, so.firm, so.bg_validity_date, so.dp_extension, so.dp_extension_count, so.ld, so.revised_dp, so.material_receipt_date, so.bill_sent_for_payment_date, so.payment_date, so.payment_mode, so.bg_return_date, so.demand_cancelled, so.so_cancelled, so.so_cancelled_date), ' ') from supply_orders so where so.file_id = f.id), ''),
+      coalesce((select string_agg(concat_ws(' ', fr.section, fr.text), ' ') from file_remarks fr where fr.file_id = f.id), ''),
+      coalesce((select count(*)::text from file_firms ff where ff.file_id = f.id and ff.firm_type = 'invited' and (${hasTextSql("ff.firm_name")} or ${hasTextSql("ff.city")} or ${hasTextSql("ff.email_id")})), '0'),
+      coalesce((select count(*)::text from file_firms ff where ff.file_id = f.id and ff.firm_type = 'bidder' and (${hasTextSql("ff.firm_name")} or ${hasTextSql("ff.city")} or ${hasTextSql("ff.email_id")})), '0')
+    )) like ${placeholder}`);
+  }
+
+  if (isValidDate(params.freeDate)) {
+    const placeholder = addSqlValue(values, params.freeDate);
+    conditions.push(`(${dateSearchColumns.map((column) => `${column} = ${placeholder}::date`).join(" or ")} or ${supplyOrderExists(
+      Object.values(supplyOrderSearchColumns)
+        .filter((column) => column.includes("date") || column === "revised_dp" || column === "dp_date" || column === "bg_validity_date" || column === "bg_return_date")
+        .map((column) => `so.${column} = ${placeholder}::date`)
+        .join(" or "),
+    )})`);
+  }
+
+  const orderParts: string[] = [];
+  if (params.divisionWiseSort) orderParts.push("lower(coalesce(d.name, '')) asc");
+  const sortSql = getSortSql(params.sortColumnKey, params.sortDirection ?? "asc");
+  if (sortSql) orderParts.push(sortSql);
+  orderParts.push("f.created_at desc", "f.id asc");
+
+  return {
+    whereSql: conditions.length ? `where ${conditions.join(" and ")}` : "",
+    values,
+    orderSql: `order by ${orderParts.join(", ")}`,
+    limit,
+    offset,
+    page,
+    pageSize,
+  };
+}
+
+function usesLegacyDashboardFilter(filter: string | undefined) {
+  if (!filter) return false;
+  return (
+    filter.startsWith("delayStatus:") ||
+    filter.startsWith("milestoneTotal:") ||
+    filter.startsWith("milestoneUnderProcess:") ||
+    filter.startsWith("milestoneActive:") ||
+    filter.startsWith("milestone:") ||
+    filter.startsWith("milestoneReviewed:") ||
+    filter.startsWith("milestonePending:") ||
+    filter.startsWith("milestoneCleared:") ||
+    filter.startsWith("milestoneEligible:")
+  );
+}
+
+async function loadLegacyFilteredSearch(
+  whereSql: string,
+  values: unknown[],
+  params: FileSearchParams,
+  query: Record<string, unknown>,
+) {
+  const page = readPositiveInteger(query.page, 1, 1_000_000);
+  const pageSize = readPositiveInteger(query.pageSize, 100, 500);
+  const results = searchFiles(await loadFiles(whereSql, values), params);
+  const start = (page - 1) * pageSize;
+  return {
+    files: results.slice(start, start + pageSize),
+    total: results.length,
+    page,
+    pageSize,
   };
 }
 
@@ -622,7 +1252,24 @@ filesRouter.get(
       values.push(...scope.values);
     }
 
-    if (typeof request.query.year === "string" && request.query.year.trim()) {
+    if (request.query.year === allActiveFilesYear) {
+      conditions.push(
+        `(not exists (
+            select 1 from file_completed_milestones completed
+            where completed.file_id = f.id and lower(completed.milestone) = 'payment'
+          )
+          and lower(coalesce(f.demand_cancelled, '')) <> 'yes'
+          and lower(coalesce(f.so_cancelled, '')) <> 'yes'
+          and not exists (
+            select 1 from supply_orders so
+            where so.file_id = f.id
+              and (
+                lower(coalesce(so.demand_cancelled, '')) = 'yes'
+                or lower(coalesce(so.so_cancelled, '')) = 'yes'
+              )
+          ))`,
+      );
+    } else if (typeof request.query.year === "string" && request.query.year.trim()) {
       values.push(request.query.year.trim());
       conditions.push(
         `(f.year = $${values.length} or exists (
@@ -679,12 +1326,26 @@ filesRouter.get(
         ))`,
       );
     }
-    const files = await loadFiles(
-      conditions.length ? `where ${conditions.join(" and ")}` : "",
-      values,
-    );
-    const results = searchFiles(files, readSearchParams(request.query));
-    response.json({ files: results, total: results.length });
+    const searchParams = readSearchParams(request.query);
+    if (usesLegacyDashboardFilter(searchParams.dashboardFilter)) {
+      const results = await loadLegacyFilteredSearch(
+        conditions.length ? `where ${conditions.join(" and ")}` : "",
+        values,
+        searchParams,
+        request.query,
+      );
+      response.json(results);
+      return;
+    }
+
+    const searchSql = buildSearchSql(conditions, values, searchParams, request.query);
+    const results = await loadSearchFiles(searchSql);
+    response.json({
+      files: results.files,
+      total: results.total,
+      page: searchSql.page,
+      pageSize: searchSql.pageSize,
+    });
   }),
 );
 
