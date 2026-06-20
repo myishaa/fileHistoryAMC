@@ -4,7 +4,12 @@ import type { AppSettings, FileRecord, SupplyOrderDetail } from "../types.js";
 import { loadFiles } from "./files.js";
 import { fromDbJsonArray, fromDbText } from "../utils/db-values.js";
 import { buildReportsSummary } from "../utils/report-summary.js";
-import { getDivisionScopeCondition, requireAuth, type AuthRequest } from "../utils/auth.js";
+import {
+  getAuthScopeCacheKey,
+  getDivisionScopeCondition,
+  requireAuth,
+  type AuthRequest,
+} from "../utils/auth.js";
 import { cacheTtl, getCached } from "../utils/cache.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 
@@ -1022,37 +1027,49 @@ reportsRouter.get(
       selectedYear,
       division,
     });
-    const summary = await buildReportsSummarySql({
-      whereSql: reportWhere.whereSql,
-      values: reportWhere.values,
+    const cacheKey = `reports:summary:${JSON.stringify({
+      scope: getAuthScopeCacheKey(user),
+      selectedYear,
       division,
       delayDays,
       delayMilestone,
       expectedCashOutgoDays,
-    });
-
-    if (process.env.REPORTS_SQL_COMPARE === "true") {
-      const files = await loadFiles(scope.sql ? `where ${scope.sql}` : "", scope.values);
-      const selectedYearFiles =
-        selectedYear === allActiveFilesYear
-          ? files.filter((file) => !isInactiveFile(file))
-          : selectedYear
-            ? files.filter((file) => isFileActiveInYear(file, selectedYear))
-            : files;
-      const legacySummary = buildReportsSummary({
-        files: selectedYearFiles,
+    })}`;
+    const summary = await getCached(cacheKey, cacheTtl.reportsSummaryMs, async () => {
+      const sqlSummary = await buildReportsSummarySql({
+        whereSql: reportWhere.whereSql,
+        values: reportWhere.values,
         division,
         delayDays,
         delayMilestone,
         expectedCashOutgoDays,
       });
-      if (JSON.stringify(legacySummary) !== JSON.stringify(summary)) {
-        console.warn("Reports SQL summary differs from TypeScript summary.", {
-          reference: legacySummary,
-          candidate: summary,
+
+      if (process.env.REPORTS_SQL_COMPARE === "true") {
+        const files = await loadFiles(scope.sql ? `where ${scope.sql}` : "", scope.values);
+        const selectedYearFiles =
+          selectedYear === allActiveFilesYear
+            ? files.filter((file) => !isInactiveFile(file))
+            : selectedYear
+              ? files.filter((file) => isFileActiveInYear(file, selectedYear))
+              : files;
+        const legacySummary = buildReportsSummary({
+          files: selectedYearFiles,
+          division,
+          delayDays,
+          delayMilestone,
+          expectedCashOutgoDays,
         });
+        if (JSON.stringify(legacySummary) !== JSON.stringify(sqlSummary)) {
+          console.warn("Reports SQL summary differs from TypeScript summary.", {
+            reference: legacySummary,
+            candidate: sqlSummary,
+          });
+        }
       }
-    }
+
+      return sqlSummary;
+    });
 
     response.json({
       summary,

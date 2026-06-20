@@ -275,8 +275,8 @@ messagesRouter.delete(
   "/:id",
   asyncHandler(async (request, response) => {
     const user = requireAuth(request as AuthRequest);
-    if (user.role !== "viewer" && user.role !== "division_user") {
-      throw new HttpError(403, "Only viewers can delete sent messages.");
+    if (user.role !== "admin" && user.role !== "viewer" && user.role !== "division_user") {
+      throw new HttpError(403, "Only admins and viewers can delete messages.");
     }
     const id = requireParam(request.params.id, "id");
     const existing = await pool.query<{ division_id: string | null }>(

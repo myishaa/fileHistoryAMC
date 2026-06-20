@@ -10,6 +10,8 @@ export const cacheTtl = {
   settingsMs: 60_000,
   divisionsMs: 60_000,
   lookupMs: 120_000,
+  dashboardSummaryMs: 30_000,
+  reportsSummaryMs: 60_000,
 } as const;
 
 export async function getCached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
@@ -40,4 +42,9 @@ export function clearLookupCaches() {
   clearCachePrefix("settings:");
   clearCachePrefix("divisions:");
   clearCachePrefix("lookup:");
+}
+
+export function clearDashboardReportCaches() {
+  clearCachePrefix("dashboard:summary:");
+  clearCachePrefix("reports:summary:");
 }

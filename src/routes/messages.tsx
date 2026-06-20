@@ -168,7 +168,12 @@ function MessagesPage() {
         </div>
         {pageMessages.length ? (
           pageMessages.map((message) => (
-            <MessageRow key={message.id} message={message} isViewer={isViewer} />
+            <MessageRow
+              key={message.id}
+              message={message}
+              isViewer={isViewer}
+              isAdmin={activeUser?.role === "admin"}
+            />
           ))
         ) : (
           <div className="p-6 text-sm text-muted-foreground">No messages found.</div>
@@ -204,10 +209,18 @@ function MessagesPage() {
   );
 }
 
-function MessageRow({ message, isViewer }: { message: FileMessage; isViewer: boolean }) {
+function MessageRow({
+  message,
+  isViewer,
+  isAdmin,
+}: {
+  message: FileMessage;
+  isViewer: boolean;
+  isAdmin: boolean;
+}) {
   const navigate = useNavigate();
   const canMarkViewed = isViewer && message.status === "resolved" && !message.viewedAt;
-  const canDelete = isViewer && message.status === "pending";
+  const canDelete = isAdmin || (isViewer && message.status === "pending");
   const canResolve = !isViewer && message.status === "pending";
 
   return (

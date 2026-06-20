@@ -196,3 +196,8 @@ export function getDivisionScopeCondition(user: AuthUser, alias = "f") {
     values: [user.divisionIds],
   };
 }
+
+export function getAuthScopeCacheKey(user: AuthUser) {
+  if (canUseAllDivisions(user)) return "all";
+  return [...user.divisionIds].sort().join(",") || "none";
+}

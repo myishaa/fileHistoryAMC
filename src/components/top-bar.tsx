@@ -5,7 +5,6 @@ import {
   FilePlus2,
   LayoutDashboard,
   Moon,
-  Plus,
   ScanLine,
   Search,
   Settings,
@@ -165,16 +164,6 @@ export function TopBar() {
           >
             {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </button>
-          {canAddFiles ? (
-            <Link
-              to="/add"
-              search={{ fileId: undefined, section: undefined }}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
-            >
-              <Plus className="size-4" />
-              New File
-            </Link>
-          ) : null}
           <button
             type="button"
             onClick={() => void store.logout()}

@@ -23,6 +23,7 @@ import {
   toDbNumber,
   toDbText,
 } from "../utils/db-values.js";
+import { clearDashboardReportCaches } from "../utils/cache.js";
 import { asyncHandler, HttpError, requireObjectBody, requireParam } from "../utils/http.js";
 
 export const filesRouter = Router();
@@ -500,7 +501,7 @@ const fileExportDateFields = [
   ["cfaSentDate", "CFA sent"],
   ["cfaDate", "CFA approval"],
   ["bidDate", "Bid date"],
-  ["bidOpeningDate", "Bid opening"],
+  ["bidOpeningDate", "Bid closing"],
   ["postTcecDate", "Post-TCEC"],
   ["postTcecMinutesDate", "Post-TCEC minutes"],
   ["cncDate", "CNC"],
@@ -2339,6 +2340,7 @@ filesRouter.post(
       const fileId = result.rows[0].id;
       await replaceNestedFileData(client, fileId, body, false);
       await client.query("commit");
+      clearDashboardReportCaches();
 
       const files = await loadFiles("where f.id = $1", [fileId]);
       response.status(201).json({ file: files[0] });
@@ -2393,6 +2395,7 @@ filesRouter.patch(
       }
 
       await client.query("commit");
+      clearDashboardReportCaches();
       const files = await loadFiles("where f.id = $1", [id]);
       if (!files[0]) throw new HttpError(404, "File not found.");
       response.json({ file: files[0] });
@@ -2430,11 +2433,13 @@ filesRouter.delete(
          where id = $1`,
         [id, user.id],
       );
+      clearDashboardReportCaches();
       response.json({ archived: true, file: files[0] });
       return;
     }
 
     await pool.query("delete from files where id = $1", [id]);
+    clearDashboardReportCaches();
     response.json({ deleted: true, file: files[0] });
   }),
 );
@@ -2459,6 +2464,7 @@ filesRouter.delete(
     const files = await loadFiles("where f.id = $1 and f.archived_at is not null", [id], true);
     if (!files[0]) throw new HttpError(404, "Archived file not found.");
     await pool.query("delete from files where id = $1 and archived_at is not null", [id]);
+    clearDashboardReportCaches();
     response.json({ deleted: true, file: files[0] });
   }),
 );
@@ -2475,6 +2481,7 @@ filesRouter.post(
     );
     const files = await loadFiles("where f.id = $1", [id]);
     if (!files[0]) throw new HttpError(404, "File not found.");
+    clearDashboardReportCaches();
     response.json({ file: files[0] });
   }),
 );

@@ -342,6 +342,32 @@ const supplyOrderFields: ExtraField[] = [
   { key: "soCancelledDate", label: "S.O. cancelled date", type: "date" },
 ];
 
+const supplyOrderSubviewFields = {
+  supplyOrder: ["soNo", "gemSoNo", "soDate", "soValueCapital", "firm"],
+  bg: ["bgValidityDate", "bgReturnDate"],
+  deliveryPayment: [
+    "dpDate",
+    "dpExtension",
+    "dpExtensionCount",
+    "ld",
+    "revisedDp",
+    "materialReceiptDate",
+    "billSentForPaymentDate",
+    "paymentDate",
+    "paymentMode",
+  ],
+  miscellaneous: ["demandCancelled", "soCancelled", "soCancelledDate"],
+} satisfies Record<string, SupplyOrderKey[]>;
+
+const supplyOrderSubviewTabs = [
+  { key: "supplyOrder", label: "Supply order" },
+  { key: "bg", label: "BG" },
+  { key: "deliveryPayment", label: "Delivery & Payment" },
+  { key: "miscellaneous", label: "Miscellaneous" },
+] as const;
+
+type SupplyOrderSubviewKey = (typeof supplyOrderSubviewTabs)[number]["key"];
+
 const extraSections: { title: string; fields: ExtraField[] }[] = [
   {
     title: "File details",
@@ -357,8 +383,8 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "receivedDate", label: "Received date", type: "date" },
       { key: "mode", label: "Mode (OBM/PBM/SBM/LBM/LPC)", options: modeOptions },
       { key: "fileType", label: "File type" },
-      { key: "tcec", label: "TCEC (YES/NO)", options: yesNoCaps },
-      { key: "gem", label: "GeM (yes/no)", options: yesNo },
+      { key: "tcec", label: "TCEC (Yes/No)", options: yesNoCaps },
+      { key: "gem", label: "GeM (Yes/No)", options: yesNo },
       { key: "highValue", label: "High value (Yes/No)", options: yesNo },
       { key: "rqa", label: "R&QA (Yes/No)", options: yesNo },
       { key: "ifa", label: "IFA (Yes/No)", options: yesNo },
@@ -417,12 +443,12 @@ const extraSections: { title: string; fields: ExtraField[] }[] = [
       { key: "rfpVettingApprovalDate", label: "RFP vetting approval", type: "date" },
       { key: "bidNumber", label: "Bid number" },
       { key: "bidDate", label: "Bid date", type: "date" },
-      { key: "bidOpeningDate", label: "Bid opening", type: "date" },
+      { key: "bidOpeningDate", label: "Bid closing", type: "date" },
       { key: "tenderLive", label: "Tender live", options: yesNo },
       { key: "bidOpened", label: "Bid opened", options: yesNoCaps },
       { key: "refloat", label: "Refloat (Yes/No)", options: yesNo },
       { key: "refloatBiddingDate", label: "Refloat bidding date", type: "date" },
-      { key: "refloatBidOpeningDate", label: "Refloat Bid opening date", type: "date" },
+      { key: "refloatBidOpeningDate", label: "Refloat bid closing date", type: "date" },
       { key: "rst", label: "RST (Yes/No)", options: yesNo },
       { key: "biddingStageOver", label: "Bidding stage over", options: yesNo },
       { key: "cncDate", label: "CNC date", type: "date" },
@@ -1536,6 +1562,7 @@ function SectionMessages({
   const canCreate = activeUserRole === "viewer" || activeUserRole === "division_user";
   const canResolve =
     activeUserRole === "admin" || activeUserRole === "sub_admin" || activeUserRole === "editor";
+  const canDelete = activeUserRole === "admin" || canCreate;
   const draftWords = countMessageWords(draft);
 
   const sendMessage = async () => {
@@ -1715,7 +1742,7 @@ function SectionMessages({
                   </div>
                 ) : null}
 
-                {canCreate ? (
+                {canDelete ? (
                   <div className="mt-2 flex justify-end">
                     <button
                       type="button"
@@ -2076,6 +2103,10 @@ function SupplyOrdersBlock({
   const orderFieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const orderQuickFocusAppliedRef = useRef("");
   const latestOrdersRef = useRef(orders);
+  const [activeSubview, setActiveSubview] = useState<SupplyOrderSubviewKey>("supplyOrder");
+  const activeSubviewFields = supplyOrderFields.filter((field) =>
+    supplyOrderSubviewFields[activeSubview].includes(field.key as SupplyOrderKey),
+  );
 
   useEffect(() => {
     latestOrdersRef.current = orders;
@@ -2115,15 +2146,35 @@ function SupplyOrdersBlock({
 
   return (
     <div className="space-y-5">
-      <DynamicField
-        field={{ key: "noOfSo", label: "No. of S.O.", type: "number" }}
-        value={form.noOfSo}
-        disabled={disabled || (lockFilledFields && hasFilledValue(lockedForm.noOfSo))}
-        onChange={onCountChange}
-        inputRef={(element) => {
-          orderFieldRefs.current.noOfSo = element;
-        }}
-      />
+      <div className="flex flex-wrap gap-2 rounded-md border border-border bg-secondary/20 p-1.5">
+        {supplyOrderSubviewTabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveSubview(tab.key)}
+            className={
+              "h-8 rounded px-3 text-xs font-medium transition " +
+              (activeSubview === tab.key
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground")
+            }
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeSubview === "supplyOrder" ? (
+        <DynamicField
+          field={{ key: "noOfSo", label: "No. of S.O.", type: "number" }}
+          value={form.noOfSo}
+          disabled={disabled || (lockFilledFields && hasFilledValue(lockedForm.noOfSo))}
+          onChange={onCountChange}
+          inputRef={(element) => {
+            orderFieldRefs.current.noOfSo = element;
+          }}
+        />
+      ) : null}
 
       {orders.map((order, index) => (
         <div key={index} className="rounded-md border border-border bg-secondary/20 p-4">
@@ -2131,7 +2182,7 @@ function SupplyOrdersBlock({
             Supply Order {index + 1}
           </div>
           <div className="grid grid-cols-1 gap-4">
-            {supplyOrderFields.map((field) => {
+            {activeSubviewFields.map((field) => {
               const key = field.key as SupplyOrderKey;
               const lockedOrder = lockedOrders[index];
 
@@ -2166,6 +2217,7 @@ function SupplyOrdersBlock({
                   key={field.key}
                   field={field}
                   value={String(order[key] ?? "")}
+                  radioName={`supplyOrder-${index}-${field.key}`}
                   disabled={
                     disabled ||
                     (lockFilledFields && hasFilledValue(String(lockedOrder?.[key] ?? ""))) ||
@@ -3546,18 +3598,20 @@ function DynamicField({
   disabled = false,
   onChange,
   inputRef,
+  radioName,
 }: {
   field: ExtraField;
   value: string;
   disabled?: boolean;
   onChange: (value: string) => void;
   inputRef?: (element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => void;
+  radioName?: string;
 }) {
   if (field.options && isYesNoOptions(field.options)) {
     return (
       <Field label={field.label}>
         <RadioGroup
-          name={field.key}
+          name={radioName ?? field.key}
           options={field.options}
           value={value}
           disabled={disabled}
