@@ -14,6 +14,8 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as QuickEntryRouteImport } from './routes/quick-entry'
+import { Route as MmgLiveRouteImport } from './routes/mmg-live'
+import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as DivisionsRouteImport } from './routes/divisions'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AddRouteImport } from './routes/add'
@@ -44,6 +46,16 @@ const QuickEntryRoute = QuickEntryRouteImport.update({
   path: '/quick-entry',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MmgLiveRoute = MmgLiveRouteImport.update({
+  id: '/mmg-live',
+  path: '/mmg-live',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DivisionsRoute = DivisionsRouteImport.update({
   id: '/divisions',
   path: '/divisions',
@@ -70,6 +82,8 @@ export interface FileRoutesByFullPath {
   '/add': typeof AddRoute
   '/dashboard': typeof DashboardRoute
   '/divisions': typeof DivisionsRoute
+  '/messages': typeof MessagesRoute
+  '/mmg-live': typeof MmgLiveRoute
   '/quick-entry': typeof QuickEntryRoute
   '/reports': typeof ReportsRoute
   '/search': typeof SearchRoute
@@ -81,6 +95,8 @@ export interface FileRoutesByTo {
   '/add': typeof AddRoute
   '/dashboard': typeof DashboardRoute
   '/divisions': typeof DivisionsRoute
+  '/messages': typeof MessagesRoute
+  '/mmg-live': typeof MmgLiveRoute
   '/quick-entry': typeof QuickEntryRoute
   '/reports': typeof ReportsRoute
   '/search': typeof SearchRoute
@@ -93,6 +109,8 @@ export interface FileRoutesById {
   '/add': typeof AddRoute
   '/dashboard': typeof DashboardRoute
   '/divisions': typeof DivisionsRoute
+  '/messages': typeof MessagesRoute
+  '/mmg-live': typeof MmgLiveRoute
   '/quick-entry': typeof QuickEntryRoute
   '/reports': typeof ReportsRoute
   '/search': typeof SearchRoute
@@ -106,6 +124,8 @@ export interface FileRouteTypes {
     | '/add'
     | '/dashboard'
     | '/divisions'
+    | '/messages'
+    | '/mmg-live'
     | '/quick-entry'
     | '/reports'
     | '/search'
@@ -117,6 +137,8 @@ export interface FileRouteTypes {
     | '/add'
     | '/dashboard'
     | '/divisions'
+    | '/messages'
+    | '/mmg-live'
     | '/quick-entry'
     | '/reports'
     | '/search'
@@ -128,6 +150,8 @@ export interface FileRouteTypes {
     | '/add'
     | '/dashboard'
     | '/divisions'
+    | '/messages'
+    | '/mmg-live'
     | '/quick-entry'
     | '/reports'
     | '/search'
@@ -140,6 +164,8 @@ export interface RootRouteChildren {
   AddRoute: typeof AddRoute
   DashboardRoute: typeof DashboardRoute
   DivisionsRoute: typeof DivisionsRoute
+  MessagesRoute: typeof MessagesRoute
+  MmgLiveRoute: typeof MmgLiveRoute
   QuickEntryRoute: typeof QuickEntryRoute
   ReportsRoute: typeof ReportsRoute
   SearchRoute: typeof SearchRoute
@@ -184,6 +210,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof QuickEntryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mmg-live': {
+      id: '/mmg-live'
+      path: '/mmg-live'
+      fullPath: '/mmg-live'
+      preLoaderRoute: typeof MmgLiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/divisions': {
       id: '/divisions'
       path: '/divisions'
@@ -220,6 +260,8 @@ const rootRouteChildren: RootRouteChildren = {
   AddRoute: AddRoute,
   DashboardRoute: DashboardRoute,
   DivisionsRoute: DivisionsRoute,
+  MessagesRoute: MessagesRoute,
+  MmgLiveRoute: MmgLiveRoute,
   QuickEntryRoute: QuickEntryRoute,
   ReportsRoute: ReportsRoute,
   SearchRoute: SearchRoute,

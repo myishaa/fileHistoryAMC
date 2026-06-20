@@ -110,7 +110,12 @@ const statusMilestoneDefinitions = [
     currentColumn: "f.rqa_approval_date",
     appliesColumn: "f.rqa",
   },
-  { key: "control", label: "Controlling", currentColumn: "f.imms_date", aliases: ["Controlling", "Controlled"] },
+  {
+    key: "control",
+    label: "Controlling",
+    currentColumn: "f.imms_date",
+    aliases: ["Controlling", "Controlled"],
+  },
   {
     key: "ifa",
     label: "IFA",
@@ -388,10 +393,7 @@ function getDashboardFileWhereSql({
   };
 }
 
-function appendDashboardWhereClause(
-  whereSql: string,
-  extraConditions: string[] = [],
-) {
+function appendDashboardWhereClause(whereSql: string, extraConditions: string[] = []) {
   const conditions = ["f.archived_at is null", ...extraConditions];
   if (!whereSql.trim()) return `where ${conditions.join(" and ")}`;
   return `${whereSql} and ${conditions.join(" and ")}`;
@@ -650,7 +652,10 @@ function normalizeMilestoneExpression(column: string) {
 }
 
 function normalizeMilestoneName(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
 }
 
 function fileClosedExpression() {
@@ -663,17 +668,13 @@ function fileClosedExpression() {
   )`;
 }
 
-function statusAppliesExpression(
-  milestone: (typeof statusMilestoneDefinitions)[number],
-) {
+function statusAppliesExpression(milestone: (typeof statusMilestoneDefinitions)[number]) {
   return "appliesColumn" in milestone && milestone.appliesColumn
     ? isYesExpression(milestone.appliesColumn)
     : "true";
 }
 
-function statusCompleteExpression(
-  milestone: (typeof statusMilestoneDefinitions)[number],
-) {
+function statusCompleteExpression(milestone: (typeof statusMilestoneDefinitions)[number]) {
   if ("yesComplete" in milestone && milestone.yesComplete) {
     return isYesExpression(milestone.currentColumn);
   }
@@ -688,22 +689,16 @@ function statusCompleteExpression(
     : "false";
 }
 
-function statusReviewedExpression(
-  milestone: (typeof statusMilestoneDefinitions)[number],
-) {
+function statusReviewedExpression(milestone: (typeof statusMilestoneDefinitions)[number]) {
   return "reviewedColumn" in milestone && milestone.reviewedColumn
     ? hasFilledExpression(milestone.reviewedColumn)
     : "false";
 }
 
-function statusActiveExpression(
-  milestone: (typeof statusMilestoneDefinitions)[number],
-) {
+function statusActiveExpression(milestone: (typeof statusMilestoneDefinitions)[number]) {
   const aliases =
     "aliases" in milestone && milestone.aliases ? milestone.aliases : [milestone.label];
-  const normalizedAliases = aliases
-    .map((alias) => `'${normalizeMilestoneName(alias)}'`)
-    .join(", ");
+  const normalizedAliases = aliases.map((alias) => `'${normalizeMilestoneName(alias)}'`).join(", ");
   return `not ${isCancelledExpression()}
     and not ${fileClosedExpression()}
     and ${normalizeMilestoneExpression("f.current_milestone")} in (${normalizedAliases})`;
@@ -785,11 +780,13 @@ async function loadFinanceTotals({
   const readAmount = (key: string) => Number(row[key] ?? 0);
   return {
     allocatedCapital: dashboardDivisions.reduce(
-      (sum, division) => sum + (Number(String(division.allocatedCapital ?? "").replace(/,/g, "")) || 0),
+      (sum, division) =>
+        sum + (Number(String(division.allocatedCapital ?? "").replace(/,/g, "")) || 0),
       0,
     ),
     allocatedRevenue: dashboardDivisions.reduce(
-      (sum, division) => sum + (Number(String(division.allocatedRevenue ?? "").replace(/,/g, "")) || 0),
+      (sum, division) =>
+        sum + (Number(String(division.allocatedRevenue ?? "").replace(/,/g, "")) || 0),
       0,
     ),
     bookedCapital: readAmount("booked_capital"),
@@ -883,23 +880,40 @@ function formatThresholdAppliesTo(value: ValueThresholdLevel["appliesTo"]) {
   return "Both";
 }
 
-function formatPlainAmount(value: number) {
-  return Math.round(value).toLocaleString("en-IN");
-}
-
 function formatThresholdRange(level: ValueThresholdLevel) {
-  const min = Number(String(level.minValue ?? "").replace(/,/g, "").trim());
-  const max = Number(String(level.maxValue ?? "").replace(/,/g, "").trim());
+  const min = Number(
+    String(level.minValue ?? "")
+      .replace(/,/g, "")
+      .trim(),
+  );
+  const max = Number(
+    String(level.maxValue ?? "")
+      .replace(/,/g, "")
+      .trim(),
+  );
   const hasMin = Number.isFinite(min) && String(level.minValue ?? "").trim() !== "";
   const hasMax = Number.isFinite(max) && String(level.maxValue ?? "").trim() !== "";
-  if (hasMin && hasMax) return `${formatPlainAmount(min)}-${formatPlainAmount(max)}`;
-  if (hasMin) return `${formatPlainAmount(min)}+`;
-  if (hasMax) return `0-${formatPlainAmount(max)}`;
+  if (hasMin && hasMax) return `${formatLakhRangeAmount(min)}-${formatLakhRangeAmount(max)} L`;
+  if (hasMin) return `${formatLakhRangeAmount(min)} L+`;
+  if (hasMax) return `0-${formatLakhRangeAmount(max)} L`;
   return "Any value";
 }
 
+function formatLakhRangeAmount(value: number) {
+  const lakhs = value / 100000;
+  return Number.isInteger(lakhs)
+    ? String(lakhs)
+    : lakhs.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
 function roundDivisionValueRows(
-  rows: Map<string, Omit<DivisionValueAnalyticsRow, "name" | "allocatedTotal" | "intendedTotal" | "bookedTotal" | "committedTotal">>,
+  rows: Map<
+    string,
+    Omit<
+      DivisionValueAnalyticsRow,
+      "name" | "allocatedTotal" | "intendedTotal" | "bookedTotal" | "committedTotal"
+    >
+  >,
 ) {
   return Array.from(rows.entries())
     .map(([name, values]) => ({
@@ -917,7 +931,9 @@ function roundDivisionValueRows(
       committedRevenue: Math.round(values.committedRevenue),
       committedTotal: Math.round(values.committedCapital + values.committedRevenue),
     }))
-    .sort((a, b) => b.allocatedCapital + b.allocatedRevenue - (a.allocatedCapital + a.allocatedRevenue));
+    .sort(
+      (a, b) => b.allocatedCapital + b.allocatedRevenue - (a.allocatedCapital + a.allocatedRevenue),
+    );
 }
 
 async function loadAnalyticsSqlSlice({
@@ -1002,7 +1018,11 @@ async function loadAnalyticsSqlSlice({
     { name: "Scrutiny", start: "f.received_date", end: "f.scrutiny_completion_date" },
     { name: "High Value", start: "f.high_value_meeting_date", end: "f.high_value_minutes_date" },
     { name: "Pre-TCEC", start: "f.pre_tcec_date", end: "f.pre_tcec_minutes_date" },
-    { name: "AD", start: "coalesce(f.pre_tcec_minutes_date, f.received_date)", end: "f.ad_vetting_date" },
+    {
+      name: "AD",
+      start: "coalesce(f.pre_tcec_minutes_date, f.received_date)",
+      end: "f.ad_vetting_date",
+    },
     { name: "R&QA", start: "f.received_date", end: "f.rqa_approval_date" },
     { name: "Controlling", start: "f.received_date", end: "f.imms_date" },
     { name: "IFA", start: "f.ifa_sent_date", end: "f.ifa_final_date" },
@@ -1010,8 +1030,16 @@ async function loadAnalyticsSqlSlice({
     { name: "Post-TCEC", start: "f.post_tcec_date", end: "f.post_tcec_minutes_date" },
     { name: "CNC", start: "f.cnc_date", end: "f.cnc_approval_date" },
     { name: "Supply Order", start: "f.cfa_date", end: firstSoDate },
-    { name: "Bank Guarantee", start: firstSoDate, end: earliestSupplyOrderDateExpression("bg_validity_date") },
-    { name: "Delivery", start: firstSoDate, end: earliestSupplyOrderDateExpression("material_receipt_date") },
+    {
+      name: "Bank Guarantee",
+      start: firstSoDate,
+      end: earliestSupplyOrderDateExpression("bg_validity_date"),
+    },
+    {
+      name: "Delivery",
+      start: firstSoDate,
+      end: earliestSupplyOrderDateExpression("material_receipt_date"),
+    },
     {
       name: "Payment",
       start: earliestSupplyOrderDateExpression("material_receipt_date"),
@@ -1140,9 +1168,18 @@ async function loadAnalyticsSqlSlice({
     const valueType = `case when ${capital} > 0 then 'capital' when ${revenue} > 0 then 'revenue' end`;
     const amount = `case when ${capital} > 0 then ${capital} when ${revenue} > 0 then ${revenue} else 0 end`;
     const levelMatchConditions = [`${amount} > 0`];
-    if (level.appliesTo !== "both") levelMatchConditions.push(`${valueType} = '${level.appliesTo}'`);
-    const minValue = Number(String(level.minValue ?? "").replace(/,/g, "").trim());
-    const maxValue = Number(String(level.maxValue ?? "").replace(/,/g, "").trim());
+    if (level.appliesTo !== "both")
+      levelMatchConditions.push(`${valueType} = '${level.appliesTo}'`);
+    const minValue = Number(
+      String(level.minValue ?? "")
+        .replace(/,/g, "")
+        .trim(),
+    );
+    const maxValue = Number(
+      String(level.maxValue ?? "")
+        .replace(/,/g, "")
+        .trim(),
+    );
     if (Number.isFinite(minValue) && String(level.minValue ?? "").trim() !== "") {
       levelMatchConditions.push(`${amount} >= ${minValue}`);
     }
@@ -1191,8 +1228,16 @@ async function loadAnalyticsSqlSlice({
     const levelMatchConditions = valueThresholdLevels.map((level) => {
       const conditions = [`${amount} > 0`];
       if (level.appliesTo !== "both") conditions.push(`${valueType} = '${level.appliesTo}'`);
-      const minValue = Number(String(level.minValue ?? "").replace(/,/g, "").trim());
-      const maxValue = Number(String(level.maxValue ?? "").replace(/,/g, "").trim());
+      const minValue = Number(
+        String(level.minValue ?? "")
+          .replace(/,/g, "")
+          .trim(),
+      );
+      const maxValue = Number(
+        String(level.maxValue ?? "")
+          .replace(/,/g, "")
+          .trim(),
+      );
       if (Number.isFinite(minValue) && String(level.minValue ?? "").trim() !== "") {
         conditions.push(`${amount} >= ${minValue}`);
       }
@@ -1267,7 +1312,10 @@ async function loadAnalyticsSqlSlice({
 
   const divisionValues = new Map<
     string,
-    Omit<DivisionValueAnalyticsRow, "name" | "allocatedTotal" | "intendedTotal" | "bookedTotal" | "committedTotal">
+    Omit<
+      DivisionValueAnalyticsRow,
+      "name" | "allocatedTotal" | "intendedTotal" | "bookedTotal" | "committedTotal"
+    >
   >();
   const getDivisionValues = (name: string) =>
     divisionValues.get(name) ?? {
@@ -1286,9 +1334,11 @@ async function loadAnalyticsSqlSlice({
     divisionValues.set(name, {
       ...current,
       allocatedCapital:
-        current.allocatedCapital + (Number(String(division.allocatedCapital ?? "").replace(/,/g, "")) || 0),
+        current.allocatedCapital +
+        (Number(String(division.allocatedCapital ?? "").replace(/,/g, "")) || 0),
       allocatedRevenue:
-        current.allocatedRevenue + (Number(String(division.allocatedRevenue ?? "").replace(/,/g, "")) || 0),
+        current.allocatedRevenue +
+        (Number(String(division.allocatedRevenue ?? "").replace(/,/g, "")) || 0),
     });
   }
   for (const row of valueResult.rows) {
@@ -1423,7 +1473,8 @@ function getConfiguredMilestones(milestones: string[] | undefined) {
 
 function appendFileClosedMilestone(milestones: string[]) {
   const withoutFileClosed = milestones.filter(
-    (milestone) => normalizeMilestoneName(milestone) !== normalizeMilestoneName(fileClosedMilestone),
+    (milestone) =>
+      normalizeMilestoneName(milestone) !== normalizeMilestoneName(fileClosedMilestone),
   );
   return [...withoutFileClosed, fileClosedMilestone];
 }
@@ -1450,7 +1501,8 @@ async function loadManualMilestoneSqlSlice({
     extraConditions.push(`lower(coalesce(d.name, '')) = ${placeholder}::text`);
   }
   const liveConfiguredMilestones = configuredMilestones.filter(
-    (milestone) => normalizeMilestoneName(milestone) !== normalizeMilestoneName(fileClosedMilestone),
+    (milestone) =>
+      normalizeMilestoneName(milestone) !== normalizeMilestoneName(fileClosedMilestone),
   );
   const extrasValues = [...queryValues];
   const configuredPlaceholder = addValue(extrasValues, liveConfiguredMilestones);
@@ -1501,16 +1553,21 @@ async function loadManualMilestoneSqlSlice({
      group by milestone.name`,
     completedValues,
   );
-  const currentCounts = new Map(currentResult.rows.map((row) => [row.name, Number(row.count ?? 0)]));
-  const completedCounts = new Map(completedResult.rows.map((row) => [row.name, Number(row.count ?? 0)]));
+  const currentCounts = new Map(
+    currentResult.rows.map((row) => [row.name, Number(row.count ?? 0)]),
+  );
+  const completedCounts = new Map(
+    completedResult.rows.map((row) => [row.name, Number(row.count ?? 0)]),
+  );
   const manualMilestoneFlow = milestoneNames.map((name) => ({
     name,
     current: currentCounts.get(name) ?? 0,
     completed: completedCounts.get(name) ?? 0,
   }));
   const visibleLiveMilestoneNames =
-    liveMilestones?.filter((name) => manualMilestoneFlow.some((milestone) => milestone.name === name)) ??
-    manualMilestoneFlow.map((milestone) => milestone.name);
+    liveMilestones?.filter((name) =>
+      manualMilestoneFlow.some((milestone) => milestone.name === name),
+    ) ?? manualMilestoneFlow.map((milestone) => milestone.name);
 
   const liveValues = [...queryValues];
   const livePlaceholder = addValue(liveValues, visibleLiveMilestoneNames);
@@ -1536,7 +1593,10 @@ async function loadManualMilestoneSqlSlice({
     ]),
   );
   const liveCounts = new Map(
-    liveCountsResult.rows.map((row) => [`${row.division}\u0000${row.milestone}`, Number(row.count ?? 0)]),
+    liveCountsResult.rows.map((row) => [
+      `${row.division}\u0000${row.milestone}`,
+      Number(row.count ?? 0),
+    ]),
   );
   const liveStatusRows = divisionNames
     .map((division) => {
@@ -1707,7 +1767,10 @@ function stableJson(value: unknown) {
   return JSON.stringify(value);
 }
 
-function warnIfSimpleCountsDiffer(reference: SimpleDashboardCounts, candidate: SimpleDashboardCounts) {
+function warnIfSimpleCountsDiffer(
+  reference: SimpleDashboardCounts,
+  candidate: SimpleDashboardCounts,
+) {
   if (stableJson(reference) === stableJson(candidate)) return;
   console.warn("Dashboard SQL simple counts differ from TypeScript summary.", {
     reference,
@@ -1775,7 +1838,8 @@ function mergeStatusCountsIntoFlow<T extends Array<Record<string, unknown>>>(
 ) {
   const milestoneCountByKey = new Map(counts.milestoneRows.map((row) => [row.key, row]));
   return statusFlow.map((row) => {
-    const milestoneCounts = typeof row.key === "string" ? milestoneCountByKey.get(row.key) : undefined;
+    const milestoneCounts =
+      typeof row.key === "string" ? milestoneCountByKey.get(row.key) : undefined;
     const baseRow = milestoneCounts
       ? {
           ...row,
@@ -1827,7 +1891,15 @@ function warnIfStatusCountsDiffer(reference: StatusCounts, candidate: StatusCoun
 }
 
 function getStatusMilestonePresentation(key: string) {
-  if (key === "highValue" || key === "tcec" || key === "ad" || key === "rqa" || key === "ifa" || key === "postTcec" || key === "cnc") {
+  if (
+    key === "highValue" ||
+    key === "tcec" ||
+    key === "ad" ||
+    key === "rqa" ||
+    key === "ifa" ||
+    key === "postTcec" ||
+    key === "cnc"
+  ) {
     return { totalLabel: "Total cases", completedLabel: "Completed" };
   }
   if (key === "supplyOrder") {

@@ -48,7 +48,11 @@ const defaultMilestoneSequence = [
 const fileClosedMilestone = "File Closed";
 
 function appendFileClosedMilestone(milestones: string[]) {
-  const normalize = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const normalize = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "");
   const withoutFileClosed = milestones.filter(
     (milestone) => normalize(milestone) !== normalize(fileClosedMilestone),
   );
@@ -118,6 +122,7 @@ function SettingsPage() {
   const adminSections = [
     { key: "workspace", label: "Workspace", content: <WorkspaceSettings /> },
     { key: "yearSetup", label: "Year Setup", content: <YearSetupPanel /> },
+    { key: "mmgLive", label: "MMG live", content: <MmgLiveSettings /> },
     { key: "divisions", label: "Divisions", content: <DivisionSettings /> },
     { key: "indentors", label: "Indentors", content: <IndentorSettings /> },
     { key: "tcec", label: "TCEC Committee", content: <TcecCommitteeSettings /> },
@@ -219,6 +224,104 @@ function AccountSettings() {
           />
         </div>
       )}
+    </div>
+  );
+}
+
+const mmgLiveTrialOptions = [
+  {
+    key: "status1",
+    label: "Status-1",
+    description: "Milestone status counts from Dashboard.",
+  },
+  {
+    key: "status2",
+    label: "Status-2",
+    description: "Division-wise live milestone table from Dashboard.",
+  },
+  {
+    key: "finance",
+    label: "Finance totals",
+    description: "Allocated, intended, booked, committed, and spent totals.",
+  },
+] as const;
+
+function MmgLiveSettings() {
+  const settings = useSettings();
+  const selectedOptions = settings.mmgLiveOptions ?? [];
+
+  const toggleOption = (optionKey: string) => {
+    const next = selectedOptions.includes(optionKey)
+      ? selectedOptions.filter((key) => key !== optionKey)
+      : [...selectedOptions, optionKey];
+    store.updateSettings({ mmgLiveOptions: next });
+  };
+
+  return (
+    <div className="rounded-md border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="mb-1 text-sm font-semibold">MMG live</h2>
+          <p className="max-w-2xl text-xs text-muted-foreground">
+            Trial setup for publishing selected Dashboard/Reports summaries to a read-only local
+            intranet page.
+          </p>
+        </div>
+        <a
+          href="/mmg-live"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-3 text-sm font-medium hover:bg-accent"
+        >
+          Preview
+        </a>
+      </div>
+
+      <label className="mb-4 flex items-center justify-between gap-4 rounded-md border border-border bg-secondary/25 px-3 py-2">
+        <span>
+          <span className="block text-sm font-medium">Activate MMG live page</span>
+          <span className="block text-xs text-muted-foreground">
+            When inactive, the public page shows an unavailable message.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={settings.mmgLiveEnabled === true}
+          onChange={(event) => store.updateSettings({ mmgLiveEnabled: event.target.checked })}
+          className="size-4"
+        />
+      </label>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {mmgLiveTrialOptions.map((option) => (
+          <label
+            key={option.key}
+            className={
+              "rounded-md border p-4 transition " +
+              (selectedOptions.includes(option.key)
+                ? "border-primary bg-primary/10"
+                : "border-border bg-background hover:bg-accent")
+            }
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">{option.label}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={selectedOptions.includes(option.key)}
+                onChange={() => toggleOption(option.key)}
+                className="mt-0.5 size-4"
+              />
+            </div>
+          </label>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-md border border-dashed border-border bg-secondary/20 p-3 text-xs text-muted-foreground">
+        Public URL: <span className="font-medium text-foreground">/mmg-live</span>
+      </div>
     </div>
   );
 }
@@ -995,6 +1098,7 @@ function DivisionSettings() {
   const [editName, setEditName] = useState("");
   const [editCode, setEditCode] = useState("");
   const [editAd, setEditAd] = useState("");
+  const [editMessagesEnabled, setEditMessagesEnabled] = useState(true);
   const [editViewerPassword, setEditViewerPassword] = useState("");
 
   const add = () => {
@@ -1010,6 +1114,7 @@ function DivisionSettings() {
     setEditName(division.name);
     setEditCode(division.code ?? "");
     setEditAd(division.ad ?? "");
+    setEditMessagesEnabled(division.messagesEnabled !== false);
     setEditViewerPassword("");
   };
 
@@ -1019,6 +1124,7 @@ function DivisionSettings() {
       name: editName.trim(),
       code: editCode.trim() || undefined,
       ad: editAd,
+      messagesEnabled: editMessagesEnabled,
       ...(editViewerPassword.trim() ? { viewerPassword: editViewerPassword.trim() } : {}),
     });
     setEditingId(null);
@@ -1047,19 +1153,21 @@ function DivisionSettings() {
       </div>
 
       <div className="mt-5 overflow-x-auto rounded-md border border-border">
-        <table className="w-full min-w-[720px] table-fixed text-sm">
+        <table className="w-full min-w-[820px] table-fixed text-sm">
           <colgroup>
-            <col className="w-[28%]" />
-            <col className="w-[18%]" />
-            <col className="w-[12%]" />
-            <col className="w-[26%]" />
+            <col className="w-[24%]" />
             <col className="w-[16%]" />
+            <col className="w-[10%]" />
+            <col className="w-[18%]" />
+            <col className="w-[22%]" />
+            <col className="w-[10%]" />
           </colgroup>
           <thead className="bg-secondary text-xs text-muted-foreground">
             <tr>
               <th className="text-left font-medium px-4 py-2.5">Division name</th>
               <th className="text-left font-medium px-4 py-2.5">Division code</th>
               <th className="text-left font-medium px-4 py-2.5">AD</th>
+              <th className="text-left font-medium px-4 py-2.5">Messages</th>
               <th className="text-left font-medium px-4 py-2.5">Viewer password</th>
               <th className="text-right font-medium px-4 py-2.5">Action</th>
             </tr>
@@ -1096,6 +1204,23 @@ function DivisionSettings() {
                       <DivisionAdSelect value={editAd} onChange={setEditAd} />
                     ) : (
                       division.ad || "No"
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {isEditing ? (
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={editMessagesEnabled}
+                          onChange={(event) => setEditMessagesEnabled(event.target.checked)}
+                          className="size-4"
+                        />
+                        <span>{editMessagesEnabled ? "Active" : "Inactive"}</span>
+                      </label>
+                    ) : division.messagesEnabled === false ? (
+                      "Inactive"
+                    ) : (
+                      "Active"
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
@@ -1418,7 +1543,7 @@ function IndentorSettings() {
         </button>
       </div>
 
-	      <div className="mt-5 overflow-x-auto rounded-md border border-border">
+      <div className="mt-5 overflow-x-auto rounded-md border border-border">
         <table className="w-full min-w-[1050px] table-fixed text-sm">
           <colgroup>
             <col className="w-[14%]" />
@@ -1443,18 +1568,18 @@ function IndentorSettings() {
             </tr>
           </thead>
           <tbody>
-	            {indentors.length === 0 ? (
-	              <tr className="border-t border-border">
-	                <td className="px-4 py-6 text-center text-muted-foreground" colSpan={8}>
-	                  {indentorsLoading
-	                    ? "Loading indentors..."
-	                    : indentorsError
-	                      ? indentorsError
-	                      : "No indentors found."}
-	                </td>
-	              </tr>
-	            ) : (
-	              indentors.map((indentor) => {
+            {indentors.length === 0 ? (
+              <tr className="border-t border-border">
+                <td className="px-4 py-6 text-center text-muted-foreground" colSpan={8}>
+                  {indentorsLoading
+                    ? "Loading indentors..."
+                    : indentorsError
+                      ? indentorsError
+                      : "No indentors found."}
+                </td>
+              </tr>
+            ) : (
+              indentors.map((indentor) => {
                 const isEditing = editingId === indentor.id;
                 return (
                   <tr key={indentor.id} className="border-t border-border align-top">
@@ -1530,7 +1655,7 @@ function IndentorSettings() {
                               </button>
                               <button
                                 type="button"
-	                                onClick={() => deleteIndentor(indentor.id)}
+                                onClick={() => deleteIndentor(indentor.id)}
                                 className="size-8 grid place-items-center rounded-md text-destructive hover:bg-destructive/10"
                               >
                                 <Trash2 className="size-4" />
@@ -1547,51 +1672,51 @@ function IndentorSettings() {
               })
             )}
           </tbody>
-	        </table>
-	      </div>
-	      <div className="mt-3 flex flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-	        <span>
-	          Showing {firstResultNumber}-{lastResultNumber} of {indentorTotal}
-	        </span>
-	        <div className="flex flex-wrap items-center gap-2">
-	          <select
-	            value={pageSize}
-	            onChange={(event) => {
-	              setPageSize(Number(event.target.value));
-	              setPage(1);
-	            }}
-	            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-	          >
-	            {[25, 50, 100, 200].map((size) => (
-	              <option key={size} value={size}>
-	                {size} / page
-	              </option>
-	            ))}
-	          </select>
-	          <button
-	            type="button"
-	            disabled={page <= 1}
-	            onClick={() => setPage((current) => Math.max(1, current - 1))}
-	            className="h-8 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:opacity-50"
-	          >
-	            Previous
-	          </button>
-	          <span>
-	            Page {page} of {totalPages}
-	          </span>
-	          <button
-	            type="button"
-	            disabled={page >= totalPages}
-	            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-	            className="h-8 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:opacity-50"
-	          >
-	            Next
-	          </button>
-	        </div>
-	      </div>
-	    </div>
-	  );
-	}
+        </table>
+      </div>
+      <div className="mt-3 flex flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <span>
+          Showing {firstResultNumber}-{lastResultNumber} of {indentorTotal}
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={pageSize}
+            onChange={(event) => {
+              setPageSize(Number(event.target.value));
+              setPage(1);
+            }}
+            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          >
+            {[25, 50, 100, 200].map((size) => (
+              <option key={size} value={size}>
+                {size} / page
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            className="h-8 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <span>
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            className="h-8 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function UserSettings() {
   const users = useUsers();

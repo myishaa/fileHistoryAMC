@@ -20,6 +20,7 @@ type DivisionRow = {
   allocated_capital: string | null;
   allocated_revenue: string | null;
   ad: string | null;
+  messages_enabled: boolean | null;
   active: boolean | null;
   archived_at: Date | string | null;
 };
@@ -91,6 +92,7 @@ function mapDivision(row: DivisionRow): Division {
     allocatedCapital: fromDbText(row.allocated_capital),
     allocatedRevenue: fromDbText(row.allocated_revenue),
     ad: fromDbText(row.ad),
+    messagesEnabled: row.messages_enabled ?? true,
     active: row.active ?? false,
     archivedAt: fromDbDate(row.archived_at),
   };
@@ -105,6 +107,7 @@ async function getDivision(id: string, financialYear?: string) {
        coalesce(a.allocated_capital, d.allocated_capital) as allocated_capital,
        coalesce(a.allocated_revenue, d.allocated_revenue) as allocated_revenue,
        d.ad,
+       d.messages_enabled,
        coalesce(a.active, false) as active,
        d.archived_at
      from divisions d
@@ -130,6 +133,7 @@ divisionsRouter.get(
          coalesce(a.allocated_capital, d.allocated_capital) as allocated_capital,
          coalesce(a.allocated_revenue, d.allocated_revenue) as allocated_revenue,
          d.ad,
+         d.messages_enabled,
          coalesce(a.active, false) as active,
          d.archived_at
        from divisions d
@@ -675,10 +679,10 @@ divisionsRouter.post(
     const financialYear = await readAllocationYear(body.financialYear);
 
     const result = await pool.query<DivisionRow>(
-      `insert into divisions (name, code, ad)
-       values ($1, $2, $3)
-       returning id, name, code, null::numeric as allocated_capital, null::numeric as allocated_revenue, ad, true as active, archived_at`,
-      [name, toDbText(body.code), toDbText(body.ad) ?? "No"],
+      `insert into divisions (name, code, ad, messages_enabled)
+       values ($1, $2, $3, $4)
+       returning id, name, code, null::numeric as allocated_capital, null::numeric as allocated_revenue, ad, messages_enabled, true as active, archived_at`,
+      [name, toDbText(body.code), toDbText(body.ad) ?? "No", body.messagesEnabled !== false],
     );
     await upsertYearAllocation(
       result.rows[0].id,
@@ -710,6 +714,7 @@ divisionsRouter.patch(
     if ("name" in body) addField("name", requireString(body.name, "name"));
     if ("code" in body) addField("code", toDbText(body.code));
     if ("ad" in body) addField("ad", toDbText(body.ad));
+    if ("messagesEnabled" in body) addField("messages_enabled", body.messagesEnabled !== false);
     if ("viewerPassword" in body) {
       addField("viewer_password_hash", requireString(body.viewerPassword, "viewerPassword"));
     }
@@ -783,6 +788,7 @@ divisionsRouter.get(
          coalesce(a.allocated_capital, d.allocated_capital) as allocated_capital,
          coalesce(a.allocated_revenue, d.allocated_revenue) as allocated_revenue,
          d.ad,
+         d.messages_enabled,
          coalesce(a.active, false) as active,
          d.archived_at
        from divisions d

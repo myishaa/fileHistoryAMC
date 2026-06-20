@@ -25,6 +25,7 @@ type DashboardTab = "snapshot" | "status" | "liveStatus" | "status3" | "analytic
 type StatusActionMode = "pdf" | "excel" | "search";
 type DivisionValueSortMode = "value" | "percent";
 type AnalyticsResultLimitKey = "5" | "10" | "20" | "50" | "all";
+type AnalyticsSortDirection = "desc" | "asc";
 type DivisionValueSortKey =
   | "allocatedCapital"
   | "allocatedRevenue"
@@ -216,6 +217,9 @@ export function Dashboard() {
   const [topFirmPage, setTopFirmPage] = useState(1);
   const [indentorsByFilesPage, setIndentorsByFilesPage] = useState(1);
   const [indentorsByValuePage, setIndentorsByValuePage] = useState(1);
+  const [analyticsSortDirections, setAnalyticsSortDirections] = useState<
+    Partial<Record<AnalyticsPanelKey, AnalyticsSortDirection>>
+  >({});
   const [selectedAnalyticsDivision, setSelectedAnalyticsDivision] = useState("all");
   const [selectedLiveMilestones, setSelectedLiveMilestones] = useState<string[] | undefined>(
     settings.liveStatusLockedFields,
@@ -618,12 +622,34 @@ export function Dashboard() {
       )}`,
     },
   ];
-  const topFirmRankedRows = withAnalyticsRanks(divisionFilteredAnalytics.topFirmSupplyOrders);
+  const getAnalyticsSortDirection = (panelKey: AnalyticsPanelKey) =>
+    analyticsSortDirections[panelKey] ?? "desc";
+  const setAnalyticsSortDirection = (
+    panelKey: AnalyticsPanelKey,
+    direction: AnalyticsSortDirection,
+  ) => {
+    setAnalyticsSortDirections((current) => ({ ...current, [panelKey]: direction }));
+    if (panelKey === "topFirms") setTopFirmPage(1);
+    if (panelKey === "indentorsByFiles") setIndentorsByFilesPage(1);
+    if (panelKey === "indentorsByValue") setIndentorsByValuePage(1);
+  };
+  const topFirmRankedRows = withAnalyticsRanks(
+    sortAnalyticsRows(
+      divisionFilteredAnalytics.topFirmSupplyOrders,
+      getAnalyticsSortDirection("topFirms"),
+    ),
+  );
   const topIndentorsByFilesRankedRows = withAnalyticsRanks(
-    divisionFilteredAnalytics.topIndentorsByFiles,
+    sortAnalyticsRows(
+      divisionFilteredAnalytics.topIndentorsByFiles,
+      getAnalyticsSortDirection("indentorsByFiles"),
+    ),
   );
   const topIndentorsByValueRankedRows = withAnalyticsRanks(
-    divisionFilteredAnalytics.topIndentorsByValue,
+    sortAnalyticsRows(
+      divisionFilteredAnalytics.topIndentorsByValue,
+      getAnalyticsSortDirection("indentorsByValue"),
+    ),
   );
   const topFirmPagination = getAnalyticsPagination(topFirmRankedRows, topFirmLimit, topFirmPage);
   const indentorsByFilesPagination = getAnalyticsPagination(
@@ -640,11 +666,13 @@ export function Dashboard() {
     {
       key: "divisionFiles",
       title: "Division ranking by files",
-      subtitle: "Number of files, descending",
+      subtitle: "Number of files",
       columns: withRankAnalyticsColumns(getCountAnalyticsColumns("Division")),
-      rows: withAssignedDivisionRankRows(
-        withAnalyticsRanks(analytics.divisionFileRanking),
-        assignedDivisionNames,
+      rows: withAnalyticsRanks(
+        sortAnalyticsRows(
+          withAssignedDivisionRows(analytics.divisionFileRanking, assignedDivisionNames),
+          getAnalyticsSortDirection("divisionFiles"),
+        ),
       ),
     },
     {
@@ -668,9 +696,11 @@ export function Dashboard() {
       title: "Division turnaround ranking",
       subtitle: "Average days from received date to first S.O.",
       columns: withRankAnalyticsColumns(getAverageDaysAnalyticsColumns("Division")),
-      rows: withAssignedDivisionRankRows(
-        withAnalyticsRanks(analytics.divisionTurnaroundRanking),
-        assignedDivisionNames,
+      rows: withAnalyticsRanks(
+        sortAnalyticsRows(
+          withAssignedDivisionRows(analytics.divisionTurnaroundRanking, assignedDivisionNames),
+          getAnalyticsSortDirection("divisionTurnaround"),
+        ),
       ),
     },
     {
@@ -699,7 +729,12 @@ export function Dashboard() {
       title: "Milestones by clearing time",
       subtitle: "Average clearing time in days",
       columns: withRankAnalyticsColumns(getAverageDaysAnalyticsColumns("Milestone")),
-      rows: withAnalyticsRanks(divisionFilteredAnalytics.milestoneClearingRanking),
+      rows: withAnalyticsRanks(
+        sortAnalyticsRows(
+          divisionFilteredAnalytics.milestoneClearingRanking,
+          getAnalyticsSortDirection("milestoneClearing"),
+        ),
+      ),
     },
     {
       key: "monthlyInflow",
@@ -727,9 +762,14 @@ export function Dashboard() {
       title: "Risk load by division",
       subtitle: "Delivery pending, expired DP, LD, or cancelled S.O.",
       columns: withRankAnalyticsColumns(getCountAnalyticsColumns("Division")),
-      rows: withAssignedDivisionRankRows(
-        withAnalyticsRanks(divisionFilteredAnalytics.divisionRiskRanking),
-        assignedDivisionNames,
+      rows: withAnalyticsRanks(
+        sortAnalyticsRows(
+          withAssignedDivisionRows(
+            divisionFilteredAnalytics.divisionRiskRanking,
+            assignedDivisionNames,
+          ),
+          getAnalyticsSortDirection("riskLoad"),
+        ),
       ),
     },
     {
@@ -737,9 +777,14 @@ export function Dashboard() {
       title: "Payment pending by division",
       subtitle: "Material received but payment not completed",
       columns: withRankAnalyticsColumns(getCountAnalyticsColumns("Division")),
-      rows: withAssignedDivisionRankRows(
-        withAnalyticsRanks(divisionFilteredAnalytics.divisionPaymentPendingRanking),
-        assignedDivisionNames,
+      rows: withAnalyticsRanks(
+        sortAnalyticsRows(
+          withAssignedDivisionRows(
+            divisionFilteredAnalytics.divisionPaymentPendingRanking,
+            assignedDivisionNames,
+          ),
+          getAnalyticsSortDirection("paymentPending"),
+        ),
       ),
     },
     {
@@ -747,7 +792,12 @@ export function Dashboard() {
       title: "Milestone clearing ranking",
       subtitle: "Slowest milestones by average clearing time",
       columns: withRankAnalyticsColumns(getAverageDaysAnalyticsColumns("Milestone")),
-      rows: withAnalyticsRanks(divisionFilteredAnalytics.milestoneClearingRanking),
+      rows: withAnalyticsRanks(
+        sortAnalyticsRows(
+          divisionFilteredAnalytics.milestoneClearingRanking,
+          getAnalyticsSortDirection("milestoneClearingTable"),
+        ),
+      ),
     },
   ];
   const selectedAnalyticsPanel =
@@ -757,34 +807,33 @@ export function Dashboard() {
       ? {
           ...selectedAnalyticsPanel,
           exportNote: getDivisionValueRankingCriteria(divisionValueSortKey, divisionValueSortMode),
-          rows: withAssignedDivisionRankRows(
-            withAnalyticsRanks(
-              sortDivisionValueRows(
-                selectedAnalyticsPanel.rows,
-                divisionValueSortKey,
-                divisionValueSortMode,
-              ),
+          rows: withAnalyticsRanks(
+            sortDivisionValueRows(
+              withAssignedDivisionRows(selectedAnalyticsPanel.rows, assignedDivisionNames),
+              divisionValueSortKey,
+              divisionValueSortMode,
+              getAnalyticsSortDirection("divisionValue"),
             ),
-            assignedDivisionNames,
           ),
         }
       : selectedAnalyticsPanel.key === "divisionTotalValue"
         ? {
             ...selectedAnalyticsPanel,
-            rows: withAssignedDivisionRankRows(
-              withAnalyticsRanks(
-                sortDivisionTotalValueRows(
-                  selectedAnalyticsPanel.rows,
-                  divisionTotalValueSortKey,
-                  divisionTotalValueSortMode,
-                ),
+            rows: withAnalyticsRanks(
+              sortDivisionTotalValueRows(
+                withAssignedDivisionRows(selectedAnalyticsPanel.rows, assignedDivisionNames),
+                divisionTotalValueSortKey,
+                divisionTotalValueSortMode,
+                getAnalyticsSortDirection("divisionTotalValue"),
               ),
-              assignedDivisionNames,
             ),
           }
         : selectedAnalyticsPanel;
   const analyticsDivisionFilterEnabled = isDivisionFilterableAnalyticsPanel(
     selectedAnalyticsPanel.key,
+  );
+  const analyticsSortControlEnabled = displayedAnalyticsPanel.columns.some(
+    (column) => column.key === "rank",
   );
   const analyticsLimitControl =
     selectedAnalyticsPanel.key === "topFirms"
@@ -1266,6 +1315,14 @@ export function Dashboard() {
                           of {analyticsLimitControl.total}
                         </span>
                       </label>
+                    ) : null}
+                    {analyticsSortControlEnabled ? (
+                      <AnalyticsSortDirectionControl
+                        value={getAnalyticsSortDirection(selectedAnalyticsPanel.key)}
+                        onChange={(direction) =>
+                          setAnalyticsSortDirection(selectedAnalyticsPanel.key, direction)
+                        }
+                      />
                     ) : null}
                     {analyticsTransferType ? (
                       <button
@@ -2182,6 +2239,37 @@ const divisionTotalValueSortOptions = [
   { key: "committedTotal", label: "Committed" },
 ] satisfies Array<{ key: DivisionTotalValueSortKey; label: string }>;
 
+function AnalyticsSortDirectionControl({
+  value,
+  onChange,
+}: {
+  value: AnalyticsSortDirection;
+  onChange: (direction: AnalyticsSortDirection) => void;
+}) {
+  return (
+    <div className="flex h-8 items-center gap-1 rounded-md border border-border bg-card p-0.5 text-xs font-medium">
+      {[
+        { key: "desc", label: "Desc" },
+        { key: "asc", label: "Asc" },
+      ].map((option) => (
+        <button
+          key={option.key}
+          type="button"
+          onClick={() => onChange(option.key as AnalyticsSortDirection)}
+          className={
+            "h-7 rounded px-2.5 transition " +
+            (value === option.key
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground")
+          }
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function DivisionValueSortControls({
   mode,
   sortKey,
@@ -2482,11 +2570,12 @@ function sortDivisionValueRows(
   rows: Array<Record<string, number | string>>,
   sortKey: DivisionValueSortKey,
   mode: DivisionValueSortMode,
+  direction: AnalyticsSortDirection,
 ) {
   return [...rows].sort((a, b) => {
     const aValue = getDivisionValueSortValue(a, sortKey, mode);
     const bValue = getDivisionValueSortValue(b, sortKey, mode);
-    if (bValue !== aValue) return bValue - aValue;
+    if (bValue !== aValue) return direction === "desc" ? bValue - aValue : aValue - bValue;
     return String(a.name ?? "").localeCompare(String(b.name ?? ""));
   });
 }
@@ -2507,11 +2596,12 @@ function sortDivisionTotalValueRows(
   rows: Array<Record<string, number | string>>,
   sortKey: DivisionTotalValueSortKey,
   mode: DivisionValueSortMode,
+  direction: AnalyticsSortDirection,
 ) {
   return [...rows].sort((a, b) => {
     const aValue = getDivisionTotalValueSortValue(a, sortKey, mode);
     const bValue = getDivisionTotalValueSortValue(b, sortKey, mode);
-    if (bValue !== aValue) return bValue - aValue;
+    if (bValue !== aValue) return direction === "desc" ? bValue - aValue : aValue - bValue;
     return String(a.name ?? "").localeCompare(String(b.name ?? ""));
   });
 }
@@ -2539,17 +2629,23 @@ function withAnalyticsRanks(rows: Array<Record<string, number | string>>) {
   return rows.map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
-function withAssignedDivisionRankRows(
+function sortAnalyticsRows(
+  rows: Array<Record<string, number | string>>,
+  direction: AnalyticsSortDirection,
+) {
+  return direction === "desc" ? rows : [...rows].reverse();
+}
+
+function withAssignedDivisionRows(
   rows: Array<Record<string, number | string>>,
   assignedDivisionNames: string[],
 ) {
   if (!assignedDivisionNames.length) return rows;
   const existingNames = new Set(rows.map((row) => normalizeAnalyticsName(String(row.name ?? ""))));
-  const assignedRows = assignedDivisionNames
+  const assignedRows: Array<Record<string, number | string>> = assignedDivisionNames
     .filter((name) => !existingNames.has(normalizeAnalyticsName(name)))
-    .map((name, index) => ({
+    .map((name) => ({
       name,
-      rank: rows.length + index + 1,
       count: 0,
       averageDays: 0,
       sampleSize: 0,
@@ -3829,15 +3925,18 @@ function formatThresholdRange(level: ValueThresholdLevel) {
   const min = parseAmount(level.minValue);
   const max = parseAmount(level.maxValue);
   if (min !== undefined && max !== undefined) {
-    return `${formatPlainAmount(min)}-${formatPlainAmount(max)}`;
+    return `${formatLakhRangeAmount(min)}-${formatLakhRangeAmount(max)} L`;
   }
-  if (min !== undefined) return `${formatPlainAmount(min)}+`;
-  if (max !== undefined) return `0-${formatPlainAmount(max)}`;
+  if (min !== undefined) return `${formatLakhRangeAmount(min)} L+`;
+  if (max !== undefined) return `0-${formatLakhRangeAmount(max)} L`;
   return "Any value";
 }
 
-function formatPlainAmount(value: number) {
-  return Math.round(value).toLocaleString("en-IN");
+function formatLakhRangeAmount(value: number) {
+  const lakhs = value / 100000;
+  return Number.isInteger(lakhs)
+    ? String(lakhs)
+    : lakhs.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 }
 
 function getDivisionRiskRanking(files: FileRecord[]) {

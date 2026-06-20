@@ -370,7 +370,8 @@ function getConfiguredMilestones(milestones: string[] | undefined) {
 
 function appendFileClosedMilestone(milestones: string[]) {
   const withoutFileClosed = milestones.filter(
-    (milestone) => normalizeMilestoneName(milestone) !== normalizeMilestoneName(fileClosedMilestone),
+    (milestone) =>
+      normalizeMilestoneName(milestone) !== normalizeMilestoneName(fileClosedMilestone),
   );
   return [...withoutFileClosed, fileClosedMilestone];
 }
@@ -768,15 +769,18 @@ function formatThresholdRange(level: AppSettings["valueThresholdLevels"][number]
   const min = parseAmount(level.minValue);
   const max = parseAmount(level.maxValue);
   if (min !== undefined && max !== undefined) {
-    return `${formatPlainAmount(min)}-${formatPlainAmount(max)}`;
+    return `${formatLakhRangeAmount(min)}-${formatLakhRangeAmount(max)} L`;
   }
-  if (min !== undefined) return `${formatPlainAmount(min)}+`;
-  if (max !== undefined) return `0-${formatPlainAmount(max)}`;
+  if (min !== undefined) return `${formatLakhRangeAmount(min)} L+`;
+  if (max !== undefined) return `0-${formatLakhRangeAmount(max)} L`;
   return "Any value";
 }
 
-function formatPlainAmount(value: number) {
-  return Math.round(value).toLocaleString("en-IN");
+function formatLakhRangeAmount(value: number) {
+  const lakhs = value / 100000;
+  return Number.isInteger(lakhs)
+    ? String(lakhs)
+    : lakhs.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 }
 
 function getDivisionRiskRanking(files: FileRecord[]) {
@@ -1210,7 +1214,8 @@ function isCancelledFile(file: FileRecord) {
 function isFileClosed(file: Pick<FileRecord, "completedMilestones">) {
   return Boolean(
     file.completedMilestones?.some(
-      (milestone) => normalizeMilestoneName(milestone) === normalizeMilestoneName(fileClosedMilestone),
+      (milestone) =>
+        normalizeMilestoneName(milestone) === normalizeMilestoneName(fileClosedMilestone),
     ),
   );
 }

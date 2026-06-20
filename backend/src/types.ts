@@ -9,6 +9,7 @@ export type Division = {
   allocatedCapital?: string;
   allocatedRevenue?: string;
   ad?: string;
+  messagesEnabled?: boolean;
   active?: boolean;
   archivedAt?: string;
 };
@@ -58,6 +59,8 @@ export type AppSettings = {
   milestones: string[];
   tableFieldPresets: unknown[];
   liveStatusLockedFields?: string[];
+  mmgLiveEnabled?: boolean;
+  mmgLiveOptions?: string[];
   activeUserId?: string;
 };
 
@@ -202,4 +205,33 @@ export type FileRecord = {
   currentMilestone?: string;
   completedMilestones?: string[];
   createdAt: string;
+};
+
+export type FileMessageReply = {
+  id: string;
+  messageId: string;
+  text: string;
+  createdByName: string;
+  createdByRole: string;
+  createdAt: string;
+};
+
+export type FileMessage = {
+  id: string;
+  fileId: string;
+  divisionId?: string;
+  divisionName: string;
+  fileUniqueCode?: string;
+  fileNo?: string;
+  imms?: string;
+  section: string;
+  text: string;
+  status: "pending" | "resolved";
+  createdByName: string;
+  createdByRole: string;
+  createdAt: string;
+  resolvedByName?: string;
+  resolvedAt?: string;
+  viewedAt?: string;
+  replies: FileMessageReply[];
 };

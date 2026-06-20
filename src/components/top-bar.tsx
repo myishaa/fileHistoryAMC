@@ -12,9 +12,11 @@ import {
   Sun,
   UserRound,
   LogOut,
+  Bell,
 } from "lucide-react";
-import { Link } from "@tanstack/react-router";
-import { store, useActiveUser, useFiles, useSettings } from "@/lib/files-store";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useMemo } from "react";
+import { store, useActiveUser, useFiles, useMessages, useSettings } from "@/lib/files-store";
 import { ALL_ACTIVE_FILES_YEAR } from "@/lib/year-filter";
 
 const nav = [
@@ -28,8 +30,10 @@ const nav = [
 
 export function TopBar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
   const settings = useSettings();
   const files = useFiles();
+  const messages = useMessages();
   const activeUser = useActiveUser();
   const isDark = settings.theme === "dark";
   const canManageAdminSettings = activeUser?.role === "admin";
@@ -45,6 +49,22 @@ export function TopBar() {
     if (item.to === "/add" || item.to === "/quick-entry") return canAddFiles;
     return true;
   });
+  const isViewer = activeUser?.role === "viewer" || activeUser?.role === "division_user";
+  const pendingMessages = useMemo(
+    () => messages.filter((message) => message.status === "pending"),
+    [messages],
+  );
+  const resolvedMessages = useMemo(
+    () => messages.filter((message) => message.status === "resolved"),
+    [messages],
+  );
+  const viewerUnreadResolved = useMemo(
+    () => resolvedMessages.filter((message) => !message.viewedAt),
+    [resolvedMessages],
+  );
+  const bellCount = isViewer
+    ? pendingMessages.length + viewerUnreadResolved.length
+    : pendingMessages.length;
   const yearOptions = Array.from(
     new Set(
       [
@@ -95,6 +115,32 @@ export function TopBar() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() =>
+                navigate({
+                  to: "/messages",
+                  search: {
+                    view: undefined,
+                    page: undefined,
+                    division: undefined,
+                    section: undefined,
+                  },
+                })
+              }
+              title="Messages"
+              aria-label="Messages"
+              className="relative size-8 rounded-md border border-border bg-card hover:bg-accent grid place-items-center"
+            >
+              <Bell className="size-4" />
+              {bellCount ? (
+                <span className="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold leading-none text-destructive-foreground">
+                  {bellCount}
+                </span>
+              ) : null}
+            </button>
+          </div>
           <label className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1">
             <CalendarDays className="size-4 text-muted-foreground" />
             <span className="text-[11px] font-medium text-muted-foreground">Year</span>

@@ -5,6 +5,7 @@ import {
   createRootRouteWithContext,
   useRouter,
   useNavigate,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -114,17 +115,21 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const settings = useSettings();
   const activeUser = useActiveUser();
   const themeClass = settings.theme === "dark" ? "dark" : "";
   const tintClass = `theme-tint-${settings.themeTint}`;
+  const isPublicLivePage = pathname === "/mmg-live";
 
   return (
     <QueryClientProvider client={queryClient}>
       <div
         className={`${themeClass} ${tintClass} min-h-screen w-full bg-background text-foreground`}
       >
-        {activeUser ? (
+        {isPublicLivePage ? (
+          <Outlet />
+        ) : activeUser ? (
           <>
             <TopBar />
             <main className="p-6 lg:p-8">
@@ -185,7 +190,10 @@ function LoginScreen() {
       } else {
         await store.login(username, password);
       }
-      await navigate({ to: "/search", search: { dashboardFilter: undefined, division: undefined } });
+      await navigate({
+        to: "/search",
+        search: { dashboardFilter: undefined, division: undefined },
+      });
     } catch (error) {
       setError(error instanceof Error ? error.message : "Login failed.");
     } finally {

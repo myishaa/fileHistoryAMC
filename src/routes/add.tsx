@@ -4,6 +4,7 @@ import {
   fetchIndentors,
   store,
   type Division,
+  type FileMessage,
   type FileRecord,
   type FileRemark,
   type FirmDetail,
@@ -14,9 +15,10 @@ import {
   useActiveUser,
   useDivisions,
   useFiles,
+  useMessages,
   useSettings,
 } from "@/lib/files-store";
-import { Save, Eraser, Lock, Plus, Printer, Trash2, Unlock } from "lucide-react";
+import { MessageSquare, Save, Eraser, Lock, Plus, Printer, Trash2, Unlock } from "lucide-react";
 import { promptDeletionPassword } from "@/lib/delete-password";
 import { validateMilestoneCompletionConsistency } from "@/lib/milestone-validation";
 
@@ -472,6 +474,8 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
   const divisions = useAccessibleDivisions();
   const files = useAccessibleFiles();
   const allFiles = useFiles();
+  const messages = useMessages();
+  const activeUser = useActiveUser();
   const settings = useSettings();
   const { fileId, section, quickFocus } = Route.useSearch();
   const navigate = useNavigate();
@@ -622,7 +626,7 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [selectedDivision?.id, formWithLockedYear.indentor]);
+  }, [selectedDivision, formWithLockedYear.indentor]);
   const tcecIsNo = isNo(formWithLockedYear.tcec);
   const gemIsNo = isNo(formWithLockedYear.gem);
   const highValueIsNo = isNo(formWithLockedYear.highValue);
@@ -668,7 +672,12 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
   const activeSectionIndex = extraSections.findIndex(
     (section) => section.title === activeBoardSection,
   );
-
+  const activeSectionMessages =
+    editingFile && activeSection
+      ? messages.filter(
+          (message) => message.fileId === editingFile.id && message.section === activeSection.title,
+        )
+      : [];
   useEffect(() => {
     if (!quickFocus || !editingFile || !activeSection) return;
 
@@ -1152,7 +1161,11 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
       <div className="bg-card border border-border rounded-md shadow-[var(--shadow-card)] overflow-hidden">
         <div className="p-5 border-b border-border bg-secondary/30">
           <h2 className="text-base font-semibold">
-            {readOnlyMode ? "View file details" : isEditing ? "Edit file details" : "Add a new file"}
+            {readOnlyMode
+              ? "View file details"
+              : isEditing
+                ? "Edit file details"
+                : "Add a new file"}
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
             {readOnlyMode
@@ -1263,10 +1276,18 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
                 onDelete={deleteRemark}
                 disabled={readOnlyMode}
               />
+              {editingFile ? (
+                <SectionMessages
+                  fileId={editingFile.id}
+                  sectionTitle={activeSection.title}
+                  messages={activeSectionMessages}
+                  activeUserRole={activeUser?.role}
+                  messagesEnabled={selectedDivision?.messagesEnabled !== false}
+                />
+              ) : null}
             </section>
           )}
         </div>
-
         <div className="px-5 py-4 border-t border-border bg-secondary/40 flex flex-wrap items-center justify-between gap-2">
           <div>
             {isEditing && !readOnlyMode && (
@@ -1430,6 +1451,235 @@ function SectionRemarks({
       ) : null}
     </div>
   );
+}
+
+function SectionMessages({
+  fileId,
+  sectionTitle,
+  messages,
+  activeUserRole,
+  messagesEnabled,
+}: {
+  fileId: string;
+  sectionTitle: string;
+  messages: FileMessage[];
+  activeUserRole?: string;
+  messagesEnabled: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [action, setAction] = useState("");
+  const pendingMessages = messages.filter((message) => message.status === "pending");
+  const resolvedMessages = messages.filter((message) => message.status === "resolved");
+  const canCreate = activeUserRole === "viewer" || activeUserRole === "division_user";
+  const canResolve =
+    activeUserRole === "admin" || activeUserRole === "sub_admin" || activeUserRole === "editor";
+  const draftWords = countMessageWords(draft);
+
+  const sendMessage = async () => {
+    const text = draft.trim();
+    if (!text || draftWords > 20) return;
+    setAction("Sending...");
+    try {
+      await store.createMessage(fileId, sectionTitle, text);
+      setDraft("");
+      setAction("Message sent.");
+    } catch (error) {
+      setAction(error instanceof Error ? error.message : "Message could not be sent.");
+    }
+  };
+
+  const replyToMessage = async (messageId: string) => {
+    const text = replyDrafts[messageId]?.trim() ?? "";
+    if (!text || countMessageWords(text) > 20) return;
+    setAction("Saving reply...");
+    try {
+      await store.replyToMessage(messageId, text);
+      setReplyDrafts((current) => ({ ...current, [messageId]: "" }));
+      setAction("Reply saved.");
+    } catch (error) {
+      setAction(error instanceof Error ? error.message : "Reply could not be saved.");
+    }
+  };
+
+  const resolveMessage = async (messageId: string) => {
+    setAction("Resolving...");
+    try {
+      await store.resolveMessage(messageId);
+      setAction("Message resolved.");
+    } catch (error) {
+      setAction(error instanceof Error ? error.message : "Message could not be resolved.");
+    }
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    setAction("Deleting...");
+    try {
+      await store.deleteMessage(messageId);
+      setAction("Message deleted.");
+    } catch (error) {
+      setAction(error instanceof Error ? error.message : "Message could not be deleted.");
+    }
+  };
+
+  return (
+    <div className="mt-5 rounded-md border border-border bg-secondary/20 p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="size-4 text-muted-foreground" />
+          <div>
+            <div className="text-sm font-semibold">Messages</div>
+            <div className="text-xs text-muted-foreground">
+              Pending {pendingMessages.length} · Resolved {resolvedMessages.length}
+            </div>
+          </div>
+        </div>
+        {!messagesEnabled ? (
+          <span className="rounded-full bg-secondary px-2 py-1 text-xs font-medium">
+            Disabled for division
+          </span>
+        ) : null}
+      </div>
+
+      {canCreate ? (
+        <div className="mb-3">
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            disabled={!messagesEnabled}
+            placeholder="Add message"
+            className={textareaCls + disabledCls(!messagesEnabled)}
+          />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <div
+              className={
+                draftWords > 20 ? "text-xs text-destructive" : "text-xs text-muted-foreground"
+              }
+            >
+              {draftWords}/20 words
+            </div>
+            <button
+              type="button"
+              onClick={() => void sendMessage()}
+              disabled={!draft.trim() || draftWords > 20 || !messagesEnabled}
+              className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {messages.length ? (
+        <div className="space-y-2">
+          {messages.map((message) => {
+            const replyDraft = replyDrafts[message.id] ?? "";
+            const replyWords = countMessageWords(replyDraft);
+            return (
+              <div key={message.id} className="rounded-md border border-border bg-background p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-semibold">
+                      {message.createdByName} · {formatRemarkDate(message.createdAt)}
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-sm">{message.text}</p>
+                  </div>
+                  <span className="rounded-full bg-secondary px-2 py-1 text-xs font-medium capitalize">
+                    {message.status}
+                  </span>
+                </div>
+
+                {message.resolvedByName ? (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    Resolved by {message.resolvedByName}
+                    {message.resolvedAt ? ` on ${formatRemarkDate(message.resolvedAt)}` : ""}
+                  </div>
+                ) : null}
+
+                {message.replies.length ? (
+                  <div className="mt-2 space-y-1 border-t border-border pt-2">
+                    {message.replies.map((reply) => (
+                      <div key={reply.id} className="rounded bg-secondary/40 p-2 text-sm">
+                        <div className="text-xs font-medium">
+                          {reply.createdByName} · {formatRemarkDate(reply.createdAt)}
+                        </div>
+                        <div className="mt-1 whitespace-pre-wrap">{reply.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {canResolve && message.status === "pending" ? (
+                  <div className="mt-2 border-t border-border pt-2">
+                    <textarea
+                      value={replyDraft}
+                      onChange={(event) =>
+                        setReplyDrafts((current) => ({
+                          ...current,
+                          [message.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Reply"
+                      className="min-h-16 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                    />
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <div
+                        className={
+                          replyWords > 20
+                            ? "text-xs text-destructive"
+                            : "text-xs text-muted-foreground"
+                        }
+                      >
+                        {replyWords}/20 words
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void replyToMessage(message.id)}
+                          disabled={!replyDraft.trim() || replyWords > 20}
+                          className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                        >
+                          Reply
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void resolveMessage(message.id)}
+                          className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:opacity-90"
+                        >
+                          Resolve
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {canCreate ? (
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void deleteMessage(message.id)}
+                      className="inline-flex h-8 items-center rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-destructive hover:bg-destructive/10"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed border-border bg-background p-3 text-sm text-muted-foreground">
+          No messages for this section.
+        </div>
+      )}
+      {action ? <div className="mt-2 text-xs text-muted-foreground">{action}</div> : null}
+    </div>
+  );
+}
+
+function countMessageWords(value: string) {
+  return value.trim().split(/\s+/).filter(Boolean).length;
 }
 
 function ActiveYearsField({
@@ -2742,7 +2992,8 @@ function getConfiguredMilestones(milestones: string[] | undefined) {
 
 function appendFileClosedMilestone(milestones: string[]) {
   const withoutFileClosed = milestones.filter(
-    (milestone) => normalizeMilestoneName(milestone) !== normalizeMilestoneName(fileClosedMilestone),
+    (milestone) =>
+      normalizeMilestoneName(milestone) !== normalizeMilestoneName(fileClosedMilestone),
   );
   return [...withoutFileClosed, fileClosedMilestone];
 }

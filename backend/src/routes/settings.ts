@@ -34,6 +34,8 @@ type SettingsRow = {
   tcec_committees: unknown;
   milestones: unknown;
   table_field_presets: unknown;
+  mmg_live_enabled: boolean;
+  mmg_live_options: unknown;
   active_user_id: string | null;
 };
 
@@ -168,6 +170,10 @@ async function mapSettings(row: SettingsRow, user?: AuthRequest["authUser"]): Pr
     valueThresholdLevels: await loadValueThresholdLevels(row.selected_year),
     milestones: fromDbJsonArray(row.milestones) as string[],
     tableFieldPresets: [...globalPresets, ...personalPresets],
+    mmgLiveEnabled: row.mmg_live_enabled,
+    mmgLiveOptions: fromDbJsonArray(row.mmg_live_options).filter(
+      (option): option is string => typeof option === "string",
+    ),
     ...(liveStatusLockedFields !== undefined ? { liveStatusLockedFields } : {}),
     activeUserId: fromDbText(row.active_user_id) || undefined,
   };
@@ -248,7 +254,7 @@ async function replaceValueThresholdLevels(financialYear: string, levels: unknow
 async function getSettings(user?: AuthRequest["authUser"]) {
   const result = await pool.query<SettingsRow>(
     `select financial_year, selected_year, year_selection_locked, theme, theme_tint, deletion_password,
-            tcec_committees, milestones, table_field_presets, active_user_id
+            tcec_committees, milestones, table_field_presets, mmg_live_enabled, mmg_live_options, active_user_id
      from app_settings
      where id = true`,
   );
@@ -407,6 +413,13 @@ settingsRouter.patch(
     }
     if ("milestones" in body)
       addField("milestones", readArray(body.milestones, "milestones"), "::jsonb");
+    if ("mmgLiveEnabled" in body) addField("mmg_live_enabled", body.mmgLiveEnabled === true);
+    if ("mmgLiveOptions" in body)
+      addField(
+        "mmg_live_options",
+        JSON.stringify(readStringArray(body.mmgLiveOptions, "mmgLiveOptions")),
+        "::jsonb",
+      );
     if ("tableFieldPresets" in body && user.role === "admin") {
       addField(
         "table_field_presets",

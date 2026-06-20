@@ -20,6 +20,10 @@ psql "$DATABASE_URL" -f database/012_year_selection_lock.sql
 psql "$DATABASE_URL" -f database/013_indentors.sql
 psql "$DATABASE_URL" -f database/014_bid_number.sql
 psql "$DATABASE_URL" -f database/015_search_indexes.sql
+psql "$DATABASE_URL" -f database/016_user_live_status_preferences.sql
+psql "$DATABASE_URL" -f database/017_file_messages.sql
+psql "$DATABASE_URL" -f database/018_message_workflow_controls.sql
+psql "$DATABASE_URL" -f database/019_mmg_live_settings.sql
 ```
 
 The backend will read the same `DATABASE_URL` from `backend/.env`.
@@ -64,12 +68,17 @@ curl http://localhost:3000/api/health
 - `POST /api/files`
 - `PATCH /api/files/:id`
 - `DELETE /api/files/:id`
+- `GET /api/messages`
+- `POST /api/messages`
+- `POST /api/messages/:id/replies`
+- `POST /api/messages/:id/resolve`
 
 The file endpoints accept and return the current frontend-style camelCase shape. Empty strings are stored as `null` for dates, numbers, and optional text fields. Nested file data is stored in child tables:
 
 - `invitedFirms` and `bidderFirms` -> `file_firms`
 - `supplyOrders` -> `supply_orders`
 - `remarks` -> `file_remarks`
+- `messages` -> `file_messages` and `file_message_replies`
 - `completedMilestones` -> `file_completed_milestones`
 
 ## Main Tables
@@ -92,6 +101,10 @@ The file endpoints accept and return the current frontend-style camelCase shape.
 - `file_firms`: invited and bidder firm rows.
 - `supply_orders`: multiple supply order rows for a file.
 - `file_remarks`: remarks grouped by section.
+- `file_messages`: division viewer queries grouped by file and section.
+- `file_message_replies`: editor/admin replies to file messages.
+- `divisions.messages_enabled`: admin-controlled switch for enabling viewer messages per division.
+- `app_settings.mmg_live_enabled` / `mmg_live_options`: admin-selected trial MMG Live public dashboard blocks.
 - `file_completed_milestones`: completed milestone names per file.
 
 The schema is designed so the current frontend can later receive data in the same shape as `FileRecord`, while the backend stores repeated data like firms, remarks, and supply orders in proper child tables.

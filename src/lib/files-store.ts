@@ -106,6 +106,35 @@ export type FileRemark = {
   createdAt: string;
 };
 
+export type FileMessageReply = {
+  id: string;
+  messageId: string;
+  text: string;
+  createdByName: string;
+  createdByRole: string;
+  createdAt: string;
+};
+
+export type FileMessage = {
+  id: string;
+  fileId: string;
+  divisionId?: string;
+  divisionName: string;
+  fileUniqueCode?: string;
+  fileNo?: string;
+  imms?: string;
+  section: string;
+  text: string;
+  status: "pending" | "resolved";
+  createdByName: string;
+  createdByRole: string;
+  createdAt: string;
+  resolvedByName?: string;
+  resolvedAt?: string;
+  viewedAt?: string;
+  replies: FileMessageReply[];
+};
+
 export type SupplyOrderDetail = {
   soNo?: string;
   gemSoNo?: string;
@@ -142,6 +171,7 @@ export type Division = {
   allocatedCapital?: string;
   allocatedRevenue?: string;
   ad?: string;
+  messagesEnabled?: boolean;
   active?: boolean;
   archivedAt?: string;
 };
@@ -222,6 +252,8 @@ export type AppSettings = {
   milestones: string[];
   tableFieldPresets: TableFieldPreset[];
   liveStatusLockedFields?: string[];
+  mmgLiveEnabled?: boolean;
+  mmgLiveOptions?: string[];
   activeUserId?: string;
 };
 
@@ -241,6 +273,8 @@ const defaultSettings: AppSettings = {
   valueThresholdLevels: [],
   milestones: [],
   tableFieldPresets: defaultTableFieldPresets,
+  mmgLiveEnabled: false,
+  mmgLiveOptions: [],
 };
 
 const defaultUsers: AppUser[] = [];
@@ -257,6 +291,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:300
 
 type StoreState = {
   files: FileRecord[];
+  messages: FileMessage[];
   divisions: Division[];
   indentors: Indentor[];
   settings: AppSettings;
@@ -269,6 +304,7 @@ type StoreState = {
 
 let state: StoreState = {
   files: [],
+  messages: [],
   divisions: [],
   indentors: [],
   settings: defaultSettings,
@@ -340,6 +376,7 @@ async function loadAll(force = false) {
         );
         setState({
           files: [],
+          messages: [],
           divisions: divisions.divisions,
           indentors: [],
           users: [],
@@ -361,8 +398,9 @@ async function loadAll(force = false) {
       const baseRequests = [
         request<{ files: FileRecord[] }>(filesPath(settings.settings.selectedYear)),
         request<{ divisions: Division[] }>(divisionsPath(settings.settings.selectedYear)),
+        request<{ messages: FileMessage[] }>("/api/messages"),
       ] as const;
-      const [files, divisions] = await Promise.all(baseRequests);
+      const [files, divisions, messages] = await Promise.all(baseRequests);
       const users =
         auth.user.role === "admin"
           ? await request<{ users: AppUser[] }>("/api/users")
@@ -370,6 +408,7 @@ async function loadAll(force = false) {
 
       setState({
         files: files.files,
+        messages: messages.messages,
         divisions: divisions.divisions,
         indentors: [],
         users: users.users,
@@ -420,6 +459,10 @@ export const store = {
   getFiles(): FileRecord[] {
     ensureLoaded();
     return state.files;
+  },
+  getMessages(): FileMessage[] {
+    ensureLoaded();
+    return state.messages;
   },
   getDivisions(): Division[] {
     ensureLoaded();
@@ -488,6 +531,7 @@ export const store = {
       await request<{ ok: true }>("/api/auth/logout", { method: "POST" });
       setState({
         files: [],
+        messages: [],
         indentors: [],
         users: [],
         authUser: undefined,
@@ -512,6 +556,48 @@ export const store = {
         body: JSON.stringify(patch),
       }),
     );
+  },
+  createMessage(fileId: string, section: string, text: string) {
+    return (async () => {
+      await request<{ message: FileMessage }>("/api/messages", {
+        method: "POST",
+        body: JSON.stringify({ fileId, section, text }),
+      });
+      await loadAll(true);
+    })();
+  },
+  replyToMessage(id: string, text: string) {
+    return (async () => {
+      await request<{ message: FileMessage }>(`/api/messages/${id}/replies`, {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      });
+      await loadAll(true);
+    })();
+  },
+  resolveMessage(id: string) {
+    return (async () => {
+      await request<{ message: FileMessage }>(`/api/messages/${id}/resolve`, {
+        method: "POST",
+      });
+      await loadAll(true);
+    })();
+  },
+  markMessageViewed(id: string) {
+    return (async () => {
+      await request<{ message: FileMessage }>(`/api/messages/${id}/view`, {
+        method: "POST",
+      });
+      await loadAll(true);
+    })();
+  },
+  deleteMessage(id: string) {
+    return (async () => {
+      await request<{ deleted: true }>(`/api/messages/${id}`, {
+        method: "DELETE",
+      });
+      await loadAll(true);
+    })();
   },
   deleteFile(id: string, deletionPassword: string) {
     setState({ files: state.files.filter((f) => f.id !== id) });
@@ -649,17 +735,17 @@ export const store = {
       await loadAll(true);
     })();
   },
-	  addIndentor(
-	    indentor: Pick<
-	      Indentor,
-	      "divisionId" | "name" | "sfId" | "designation" | "mobileNo" | "landlineNo" | "email"
-	    >,
-	  ) {
-	    return request<{ indentor: Indentor }>("/api/indentors", {
-	        method: "POST",
-	        body: JSON.stringify(indentor),
-	      });
-	  },
+  addIndentor(
+    indentor: Pick<
+      Indentor,
+      "divisionId" | "name" | "sfId" | "designation" | "mobileNo" | "landlineNo" | "email"
+    >,
+  ) {
+    return request<{ indentor: Indentor }>("/api/indentors", {
+      method: "POST",
+      body: JSON.stringify(indentor),
+    });
+  },
   updateIndentor(
     id: string,
     patch: Pick<
@@ -667,16 +753,16 @@ export const store = {
       "divisionId" | "name" | "sfId" | "designation" | "mobileNo" | "landlineNo" | "email"
     >,
   ) {
-	    return request<{ indentor: Indentor }>(`/api/indentors/${id}`, {
-	        method: "PATCH",
-	        body: JSON.stringify(patch),
-	      });
-	  },
-	  deleteIndentor(id: string) {
-	    return request<{ deleted: true; indentor: Indentor }>(`/api/indentors/${id}`, {
-	      method: "DELETE",
-	    });
-	  },
+    return request<{ indentor: Indentor }>(`/api/indentors/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  },
+  deleteIndentor(id: string) {
+    return request<{ deleted: true; indentor: Indentor }>(`/api/indentors/${id}`, {
+      method: "DELETE",
+    });
+  },
   addUser(user: Omit<AppUser, "id"> & { password: string }) {
     runMutation(() =>
       request("/api/users", {
@@ -736,6 +822,17 @@ export function useFiles() {
     };
   }, []);
   return store.getFiles();
+}
+
+export function useMessages() {
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const u = store.subscribe(() => setTick((t) => t + 1));
+    return () => {
+      u();
+    };
+  }, []);
+  return store.getMessages();
 }
 
 export function useDivisions() {
