@@ -164,6 +164,25 @@ export function validateMilestoneCompletionConsistency(
   return errors;
 }
 
+export function getMilestoneValidationTarget(errors: string[], configuredMilestones: string[]) {
+  const configured = configuredMilestones.length
+    ? configuredMilestones
+    : milestoneCompletionRules.flatMap((rule) => rule.aliases.slice(0, 1));
+  const firstError = errors[0] ?? "";
+  const matchingRule = milestoneCompletionRules.find((rule) =>
+    [rule.completionLabel, ...rule.aliases].some((label) =>
+      firstError.toLowerCase().includes(label.toLowerCase()),
+    ),
+  );
+  if (!matchingRule) return undefined;
+  const match = configured.find((milestone) =>
+    matchingRule.aliases.some(
+      (alias) => normalizeMilestoneName(alias) === normalizeMilestoneName(milestone),
+    ),
+  );
+  return match ?? matchingRule.aliases[0];
+}
+
 function getMilestoneCompletionRule(milestone: string) {
   const key = normalizeMilestoneName(milestone);
   return milestoneCompletionRules.find((rule) =>

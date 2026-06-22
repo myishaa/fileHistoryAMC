@@ -55,7 +55,8 @@ type AnalyticsPanelKey =
   | "biddingMode"
   | "fileValueThresholds"
   | "paymentPending"
-  | "milestoneClearingTable";
+  | "milestoneClearingTable"
+  | "delayStatus";
 type AnalyticsTableColumn = {
   key: string;
   label: string;
@@ -72,6 +73,26 @@ type AnalyticsPanel = {
   divisionValueDisplayMode?: DivisionValueDisplayMode;
   columns: AnalyticsTableColumn[];
   rows: Array<Record<string, number | string>>;
+};
+type DelayStatusRow = {
+  fileId: string;
+  fileRef: string;
+  division: string;
+  indentor: string;
+  description: string;
+  milestoneKey: string;
+  milestone: string;
+  stageStartDate: string;
+  daysInStage: number;
+  lastFilledDate: string;
+};
+type ReportsDelaySummaryPayload = {
+  delayRows: DelayStatusRow[];
+  delaySummary: {
+    averageDays: number;
+    longestDays: number;
+    byMilestone: Array<{ key: string; label: string; count: number }>;
+  };
 };
 type SummarySubMetric = { label: string; value: number | string; searchFilter?: string };
 type FinanceSplitValue = { capital: string; revenue: string };
@@ -164,6 +185,18 @@ async function fetchDashboardStatusSummary(query: string, signal: AbortSignal) {
   return (await response.json()) as { summary: { statusSummaryGroups: StatusSummaryTableGroup[] } };
 }
 
+async function fetchReportsDelaySummary(query: string, signal: AbortSignal) {
+  const response = await fetch(`${API_BASE_URL}/api/reports/summary?${query}`, {
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
+    throw new Error(body?.error ?? `Delay status request failed: ${response.status}`);
+  }
+  return (await response.json()) as { summary: ReportsDelaySummaryPayload };
+}
+
 async function downloadDashboardStatusFiles({
   dashboardFilter,
   division,
@@ -198,6 +231,24 @@ const divisionFilterableAnalyticsPanels: AnalyticsPanelKey[] = [
   "fileValueThresholds",
   "paymentPending",
   "milestoneClearingTable",
+  "delayStatus",
+];
+const delayStatusMilestoneOptions = [
+  { key: "all", label: "All milestones" },
+  { key: "scrutiny", label: "Scrutiny" },
+  { key: "highValue", label: "High Value" },
+  { key: "tcec", label: "Pre-TCEC" },
+  { key: "ad", label: "AD" },
+  { key: "rqa", label: "R&QA" },
+  { key: "control", label: "Controlling" },
+  { key: "ifa", label: "IFA" },
+  { key: "cfa", label: "CFA" },
+  { key: "bidding", label: "Bidding" },
+  { key: "postTcec", label: "Post-TCEC" },
+  { key: "cnc", label: "CNC" },
+  { key: "supplyOrder", label: "Supply Order" },
+  { key: "bankGuarantee", label: "Bank Guarantee" },
+  { key: "payment", label: "Payment" },
 ];
 const analyticsResultLimitOptions = [
   { value: "5", label: "Top 5" },
@@ -251,6 +302,13 @@ export function Dashboard() {
     Partial<Record<AnalyticsPanelKey, AnalyticsSortDirection>>
   >({});
   const [selectedAnalyticsDivision, setSelectedAnalyticsDivision] = useState("all");
+  const [analyticsDelayDays, setAnalyticsDelayDays] = useState("5");
+  const [analyticsDelayMilestoneKey, setAnalyticsDelayMilestoneKey] = useState("all");
+  const [analyticsDelaySummary, setAnalyticsDelaySummary] = useState<
+    ReportsDelaySummaryPayload | undefined
+  >();
+  const [analyticsDelayLoading, setAnalyticsDelayLoading] = useState(false);
+  const [analyticsDelayError, setAnalyticsDelayError] = useState<string | undefined>();
   const [selectedLiveMilestones, setSelectedLiveMilestones] = useState<string[] | undefined>(
     settings.liveStatusLockedFields,
   );
@@ -340,6 +398,21 @@ export function Dashboard() {
     params.set("delayMilestone", "all");
     return params.toString();
   }, [activeDivision, settings.selectedYear]);
+  const analyticsDelayThresholdDays = getDelayThresholdDays(analyticsDelayDays);
+  const analyticsDelayQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("division", activeAnalyticsDivision);
+    params.set("selectedYear", settings.selectedYear);
+    params.set("delayDays", String(analyticsDelayThresholdDays));
+    params.set("expectedCashOutgoDays", "0");
+    params.set("delayMilestone", analyticsDelayMilestoneKey);
+    return params.toString();
+  }, [
+    activeAnalyticsDivision,
+    analyticsDelayMilestoneKey,
+    analyticsDelayThresholdDays,
+    settings.selectedYear,
+  ]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -390,6 +463,27 @@ export function Dashboard() {
 
     return () => controller.abort();
   }, [activeDashboardTab, status3Query]);
+
+  useEffect(() => {
+    if (activeDashboardTab !== "analytics" || activeAnalyticsPanel !== "delayStatus") return;
+    const controller = new AbortController();
+    setAnalyticsDelayLoading(true);
+    setAnalyticsDelayError(undefined);
+    fetchReportsDelaySummary(analyticsDelayQuery, controller.signal)
+      .then((payload) => setAnalyticsDelaySummary(payload.summary))
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        console.error(error);
+        setAnalyticsDelayError(
+          error instanceof Error ? error.message : "Delay status request failed.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAnalyticsDelayLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [activeDashboardTab, activeAnalyticsPanel, analyticsDelayQuery]);
 
   const needsLocalDashboardFallback = !dashboardSummary;
   const localModeCounts = needsLocalDashboardFallback ? getModeCounts(dashboardFiles) : undefined;
@@ -689,6 +783,19 @@ export function Dashboard() {
     indentorsByValueLimit,
     indentorsByValuePage,
   );
+  const analyticsDelayRows = analyticsDelaySummary?.delayRows ?? [];
+  const analyticsDelayPanelRows = analyticsDelayRows.map((row) => ({
+    name: row.fileRef,
+    fileId: row.fileId,
+    fileRef: row.fileRef,
+    division: row.division,
+    indentor: row.indentor,
+    description: row.description,
+    milestone: row.milestone,
+    stageStartDate: row.stageStartDate,
+    daysInStage: row.daysInStage,
+    lastFilledDate: row.lastFilledDate,
+  }));
   const analyticsPanels: AnalyticsPanel[] = [
     {
       key: "divisionFiles",
@@ -803,6 +910,13 @@ export function Dashboard() {
           getAnalyticsSortDirection("milestoneClearingTable"),
         ),
       ),
+    },
+    {
+      key: "delayStatus",
+      title: "Delay status",
+      subtitle: `Files stuck in their current milestone for more than ${analyticsDelayThresholdDays} days`,
+      columns: getDelayStatusAnalyticsColumns(),
+      rows: analyticsDelayPanelRows,
     },
   ];
   const selectedAnalyticsPanel =
@@ -923,6 +1037,18 @@ export function Dashboard() {
         division: activeAnalyticsDivision === "all" ? undefined : activeAnalyticsDivision,
         analyticsType: analyticsTransferType,
         analyticsNames: JSON.stringify(displayedAnalyticsPanel.rows.map((row) => String(row.name))),
+      },
+    });
+  };
+  const openAnalyticsDelaySearch = () => {
+    navigate({
+      to: "/search",
+      search: {
+        dashboardFilter: getDelayStatusDashboardFilter(
+          analyticsDelayThresholdDays,
+          analyticsDelayMilestoneKey,
+        ),
+        division: activeAnalyticsDivision === "all" ? undefined : activeAnalyticsDivision,
       },
     });
   };
@@ -1313,6 +1439,43 @@ export function Dashboard() {
                         </select>
                       </label>
                     ) : null}
+                    {displayedAnalyticsPanel.key === "delayStatus" ? (
+                      <>
+                        <label className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium">
+                          <span className="text-muted-foreground">Days</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={analyticsDelayDays}
+                            onChange={(event) => setAnalyticsDelayDays(event.target.value)}
+                            className="h-6 w-16 bg-transparent text-xs text-foreground outline-none"
+                          />
+                        </label>
+                        <label className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium">
+                          <span className="text-muted-foreground">Milestone</span>
+                          <select
+                            value={analyticsDelayMilestoneKey}
+                            onChange={(event) => setAnalyticsDelayMilestoneKey(event.target.value)}
+                            className="h-6 min-w-36 bg-transparent text-xs text-foreground outline-none"
+                          >
+                            {delayStatusMilestoneOptions.map((milestone) => (
+                              <option key={milestone.key} value={milestone.key}>
+                                {milestone.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => openAnalyticsDelaySearch()}
+                          disabled={analyticsDelayRows.length === 0}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Search className="size-3.5" />
+                          Search delayed files
+                        </button>
+                      </>
+                    ) : null}
                     {analyticsLimitControl ? (
                       <label className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium">
                         <span className="text-muted-foreground">Show</span>
@@ -1395,6 +1558,19 @@ export function Dashboard() {
                     onSortKeyChange={setDivisionTotalValueSortKey}
                     onToggleMetric={toggleDivisionTotalValueMetric}
                   />
+                ) : null}
+                {displayedAnalyticsPanel.key === "delayStatus" &&
+                (analyticsDelayError || analyticsDelayLoading) ? (
+                  <div
+                    className={
+                      "mb-3 rounded-md border px-3 py-2 text-xs " +
+                      (analyticsDelayError
+                        ? "border-destructive/30 bg-destructive/10 text-destructive"
+                        : "border-border bg-secondary/30 text-muted-foreground")
+                    }
+                  >
+                    {analyticsDelayError ?? "Updating delay status..."}
+                  </div>
                 ) : null}
                 <AnalyticsRankingTable
                   columns={displayedAnalyticsPanel.columns}
@@ -2887,6 +3063,24 @@ function getAverageDaysAnalyticsColumns(nameLabel: string): AnalyticsTableColumn
     { key: "averageDays", label: "Avg days", format: (value) => `${value}d` },
     { key: "sampleSize", label: "Files" },
   ];
+}
+
+function getDelayStatusAnalyticsColumns(): AnalyticsTableColumn[] {
+  return [
+    { key: "fileRef", label: "File", align: "left" },
+    { key: "division", label: "Division", align: "left" },
+    { key: "indentor", label: "Indentor", align: "left" },
+    { key: "description", label: "Description", align: "left" },
+    { key: "milestone", label: "Current milestone", align: "left" },
+    { key: "stageStartDate", label: "Stage start date", align: "left" },
+    { key: "daysInStage", label: "Days" },
+    { key: "lastFilledDate", label: "Last filled date", align: "left" },
+  ];
+}
+
+function getDelayThresholdDays(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 function withAnalyticsRanks(rows: Array<Record<string, number | string>>) {
@@ -5193,6 +5387,10 @@ function isPaymentDue(file: FileRecord) {
 
 function getStatusSummaryDashboardFilter(milestone: string, stage: string) {
   return `statusSummary:${encodeURIComponent(milestone)}:${encodeURIComponent(stage)}`;
+}
+
+function getDelayStatusDashboardFilter(days: number, milestoneKey: string) {
+  return `delayStatus:${days}:${milestoneKey || "all"}`;
 }
 
 function matchesDashboardFilter(file: FileRecord, filter: string) {

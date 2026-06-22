@@ -16,6 +16,7 @@ import {
   type ValueThresholdAppliesTo,
   type ValueThresholdLevel,
 } from "@/lib/files-store";
+import { mmgSummaryFieldOptions, normalizeMmgSummaryFields } from "@/lib/mmg-summary";
 import { tableFieldPresetGroups, type TableFieldPreset } from "@/lib/table-field-presets";
 import { promptDeletionPassword, requestDeletionPassword } from "@/lib/delete-password";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -110,6 +111,7 @@ function SettingsPage() {
   }
 
   if (activeUser?.role === "sub_admin" || activeUser?.role === "editor") {
+    const canEditMmgSummary = activeUser.role === "sub_admin";
     return (
       <div className="space-y-4 max-w-6xl">
         <Tabs defaultValue="user" className="space-y-4">
@@ -117,6 +119,7 @@ function SettingsPage() {
             <TabsTrigger value="user">User</TabsTrigger>
             <TabsTrigger value="indentors">Indentors</TabsTrigger>
             <TabsTrigger value="presets">Preset table fields</TabsTrigger>
+            {canEditMmgSummary ? <TabsTrigger value="mmgSummary">MMG Summary</TabsTrigger> : null}
           </TabsList>
           <TabsContent value="user">
             <AccountSettings />
@@ -127,6 +130,11 @@ function SettingsPage() {
           <TabsContent value="presets">
             <TableFieldPresetSettings />
           </TabsContent>
+          {canEditMmgSummary ? (
+            <TabsContent value="mmgSummary">
+              <MmgSummarySettings />
+            </TabsContent>
+          ) : null}
         </Tabs>
       </div>
     );
@@ -147,6 +155,7 @@ function SettingsPage() {
     { key: "workspace", label: "Workspace", content: <WorkspaceSettings /> },
     { key: "yearSetup", label: "Year Setup", content: <YearSetupPanel /> },
     { key: "mmgLive", label: "MMG live", content: <MmgLiveSettings /> },
+    { key: "mmgSummary", label: "MMG Summary", content: <MmgSummarySettings /> },
     { key: "divisions", label: "Divisions", content: <DivisionSettings /> },
     { key: "indentors", label: "Indentors", content: <IndentorSettings /> },
     { key: "tcec", label: "TCEC Committee", content: <TcecCommitteeSettings /> },
@@ -1003,7 +1012,7 @@ function TableFieldPresetSettings() {
   };
 
   const addPreset = () => {
-    const nextPreset = {
+    const nextPreset: TableFieldPreset = {
       id: crypto.randomUUID(),
       name: `Preset ${presets.length + 1}`,
       fieldKeys: ["division", "indentor", "demandDescription"],
@@ -1159,6 +1168,106 @@ function TableFieldPresetSettings() {
           ) : null}
         </div>
       )}
+    </div>
+  );
+}
+
+function MmgSummarySettings() {
+  const settings = useSettings();
+  const fields = normalizeMmgSummaryFields(settings.mmgSummaryFields);
+  const optionGroups = Array.from(new Set(mmgSummaryFieldOptions.map((option) => option.group)));
+
+  const updateFields = (nextFields: typeof fields) => {
+    store.updateSettings({ mmgSummaryFields: nextFields });
+  };
+
+  const updateField = (key: string, patch: Partial<(typeof fields)[number]>) => {
+    updateFields(fields.map((field) => (field.key === key ? { ...field, ...patch } : field)));
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-md p-5 shadow-[var(--shadow-card)]">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold mb-1">MMG Summary</h2>
+          <p className="text-xs text-muted-foreground">
+            Choose fields and edit labels for the MMG Summary report export.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => updateFields(fields.map((field) => ({ ...field, enabled: true })))}
+            className="h-9 rounded-md border border-border bg-background px-3 text-xs hover:bg-accent"
+          >
+            Select all
+          </button>
+          <button
+            type="button"
+            onClick={() => updateFields(fields.map((field) => ({ ...field, enabled: false })))}
+            className="h-9 rounded-md border border-border bg-background px-3 text-xs hover:bg-accent"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => updateFields(normalizeMmgSummaryFields([]))}
+            className="h-9 rounded-md border border-border bg-background px-3 text-xs hover:bg-accent"
+          >
+            Reset labels
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {optionGroups.map((group) => {
+          const groupOptions = mmgSummaryFieldOptions.filter((option) => option.group === group);
+          return (
+            <section key={group} className="rounded-md border border-border bg-secondary/20 p-3">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group}
+              </div>
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                {groupOptions.map((option) => {
+                  const field = fields.find((item) => item.key === option.key) ?? {
+                    key: option.key,
+                    label: option.label,
+                    enabled: true,
+                  };
+                  return (
+                    <div
+                      key={option.key}
+                      className="grid gap-2 rounded-md border border-input bg-background p-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,240px)]"
+                    >
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={field.enabled}
+                          onChange={(event) =>
+                            updateField(option.key, { enabled: event.target.checked })
+                          }
+                          className="size-4 rounded border-input"
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                      <label className="text-xs text-muted-foreground">
+                        <span className="mb-1 block">Export label</span>
+                        <input
+                          value={field.label}
+                          onChange={(event) =>
+                            updateField(option.key, { label: event.target.value })
+                          }
+                          className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/40"
+                        />
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }

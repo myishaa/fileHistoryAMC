@@ -21,13 +21,17 @@ import {
 import { MessageSquare, Save, Eraser, Lock, Plus, Printer, Trash2, Unlock } from "lucide-react";
 import { promptDeletionPassword } from "@/lib/delete-password";
 import { downloadBackendExport, getExportFileName } from "@/lib/export-download";
-import { validateMilestoneCompletionConsistency } from "@/lib/milestone-validation";
+import {
+  getMilestoneValidationTarget,
+  validateMilestoneCompletionConsistency,
+} from "@/lib/milestone-validation";
 import { displayFinancialYearLabel } from "@/lib/year-filter";
 
 export const Route = createFileRoute("/add")({
   validateSearch: (search: Record<string, unknown>) => ({
     fileId: typeof search.fileId === "string" ? search.fileId : undefined,
     section: typeof search.section === "string" ? search.section : undefined,
+    milestone: typeof search.milestone === "string" ? search.milestone : undefined,
     quickFocus: search.quickFocus === true || search.quickFocus === "true",
   }),
   component: AddFilePage,
@@ -274,10 +278,7 @@ const ifaDisabledKeys: FieldKey[] = ["ifaSentDate", "ifaFinalDate"];
 const bgDisabledKeys: FieldKey[] = ["bgValidityDate", "bgReturnDate"];
 const refloatDisabledKeys: FieldKey[] = ["refloatBiddingDate", "refloatBidOpeningDate"];
 const supplyOrderBgDisabledKeys: SupplyOrderKey[] = ["bgValidityDate", "bgReturnDate"];
-const tcecCommitteeKeys: FieldKey[] = [
-  "preTcecCommitteeNo",
-  "postTcecCommitteeNumber",
-];
+const tcecCommitteeKeys: FieldKey[] = ["preTcecCommitteeNo", "postTcecCommitteeNumber"];
 
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
@@ -485,7 +486,7 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
   const messages = useMessages();
   const activeUser = useActiveUser();
   const settings = useSettings();
-  const { fileId, section, quickFocus } = Route.useSearch();
+  const { fileId, section, milestone, quickFocus } = Route.useSearch();
   const navigate = useNavigate();
   const [loadedFile, setLoadedFile] = useState<FileRecord | undefined>();
   const [fileLoadStatus, setFileLoadStatus] = useState<"idle" | "loading" | "loaded" | "error">(
@@ -525,6 +526,7 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
   const [saved, setSaved] = useState(false);
   const [unlockedSections, setUnlockedSections] = useState<Set<string>>(() => new Set());
   const [activeBoardSection, setActiveBoardSection] = useState(section ?? "File details");
+  const [focusedMilestone, setFocusedMilestone] = useState(milestone ?? "");
   const quickFieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const quickFocusAppliedRef = useRef("");
   const skipMilestonePruneRef = useRef(false);
@@ -608,7 +610,8 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
 
   useEffect(() => {
     setActiveBoardSection(section ?? "File details");
-  }, [section, editingFile?.id]);
+    setFocusedMilestone(milestone ?? "");
+  }, [section, milestone, editingFile?.id]);
 
   useEffect(() => {
     if (isEditing) return;
@@ -634,9 +637,7 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
     };
   }, [activeYears, form.division, isEditing, settings.financialYear]);
 
-  const generatedUniqueCode = isEditing
-    ? form.uniqueCode
-    : serverUniqueCode;
+  const generatedUniqueCode = isEditing ? form.uniqueCode : serverUniqueCode;
   const originYear = isEditing
     ? form.year || editingFile?.year || settings.financialYear
     : activeYears[0] || settings.financialYear;
@@ -802,6 +803,7 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
       }
       if (currentNeedsSelection) {
         setActiveBoardSection("Milestones");
+        setFocusedMilestone("");
         setUnlockedSections((current) => new Set([...current, "Milestones"]));
         window.setTimeout(() => {
           alert(
@@ -1094,9 +1096,11 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
     };
     const milestoneErrors = validateMilestoneCompletionConsistency(payload, milestoneOptions);
     if (milestoneErrors.length) {
+      const targetMilestone = getMilestoneValidationTarget(milestoneErrors, milestoneOptions) ?? "";
+      setActiveBoardSection("Milestones");
+      setFocusedMilestone(targetMilestone);
+      setUnlockedSections((current) => new Set([...current, "Milestones"]));
       if (options?.returnToQuickEntry) {
-        setActiveBoardSection("Milestones");
-        setUnlockedSections((current) => new Set([...current, "Milestones"]));
         window.setTimeout(() => {
           alert(
             [
@@ -1110,7 +1114,9 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
         }, 100);
         return;
       }
-      alert(["Please fix milestone status before saving:", ...milestoneErrors].join("\n"));
+      window.setTimeout(() => {
+        alert(["Please fix milestone status before saving:", ...milestoneErrors].join("\n"));
+      }, 100);
       return;
     }
     if (editingFile) {
@@ -1182,9 +1188,7 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
       <div className="w-full">
         <div className="bg-card border border-border rounded-md p-6 shadow-[var(--shadow-card)]">
           <h2 className="text-base font-semibold">Loading file...</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Fetching this file from the backend.
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">Fetching this file from the backend.</p>
         </div>
       </div>
     );
@@ -1261,6 +1265,7 @@ function AddFileEditor({ readOnlyMode = false }: { readOnlyMode?: boolean }) {
               )}
               lockedCurrentMilestone={editingFile?.currentMilestone ?? ""}
               lockedCompletedMilestones={savedCompletedMilestonesForLocks}
+              focusedMilestone={focusedMilestone}
               disabled={readOnlyMode}
               lockFilledFields={milestonesLocked}
               lockControl={renderSectionUnlockButton("Milestones")}
@@ -2454,6 +2459,7 @@ function MilestonesBlock({
   autoCompletedMilestones,
   lockedCurrentMilestone,
   lockedCompletedMilestones,
+  focusedMilestone,
   disabled,
   lockFilledFields,
   lockControl,
@@ -2467,6 +2473,7 @@ function MilestonesBlock({
   autoCompletedMilestones: string[];
   lockedCurrentMilestone: string;
   lockedCompletedMilestones: string[];
+  focusedMilestone: string;
   disabled: boolean;
   lockFilledFields: boolean;
   lockControl: ReactNode;
@@ -2476,6 +2483,7 @@ function MilestonesBlock({
   const completedSet = new Set([...completedMilestones, ...autoCompletedMilestones]);
   const autoCompletedSet = new Set(autoCompletedMilestones);
   const lockedCompletedSet = new Set(lockedCompletedMilestones);
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const applicableMilestoneList = milestones.filter((milestone) =>
     applicableMilestones.has(milestone),
   );
@@ -2507,6 +2515,13 @@ function MilestonesBlock({
       milestones.filter((item) => applicableMilestones.has(item) && next.has(item)),
     );
   };
+
+  useEffect(() => {
+    if (!focusedMilestone) return;
+    const target = rowRefs.current[normalizeMilestoneName(focusedMilestone)];
+    if (!target) return;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focusedMilestone]);
 
   return (
     <section
@@ -2558,9 +2573,16 @@ function MilestonesBlock({
             return (
               <div
                 key={milestone}
+                ref={(element) => {
+                  rowRefs.current[normalizeMilestoneName(milestone)] = element;
+                }}
                 className={`grid min-h-10 grid-cols-[minmax(0,1fr)_6rem_6rem] items-center border-b border-border px-3 py-2 text-sm last:border-b-0 ${
                   isCurrent ? "bg-primary/10 font-semibold text-primary" : ""
-                } ${isCompleted ? "text-muted-foreground" : ""}`}
+                } ${isCompleted ? "text-muted-foreground" : ""} ${
+                  normalizeMilestoneName(focusedMilestone) === normalizeMilestoneName(milestone)
+                    ? "ring-2 ring-primary/40"
+                    : ""
+                }`}
               >
                 <div className="min-w-0 truncate">{milestone}</div>
                 <div className="flex justify-center">
@@ -2687,19 +2709,19 @@ function printTimelineReport(form: FormState, filledItems: TimelineItem[]) {
     { label: "Indentor", value: form.indentor },
   ];
   const timelineRows = filledItems.map((item, index) => {
-      const firstItem = filledItems[0];
-      const previousItem = filledItems[index - 1];
-      const gapDays = previousItem ? getTimelineDayGap(previousItem.date, item.date) : undefined;
-      const cumulativeDays = firstItem ? getTimelineDayGap(firstItem.date, item.date) : undefined;
+    const firstItem = filledItems[0];
+    const previousItem = filledItems[index - 1];
+    const gapDays = previousItem ? getTimelineDayGap(previousItem.date, item.date) : undefined;
+    const cumulativeDays = firstItem ? getTimelineDayGap(firstItem.date, item.date) : undefined;
 
-      return [
-        index + 1,
-        item.label,
-        formatTimelineDate(item.date),
-        formatDayCount(gapDays),
-        formatDayCount(cumulativeDays),
-      ];
-    });
+    return [
+      index + 1,
+      item.label,
+      formatTimelineDate(item.date),
+      formatDayCount(gapDays),
+      formatDayCount(cumulativeDays),
+    ];
+  });
 
   void downloadBackendExport({
     format: "pdf",

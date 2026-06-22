@@ -1,5 +1,6 @@
 // Backend-backed store for files, divisions, users, and settings.
 import * as React from "react";
+import type { MmgSummaryFieldConfig } from "@/lib/mmg-summary";
 import { defaultTableFieldPresets, type TableFieldPreset } from "@/lib/table-field-presets";
 import { isAllActiveFilesYear, isFileVisibleForYear } from "@/lib/year-filter";
 
@@ -256,6 +257,7 @@ export type AppSettings = {
   liveStatusLockedFields?: string[];
   mmgLiveEnabled?: boolean;
   mmgLiveOptions?: string[];
+  mmgSummaryFields?: MmgSummaryFieldConfig[];
   activeUserId?: string;
 };
 
@@ -277,6 +279,7 @@ const defaultSettings: AppSettings = {
   tableFieldPresets: defaultTableFieldPresets,
   mmgLiveEnabled: false,
   mmgLiveOptions: [],
+  mmgSummaryFields: [],
 };
 
 const defaultUsers: AppUser[] = [];
@@ -619,9 +622,9 @@ export const store = {
   deleteFile(id: string, deletionPassword: string) {
     setState({ files: state.files.filter((f) => f.id !== id) });
     return request(`/api/files/${id}`, {
-        method: "DELETE",
-        body: JSON.stringify({ deletionPassword }),
-      });
+      method: "DELETE",
+      body: JSON.stringify({ deletionPassword }),
+    });
   },
   listArchivedFiles() {
     return request<{ files: FileRecord[] }>("/api/files/archive/list");
@@ -839,7 +842,9 @@ export function fetchFilesByUniqueCode(code: string) {
 export function fetchFilesForYear(year: string) {
   const params = new URLSearchParams();
   if (year) params.set("year", year);
-  return request<{ files: FileRecord[] }>(`/api/files${params.toString() ? `?${params.toString()}` : ""}`);
+  return request<{ files: FileRecord[] }>(
+    `/api/files${params.toString() ? `?${params.toString()}` : ""}`,
+  );
 }
 
 export function fetchNextUniqueCode({

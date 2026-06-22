@@ -61,6 +61,7 @@ export type AppSettings = {
   liveStatusLockedFields?: string[];
   mmgLiveEnabled?: boolean;
   mmgLiveOptions?: string[];
+  mmgSummaryFields?: unknown[];
   activeUserId?: string;
 };
 

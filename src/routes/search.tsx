@@ -25,7 +25,10 @@ import {
   getExportFileName,
 } from "@/lib/export-download";
 import { formatThousandsAndLakhs, getInrAmount, parseAmount } from "@/lib/money";
-import { validateMilestoneCompletionConsistency } from "@/lib/milestone-validation";
+import {
+  getMilestoneValidationTarget,
+  validateMilestoneCompletionConsistency,
+} from "@/lib/milestone-validation";
 import type { TableFieldPreset } from "@/lib/table-field-presets";
 import { isCancelledFile } from "@/lib/year-filter";
 
@@ -89,10 +92,7 @@ const rqaDisabledKeys: FileKey[] = ["rqaApprovalDate"];
 const ifaDisabledKeys: FileKey[] = ["ifaSentDate", "ifaFinalDate"];
 const bgDisabledKeys: FileKey[] = ["bgValidityDate", "bgReturnDate"];
 const refloatDisabledKeys: FileKey[] = ["refloatBiddingDate", "refloatBidOpeningDate"];
-const tcecCommitteeKeys: FileKey[] = [
-  "preTcecCommitteeNo",
-  "postTcecCommitteeNumber",
-];
+const tcecCommitteeKeys: FileKey[] = ["preTcecCommitteeNo", "postTcecCommitteeNumber"];
 
 const yesNo = ["Yes", "No"];
 const yesNoCaps = ["YES", "NO"];
@@ -1461,6 +1461,7 @@ function EditModal({
   divisions: string[];
 }) {
   const settings = useSettings();
+  const navigate = useNavigate();
   const [form, setForm] = useState<Record<FileKey, string>>(() => {
     const entries = editableFields.map((field) => [
       field.key,
@@ -1516,6 +1517,18 @@ function EditModal({
     );
     if (milestoneErrors.length) {
       alert(["Please fix milestone status before saving:", ...milestoneErrors].join("\n"));
+      navigate({
+        to: "/add",
+        search: {
+          fileId: file.id,
+          section: "Milestones",
+          milestone: getMilestoneValidationTarget(
+            milestoneErrors,
+            getConfiguredMilestones(settings.milestones),
+          ),
+          quickFocus: false,
+        },
+      });
       return;
     }
     store.updateFile(file.id, patch);
@@ -2560,10 +2573,98 @@ function getDelayThresholdDays(value: string) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+function addDays(date: string | undefined, days: number) {
+  const time = parseLocalDateTime(date ?? "");
+  if (time === undefined) return undefined;
+  const next = new Date(time);
+  next.setDate(next.getDate() + days);
+  return formatLocalDate(next);
+}
+
+function readCashOutgoFilter(filter: string) {
+  const [, mode, rawMonthKey, rawOffsetDays] = filter.split(":");
+  const monthKey = decodeURIComponent(rawMonthKey ?? "");
+  const offsetDays = Number.parseInt(rawOffsetDays ?? "0", 10);
+  const validModes = [
+    "expectedDp",
+    "expectedReceipt",
+    "expectedReceiptPendingBill",
+    "billPreparation",
+    "billSent",
+    "actual",
+  ];
+  if (
+    !validModes.includes(mode) ||
+    !/^\d{4}-\d{2}$/.test(monthKey) ||
+    !Number.isFinite(offsetDays) ||
+    offsetDays < 0
+  ) {
+    return undefined;
+  }
+  return { mode, monthKey, offsetDays };
+}
+
+function monthMatches(date: string | undefined, monthKey: string) {
+  return hasDate(date) && date?.slice(0, 7) === monthKey;
+}
+
+function isCashOutgoFilterMatch(file: FileRecord, filter: string) {
+  const parsed = readCashOutgoFilter(filter);
+  if (!parsed || isCancelledFile(file)) return false;
+  return fileSupplyOrders(file).some((order) => {
+    if (parsed.mode === "expectedDp") {
+      const deliveryPeriodDate = getDeliveryPeriodDate(order);
+      return (
+        hasFilledString(deliveryPeriodDate) &&
+        !isYes(order.soCancelled) &&
+        !hasFilledString(order.materialReceiptDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(addDays(deliveryPeriodDate, parsed.offsetDays), parsed.monthKey)
+      );
+    }
+    if (parsed.mode === "expectedReceipt") {
+      return (
+        hasFilledString(order.materialReceiptDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(addDays(order.materialReceiptDate, parsed.offsetDays), parsed.monthKey)
+      );
+    }
+    if (parsed.mode === "expectedReceiptPendingBill") {
+      return (
+        hasFilledString(order.materialReceiptDate) &&
+        !hasFilledString(order.billPreparationDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(addDays(order.materialReceiptDate, parsed.offsetDays), parsed.monthKey)
+      );
+    }
+    if (parsed.mode === "billPreparation") {
+      return (
+        hasFilledString(order.materialReceiptDate) &&
+        hasFilledString(order.billPreparationDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(order.billPreparationDate, parsed.monthKey)
+      );
+    }
+    if (parsed.mode === "billSent") {
+      return (
+        hasFilledString(order.billSentForPaymentDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(order.billSentForPaymentDate, parsed.monthKey)
+      );
+    }
+    return (
+      hasFilledString(order.paymentDate) &&
+      !(isYes(order.soCancelled) && hasFilledString(order.soCancelledDate)) &&
+      monthMatches(order.paymentDate, parsed.monthKey)
+    );
+  });
+}
+
 function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter.startsWith("delayFile:")) {
     return file.id === filter.slice("delayFile:".length);
   }
+  if (filter.startsWith("cashOutgo:")) return isCashOutgoFilterMatch(file, filter);
   if (filter.startsWith("delayStatus:")) {
     const [, daysValue = "0", milestoneKey = "all"] = filter.split(":");
     return isDelayStatusMatch(file, getDelayThresholdDays(daysValue), milestoneKey);

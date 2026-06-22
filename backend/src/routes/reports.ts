@@ -54,6 +54,9 @@ type ReportsSummaryPayload = {
   statusSummaryGroups: StatusSummaryTableGroup[];
   expectedCashOutgoDpRows: CashOutgoRow[];
   expectedCashOutgoReceiptRows: CashOutgoRow[];
+  expectedCashOutgoReceiptPendingBillRows: CashOutgoRow[];
+  expectedCashOutgoBillPreparationRows: CashOutgoRow[];
+  billSentForPaymentRows: CashOutgoRow[];
   actualCashOutgoRows: CashOutgoRow[];
   delayRows: DelayStatusRow[];
   delaySummary: {
@@ -738,19 +741,30 @@ async function loadStatusSummaryGroups(whereSql: string, values: unknown[]) {
 async function loadCashOutgoRows(
   whereSql: string,
   values: unknown[],
-  mode: "expectedDp" | "expectedReceipt" | "actual",
+  mode:
+    | "expectedDp"
+    | "expectedReceipt"
+    | "expectedReceiptPendingBill"
+    | "billPreparation"
+    | "billSent"
+    | "actual",
   expectedCashOutgoDays = 0,
 ): Promise<CashOutgoRow[]> {
   const queryValues = [...values];
-  const expectedDaysPlaceholder =
-    mode === "actual" ? undefined : addValue(queryValues, expectedCashOutgoDays);
+  const usesExpectedOffset =
+    mode === "expectedDp" || mode === "expectedReceipt" || mode === "expectedReceiptPendingBill";
+  const expectedDaysPlaceholder = usesExpectedOffset
+    ? addValue(queryValues, expectedCashOutgoDays)
+    : undefined;
   const dateExpression = (() => {
     if (mode === "expectedDp") {
       return `(coalesce(effective.revised_dp, effective.dp_date) + (${expectedDaysPlaceholder}::integer * interval '1 day'))::date`;
     }
-    if (mode === "expectedReceipt") {
+    if (mode === "expectedReceipt" || mode === "expectedReceiptPendingBill") {
       return `(effective.material_receipt_date + (${expectedDaysPlaceholder}::integer * interval '1 day'))::date`;
     }
+    if (mode === "billPreparation") return "effective.bill_preparation_date";
+    if (mode === "billSent") return "effective.bill_sent_for_payment_date";
     return "effective.payment_date";
   })();
   const extraCondition = (() => {
@@ -759,6 +773,15 @@ async function loadCashOutgoRows(
     }
     if (mode === "expectedReceipt") {
       return "effective.material_receipt_date is not null and effective.payment_date is null";
+    }
+    if (mode === "expectedReceiptPendingBill") {
+      return "effective.material_receipt_date is not null and effective.bill_preparation_date is null and effective.payment_date is null";
+    }
+    if (mode === "billPreparation") {
+      return "effective.material_receipt_date is not null and effective.bill_preparation_date is not null and effective.payment_date is null";
+    }
+    if (mode === "billSent") {
+      return "effective.bill_sent_for_payment_date is not null and effective.payment_date is null";
     }
     return "effective.payment_date is not null and not (effective.so_cancelled_yes and effective.so_cancelled_date is not null)";
   })();
@@ -776,6 +799,7 @@ async function loadCashOutgoRows(
          so.dp_date,
          so.revised_dp,
          so.material_receipt_date,
+         so.bill_preparation_date,
          so.bill_sent_for_payment_date,
          so.payment_date,
          so.so_cancelled_date,
@@ -793,6 +817,7 @@ async function loadCashOutgoRows(
          f.dp_date,
          f.revised_dp,
          f.material_receipt_date,
+         f.bill_preparation_date,
          f.bill_sent_for_payment_date,
          f.payment_date,
          f.so_cancelled_date,
@@ -988,6 +1013,9 @@ async function buildReportsSummarySql({
     statusSummaryGroups,
     expectedCashOutgoDpRows,
     expectedCashOutgoReceiptRows,
+    expectedCashOutgoReceiptPendingBillRows,
+    expectedCashOutgoBillPreparationRows,
+    billSentForPaymentRows,
     actualCashOutgoRows,
     delayRows,
   ] = await Promise.all([
@@ -995,6 +1023,9 @@ async function buildReportsSummarySql({
     loadStatusSummaryGroups(whereSql, [...values]),
     loadCashOutgoRows(whereSql, [...values], "expectedDp", expectedCashOutgoDays),
     loadCashOutgoRows(whereSql, [...values], "expectedReceipt", expectedCashOutgoDays),
+    loadCashOutgoRows(whereSql, [...values], "expectedReceiptPendingBill", expectedCashOutgoDays),
+    loadCashOutgoRows(whereSql, [...values], "billPreparation"),
+    loadCashOutgoRows(whereSql, [...values], "billSent"),
     loadCashOutgoRows(whereSql, [...values], "actual"),
     loadDelayRows(whereSql, [...values], delayDays, delayMilestone),
   ]);
@@ -1004,6 +1035,9 @@ async function buildReportsSummarySql({
     statusSummaryGroups,
     expectedCashOutgoDpRows,
     expectedCashOutgoReceiptRows,
+    expectedCashOutgoReceiptPendingBillRows,
+    expectedCashOutgoBillPreparationRows,
+    billSentForPaymentRows,
     actualCashOutgoRows,
     delayRows,
     delaySummary: getDelaySummary(delayRows),

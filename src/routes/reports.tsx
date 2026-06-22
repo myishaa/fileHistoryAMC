@@ -2,14 +2,25 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, FileText } from "lucide-react";
 import {
+  fetchFilesForYear,
+  type Division,
   type FileRecord,
   type SupplyOrderDetail,
   useAccessibleDivisions,
   useSettings,
 } from "@/lib/files-store";
 import { downloadBackendExport } from "@/lib/export-download";
+import {
+  buildMmgSummaryRows,
+  normalizeMmgSummaryFields,
+  type MmgSummaryRow,
+} from "@/lib/mmg-summary";
 import { formatThousandsAndLakhs, getInrAmount } from "@/lib/money";
-import { isCancelledFile } from "@/lib/year-filter";
+import {
+  displayFinancialYearLabel,
+  isAllActiveFilesYear,
+  isCancelledFile,
+} from "@/lib/year-filter";
 
 export const Route = createFileRoute("/reports")({
   component: ReportsPage,
@@ -26,6 +37,9 @@ type ReportsSummaryPayload = {
   statusSummaryGroups: StatusSummaryTableGroup[];
   expectedCashOutgoDpRows: ExpectedCashOutgoRow[];
   expectedCashOutgoReceiptRows: ExpectedCashOutgoRow[];
+  expectedCashOutgoReceiptPendingBillRows: ExpectedCashOutgoRow[];
+  expectedCashOutgoBillPreparationRows: ExpectedCashOutgoRow[];
+  billSentForPaymentRows: ExpectedCashOutgoRow[];
   actualCashOutgoRows: ExpectedCashOutgoRow[];
   delayRows: DelayStatusRow[];
   delaySummary: ReturnType<typeof getDelayStatusSummary>;
@@ -48,11 +62,15 @@ function ReportsPage() {
   const settings = useSettings();
   const navigate = useNavigate();
   const [selectedDivision, setSelectedDivision] = useState("all");
-  const [reportMode, setReportMode] = useState<ReportMode>("delayStatus");
+  const [reportMode, setReportMode] = useState<ReportMode>("itemsDeliveredBillsPending");
   const [delayDays, setDelayDays] = useState("5");
   const [expectedCashOutgoDays, setExpectedCashOutgoDays] = useState("0");
   const [delayMilestoneKey, setDelayMilestoneKey] = useState("all");
   const [reportsSummary, setReportsSummary] = useState<ReportsSummaryPayload | undefined>();
+  const [mmgFiles, setMmgFiles] = useState<FileRecord[]>([]);
+  const [mmgPreviousFiles, setMmgPreviousFiles] = useState<FileRecord[]>([]);
+  const [mmgLoading, setMmgLoading] = useState(false);
+  const [mmgError, setMmgError] = useState<string | undefined>();
   const [reportsLoading, setReportsLoading] = useState(false);
   const [hasLoadedReports, setHasLoadedReports] = useState(false);
   const [reportsError, setReportsError] = useState<string | undefined>();
@@ -106,52 +124,126 @@ function ReportsPage() {
     };
   }, [reportsQuery]);
 
+  useEffect(() => {
+    let active = true;
+    setMmgLoading(true);
+    setMmgError(undefined);
+    Promise.all([fetchFilesForYear(settings.selectedYear), fetchFilesForYear("")])
+      .then(([current, allFiles]) => {
+        if (!active) return;
+        setMmgFiles(current.files);
+        setMmgPreviousFiles(allFiles.files);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error(error);
+        setMmgError(error instanceof Error ? error.message : "MMG Summary request failed.");
+      })
+      .finally(() => {
+        if (active) setMmgLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [settings.selectedYear]);
+
   const expectedCashOutgoDpRows = reportsSummary?.expectedCashOutgoDpRows ?? [];
-  const expectedCashOutgoReceiptRows =
-    reportsSummary?.expectedCashOutgoReceiptRows ?? [];
+  const expectedCashOutgoReceiptRows = reportsSummary?.expectedCashOutgoReceiptRows ?? [];
+  const expectedCashOutgoReceiptPendingBillRows =
+    reportsSummary?.expectedCashOutgoReceiptPendingBillRows ?? [];
+  const expectedCashOutgoBillPreparationRows =
+    reportsSummary?.expectedCashOutgoBillPreparationRows ?? [];
+  const billSentForPaymentRows = reportsSummary?.billSentForPaymentRows ?? [];
   const actualCashOutgoRows = reportsSummary?.actualCashOutgoRows ?? [];
   const currentLiabilityRows = getCurrentMonthLiabilityRows(expectedCashOutgoReceiptRows);
   const delayRows = reportsSummary?.delayRows ?? [];
   const delaySummary = reportsSummary?.delaySummary ?? getDelayStatusSummary([]);
-  const selectedCashOutgoRows =
-    reportMode === "currentMonthLiability"
-      ? currentLiabilityRows
-      : reportMode === "actualCashOutgo"
-      ? actualCashOutgoRows
-      : reportMode === "expectedCashOutgoByReceipt"
-        ? expectedCashOutgoReceiptRows
-        : expectedCashOutgoDpRows;
-  const expectedCashOutgoDpReportTitle =
+  const today = formatLocalDate(new Date());
+  const currentMonthKey = getCurrentMonthKey();
+  const effectiveFinancialYear = isAllActiveFilesYear(settings.selectedYear)
+    ? settings.financialYear
+    : settings.selectedYear || settings.financialYear;
+  const mmgFilteredFiles = filterMmgFilesByDivision(mmgFiles, activeDivision);
+  const mmgPreviousFilteredFiles = filterMmgFilesByDivision(
+    mmgPreviousFiles.filter((file) => isPreviousFinancialYearFile(file, effectiveFinancialYear)),
+    activeDivision,
+  );
+  const mmgSummaryRows = buildMmgSummaryRows({
+    files: mmgFilteredFiles,
+    divisions:
+      activeDivision === "all" ? divisions : divisions.filter((d) => d.name === activeDivision),
+    previousYearFiles: mmgPreviousFilteredFiles,
+    config: normalizeMmgSummaryFields(settings.mmgSummaryFields),
+    financialYear: effectiveFinancialYear,
+  });
+  const fyRange = getFinancialYearRange(effectiveFinancialYear);
+  const expectedCashOutgoFyRows = filterRowsByMonthRange(
+    expectedCashOutgoDpRows,
+    fyRange.startMonthKey,
+    fyRange.endMonthKey,
+  );
+  const spentTillDateFyRows = filterRowsByMonthRange(
+    actualCashOutgoRows,
+    fyRange.startMonthKey,
+    currentMonthKey,
+  );
+  const cashOutgoForMonthRows = combineRowsForMonth(currentMonthKey, [
+    expectedCashOutgoBillPreparationRows,
+    billSentForPaymentRows,
+    expectedCashOutgoFyRows,
+  ]);
+  const expectedExpenditureTillMonthRows = combineRowsAsSingleMonth(currentMonthKey, [
+    spentTillDateFyRows,
+    cashOutgoForMonthRows,
+  ]);
+  const selectedCashOutgoRows = getRowsForReportMode(reportMode, {
+    expectedCashOutgoReceiptPendingBillRows,
+    expectedCashOutgoBillPreparationRows,
+    billSentForPaymentRows,
+    expectedCashOutgoFyRows,
+    spentTillDateFyRows,
+    currentLiabilityRows,
+    cashOutgoForMonthRows,
+    expectedExpenditureTillMonthRows,
+  });
+  const reportTitle = getEightReportTitle(reportMode, {
+    today,
+    monthKey: currentMonthKey,
+    financialYear: effectiveFinancialYear,
+  });
+  const reportTitleWithDivision =
     activeDivision === "all"
-      ? "Expected cash outgo by DP date - All divisions"
-      : `Expected cash outgo by DP date - ${activeDivision}`;
-  const expectedCashOutgoReceiptReportTitle =
-    activeDivision === "all"
-      ? "Expected cash outgo by material receipt date - All divisions"
-      : `Expected cash outgo by material receipt date - ${activeDivision}`;
-  const actualCashOutgoReportTitle =
-    activeDivision === "all"
-      ? "Actual cash outgo monthly - All divisions"
-      : `Actual cash outgo monthly - ${activeDivision}`;
-  const currentLiabilityReportTitle =
-    activeDivision === "all"
-      ? "Current month liability - All divisions"
-      : `Current month liability - ${activeDivision}`;
-  const cashOutgoReportTitle =
-    reportMode === "currentMonthLiability"
-      ? currentLiabilityReportTitle
-      : reportMode === "actualCashOutgo"
-      ? actualCashOutgoReportTitle
-      : reportMode === "expectedCashOutgoByReceipt"
-        ? expectedCashOutgoReceiptReportTitle
-        : expectedCashOutgoDpReportTitle;
+      ? `${reportTitle} - All divisions`
+      : `${reportTitle} - ${activeDivision}`;
   const delayReportTitle =
     activeDivision === "all"
       ? `Delay status - More than ${delayThresholdDays} days`
       : `Delay status - More than ${delayThresholdDays} days - ${activeDivision}`;
-  const reportTitle = reportMode === "delayStatus" ? delayReportTitle : cashOutgoReportTitle;
-  const selectedReportMode =
-    reportModes.find((mode) => mode.key === reportMode) ?? reportModes[0];
+  const selectedReportTitle =
+    reportMode === "delayStatus"
+      ? delayReportTitle
+      : reportMode === "mmgSummary"
+        ? activeDivision === "all"
+          ? `MMG Summary - ${displayFinancialYearLabel(effectiveFinancialYear)} - All divisions`
+          : `MMG Summary - ${displayFinancialYearLabel(effectiveFinancialYear)} - ${activeDivision}`
+        : reportTitleWithDivision;
+  const reportLogic = getCashOutgoReportLogic(reportMode, {
+    today,
+    monthKey: currentMonthKey,
+    financialYear: effectiveFinancialYear,
+  });
+  const exportCashOutgoPdf = () =>
+    reportMode === "currentMonthLiability"
+      ? printCurrentLiabilityToPdf(selectedCashOutgoRows, selectedReportTitle, reportLogic)
+      : printExpectedCashOutgoToPdf(selectedCashOutgoRows, selectedReportTitle, reportLogic);
+  const exportCashOutgoExcel = () =>
+    reportMode === "currentMonthLiability"
+      ? exportCurrentLiabilityToExcel(selectedCashOutgoRows, selectedReportTitle, reportLogic)
+      : exportExpectedCashOutgoToExcel(selectedCashOutgoRows, selectedReportTitle, reportLogic);
+  const exportMmgSummaryPdf = () => exportMmgSummary(mmgSummaryRows, selectedReportTitle, "pdf");
+  const exportMmgSummaryExcel = () =>
+    exportMmgSummary(mmgSummaryRows, selectedReportTitle, "excel");
+  const selectedReportMode = reportModes.find((mode) => mode.key === reportMode) ?? reportModes[0];
   const openDelaySearch = (milestoneKey = delayMilestoneKey) => {
     navigate({
       to: "/search",
@@ -206,83 +298,37 @@ function ReportsPage() {
           </div>
         </aside>
         <div className="min-w-0 space-y-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold">{selectedReportMode.label}</h2>
-              <p className="text-xs text-muted-foreground">{reportTitle}</p>
-            </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="flex min-w-[220px] flex-col gap-1 text-xs text-muted-foreground">
-                <span>Division</span>
-                <select
-                  value={activeDivision}
-                  onChange={(event) => setSelectedDivision(event.target.value)}
-                  className="h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/40"
-                >
-                  <option value="all">All accessible divisions</option>
-                  {divisions.map((division) => (
-                    <option key={division.id} value={division.name}>
-                      {division.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={() =>
-                  reportMode === "delayStatus"
-                    ? printDelayStatusToPdf(delayRows, reportTitle)
-                    : reportMode === "currentMonthLiability"
-                      ? printCurrentLiabilityToPdf(selectedCashOutgoRows, reportTitle)
-                      : reportMode === "actualCashOutgo"
-                      ? printActualCashOutgoToPdf(selectedCashOutgoRows, reportTitle)
-                      : printExpectedCashOutgoToPdf(
-                          selectedCashOutgoRows,
-                          reportTitle,
-                          expectedCashOutgoOffsetDays,
-                          reportMode === "expectedCashOutgoByReceipt" ? "receipt" : "dp",
-                        )
-                }
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
-              >
-                <FileText className="size-4" />
-                PDF
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  reportMode === "delayStatus"
-                    ? exportDelayStatusToExcel(delayRows, reportTitle)
-                    : reportMode === "currentMonthLiability"
-                      ? exportCurrentLiabilityToExcel(selectedCashOutgoRows, reportTitle)
-                      : reportMode === "actualCashOutgo"
-                      ? exportActualCashOutgoToExcel(selectedCashOutgoRows, reportTitle)
-                      : exportExpectedCashOutgoToExcel(selectedCashOutgoRows, reportTitle)
-                }
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
-              >
-                <FileSpreadsheet className="size-4" />
-                Excel
-              </button>
-            </div>
-          </div>
-
-          {reportsError || (reportsLoading && !hasLoadedReports) ? (
+          {reportsError || (reportsLoading && !hasLoadedReports) || mmgError ? (
             <div
               className={
                 "rounded-md border px-3 py-2 text-xs " +
-                (reportsError
+                (reportsError || mmgError
                   ? "border-destructive/30 bg-destructive/10 text-destructive"
                   : "border-border bg-secondary/30 text-muted-foreground")
               }
             >
-              {reportsError
-                ? `Reports API unavailable, showing local fallback: ${reportsError}`
+              {reportsError || mmgError
+                ? `Reports API unavailable, showing local fallback: ${reportsError || mmgError}`
                 : "Updating reports..."}
             </div>
           ) : null}
 
-          {reportMode === "delayStatus" ? (
+          {reportMode === "mmgSummary" ? (
+            <MmgSummaryReport
+              rows={mmgSummaryRows}
+              title={selectedReportTitle}
+              loading={mmgLoading}
+              actions={
+                <ReportHeaderActions
+                  divisions={divisions}
+                  activeDivision={activeDivision}
+                  onDivisionChange={setSelectedDivision}
+                  onPdf={exportMmgSummaryPdf}
+                  onExcel={exportMmgSummaryExcel}
+                />
+              }
+            />
+          ) : reportMode === "delayStatus" ? (
             <DelayStatusReport
               rows={delayRows}
               thresholdDays={delayThresholdDays}
@@ -295,35 +341,138 @@ function ReportsPage() {
               onOpenSearch={() => openDelaySearch()}
               onOpenMilestone={(milestoneKey) => openDelaySearch(milestoneKey)}
             />
+          ) : reportMode === "itemsDeliveredBillsPending" ? (
+            <ExpectedCashOutgoReport
+              rows={expectedCashOutgoReceiptPendingBillRows}
+              title={reportTitle}
+              description={reportLogic}
+              actions={
+                <ReportHeaderActions
+                  divisions={divisions}
+                  activeDivision={activeDivision}
+                  onDivisionChange={setSelectedDivision}
+                  onPdf={exportCashOutgoPdf}
+                  onExcel={exportCashOutgoExcel}
+                />
+              }
+              selectedDays={expectedCashOutgoDays}
+              onDaysChange={setExpectedCashOutgoDays}
+              onOpenMonth={(monthKey) =>
+                openCashOutgoSearch("expectedReceiptPendingBill", monthKey)
+              }
+            />
           ) : reportMode === "currentMonthLiability" ? (
             <CurrentMonthLiabilityReport
               rows={currentLiabilityRows}
+              title={reportTitle}
+              description={reportLogic}
+              actions={
+                <ReportHeaderActions
+                  divisions={divisions}
+                  activeDivision={activeDivision}
+                  onDivisionChange={setSelectedDivision}
+                  onPdf={exportCashOutgoPdf}
+                  onExcel={exportCashOutgoExcel}
+                />
+              }
               selectedDays={expectedCashOutgoDays}
-              offsetDays={expectedCashOutgoOffsetDays}
               onDaysChange={setExpectedCashOutgoDays}
             />
-          ) : reportMode === "actualCashOutgo" ? (
-            <ActualCashOutgoReport
-              rows={actualCashOutgoRows}
+          ) : reportMode === "itemsDeliveredBillsPrepared" ? (
+            <ExpectedCashOutgoReport
+              rows={expectedCashOutgoBillPreparationRows}
+              title={reportTitle}
+              description={reportLogic}
+              actions={
+                <ReportHeaderActions
+                  divisions={divisions}
+                  activeDivision={activeDivision}
+                  onDivisionChange={setSelectedDivision}
+                  onPdf={exportCashOutgoPdf}
+                  onExcel={exportCashOutgoExcel}
+                />
+              }
+              onOpenMonth={(monthKey) => openCashOutgoSearch("billPreparation", monthKey)}
+            />
+          ) : reportMode === "billsSubmitted" ? (
+            <ExpectedCashOutgoReport
+              rows={billSentForPaymentRows}
+              title={reportTitle}
+              description={reportLogic}
+              actions={
+                <ReportHeaderActions
+                  divisions={divisions}
+                  activeDivision={activeDivision}
+                  onDivisionChange={setSelectedDivision}
+                  onPdf={exportCashOutgoPdf}
+                  onExcel={exportCashOutgoExcel}
+                />
+              }
+              onOpenMonth={(monthKey) => openCashOutgoSearch("billSent", monthKey)}
+            />
+          ) : reportMode === "expectedCashOutgoFy" ? (
+            <ExpectedCashOutgoReport
+              rows={expectedCashOutgoFyRows}
+              title={reportTitle}
+              description={reportLogic}
+              actions={
+                <ReportHeaderActions
+                  divisions={divisions}
+                  activeDivision={activeDivision}
+                  onDivisionChange={setSelectedDivision}
+                  onPdf={exportCashOutgoPdf}
+                  onExcel={exportCashOutgoExcel}
+                />
+              }
+              selectedDays={expectedCashOutgoDays}
+              onDaysChange={setExpectedCashOutgoDays}
+              onOpenMonth={(monthKey) => openCashOutgoSearch("expectedDp", monthKey)}
+            />
+          ) : reportMode === "spentTillDateFy" ? (
+            <ExpectedCashOutgoReport
+              rows={spentTillDateFyRows}
+              title={reportTitle}
+              description={reportLogic}
+              actions={
+                <ReportHeaderActions
+                  divisions={divisions}
+                  activeDivision={activeDivision}
+                  onDivisionChange={setSelectedDivision}
+                  onPdf={exportCashOutgoPdf}
+                  onExcel={exportCashOutgoExcel}
+                />
+              }
               onOpenMonth={(monthKey) => openCashOutgoSearch("actual", monthKey)}
             />
-          ) : reportMode === "expectedCashOutgoByReceipt" ? (
+          ) : reportMode === "cashOutgoForMonth" ? (
             <ExpectedCashOutgoReport
-              rows={expectedCashOutgoReceiptRows}
-              base="receipt"
-              selectedDays={expectedCashOutgoDays}
-              offsetDays={expectedCashOutgoOffsetDays}
-              onDaysChange={setExpectedCashOutgoDays}
-              onOpenMonth={(monthKey) => openCashOutgoSearch("expectedReceipt", monthKey)}
+              rows={cashOutgoForMonthRows}
+              title={reportTitle}
+              description={reportLogic}
+              actions={
+                <ReportHeaderActions
+                  divisions={divisions}
+                  activeDivision={activeDivision}
+                  onDivisionChange={setSelectedDivision}
+                  onPdf={exportCashOutgoPdf}
+                  onExcel={exportCashOutgoExcel}
+                />
+              }
             />
           ) : (
             <ExpectedCashOutgoReport
-              rows={expectedCashOutgoDpRows}
-              base="dp"
-              selectedDays={expectedCashOutgoDays}
-              offsetDays={expectedCashOutgoOffsetDays}
-              onDaysChange={setExpectedCashOutgoDays}
-              onOpenMonth={(monthKey) => openCashOutgoSearch("expectedDp", monthKey)}
+              rows={expectedExpenditureTillMonthRows}
+              title={reportTitle}
+              description={reportLogic}
+              actions={
+                <ReportHeaderActions
+                  divisions={divisions}
+                  activeDivision={activeDivision}
+                  onDivisionChange={setSelectedDivision}
+                  onPdf={exportCashOutgoPdf}
+                  onExcel={exportCashOutgoExcel}
+                />
+              }
             />
           )}
         </div>
@@ -333,61 +482,157 @@ function ReportsPage() {
 }
 
 type ReportMode =
-  | "expectedCashOutgoByDp"
-  | "expectedCashOutgoByReceipt"
+  | "mmgSummary"
+  | "itemsDeliveredBillsPending"
+  | "itemsDeliveredBillsPrepared"
+  | "billsSubmitted"
+  | "expectedCashOutgoFy"
+  | "spentTillDateFy"
   | "currentMonthLiability"
-  | "actualCashOutgo"
+  | "cashOutgoForMonth"
+  | "expectedExpenditureTillMonth"
   | "delayStatus";
-type CashOutgoFilterMode = "expectedDp" | "expectedReceipt" | "actual";
+type CashOutgoFilterMode =
+  | "expectedDp"
+  | "expectedReceipt"
+  | "expectedReceiptPendingBill"
+  | "billPreparation"
+  | "billSent"
+  | "actual";
 
 const reportModes = [
-  { key: "expectedCashOutgoByDp", label: "Expected cash outgo by DP date" },
-  { key: "expectedCashOutgoByReceipt", label: "Expected cash outgo by material receipt date" },
-  { key: "currentMonthLiability", label: "Current month liability" },
-  { key: "actualCashOutgo", label: "Actual cash out go" },
-  { key: "delayStatus", label: "Delay status" },
+  { key: "mmgSummary", label: "MMG Summary" },
+  { key: "itemsDeliveredBillsPending", label: "Items delivered & bills yet to be prepared" },
+  { key: "itemsDeliveredBillsPrepared", label: "Items delivered and bills prepared" },
+  { key: "billsSubmitted", label: "Bills submitted" },
+  { key: "expectedCashOutgoFy", label: "Expected cash outgo for FY" },
+  { key: "spentTillDateFy", label: "Spent till date" },
+  { key: "cashOutgoForMonth", label: "Cash outgo for month" },
+  { key: "expectedExpenditureTillMonth", label: "Expected expenditure till month" },
+  { key: "currentMonthLiability", label: "Current month's liability" },
 ] satisfies Array<{ key: ReportMode; label: string }>;
 const fileClosedMilestone = "File Closed";
 const delayStatusPageSizeOptions = [25, 50, 100] as const;
 
+function getRowsForReportMode(
+  mode: ReportMode,
+  rows: {
+    expectedCashOutgoReceiptPendingBillRows: ExpectedCashOutgoRow[];
+    expectedCashOutgoBillPreparationRows: ExpectedCashOutgoRow[];
+    billSentForPaymentRows: ExpectedCashOutgoRow[];
+    expectedCashOutgoFyRows: ExpectedCashOutgoRow[];
+    spentTillDateFyRows: ExpectedCashOutgoRow[];
+    currentLiabilityRows: ExpectedCashOutgoRow[];
+    cashOutgoForMonthRows: ExpectedCashOutgoRow[];
+    expectedExpenditureTillMonthRows: ExpectedCashOutgoRow[];
+  },
+) {
+  if (mode === "itemsDeliveredBillsPending") return rows.expectedCashOutgoReceiptPendingBillRows;
+  if (mode === "itemsDeliveredBillsPrepared") return rows.expectedCashOutgoBillPreparationRows;
+  if (mode === "billsSubmitted") return rows.billSentForPaymentRows;
+  if (mode === "expectedCashOutgoFy") return rows.expectedCashOutgoFyRows;
+  if (mode === "spentTillDateFy") return rows.spentTillDateFyRows;
+  if (mode === "currentMonthLiability") return rows.currentLiabilityRows;
+  if (mode === "cashOutgoForMonth") return rows.cashOutgoForMonthRows;
+  if (mode === "expectedExpenditureTillMonth") return rows.expectedExpenditureTillMonthRows;
+  return [];
+}
+
+function getEightReportTitle(
+  mode: ReportMode,
+  context: { today: string; monthKey: string; financialYear: string },
+) {
+  const asOnDate = formatDateTitle(context.today);
+  const monthLabel = formatMonthTitle(context.monthKey);
+  const fyLabel = displayFinancialYearLabel(context.financialYear);
+  if (mode === "itemsDeliveredBillsPending") {
+    return `Items delivered & bills are yet to be prepared as on ${asOnDate}`;
+  }
+  if (mode === "itemsDeliveredBillsPrepared") {
+    return `Items delivered and bills prepared as on ${asOnDate}`;
+  }
+  if (mode === "billsSubmitted") return `Bills submitted as on ${asOnDate}`;
+  if (mode === "expectedCashOutgoFy") return `Expected cash outgo for FY ${fyLabel}`;
+  if (mode === "spentTillDateFy") {
+    return `Spent till as on ${asOnDate} for FY ${fyLabel}`;
+  }
+  if (mode === "currentMonthLiability") return "Current month's liability";
+  if (mode === "cashOutgoForMonth") return `Cash outgo for ${monthLabel}`;
+  if (mode === "expectedExpenditureTillMonth") {
+    return `Expected expenditure till ${monthLabel}`;
+  }
+  return "Delay status";
+}
+
+function getCashOutgoReportLogic(
+  mode: ReportMode,
+  context: { today: string; monthKey: string; financialYear: string },
+) {
+  if (mode === "itemsDeliveredBillsPending") {
+    return "Expected cash outgo by material receipt date";
+  }
+  if (mode === "itemsDeliveredBillsPrepared") {
+    return "Expected cash outgo by Bill preparation date";
+  }
+  if (mode === "billsSubmitted") {
+    return "Bill sent for payment";
+  }
+  if (mode === "expectedCashOutgoFy") {
+    return "Expected cash outgo by DP date.";
+  }
+  if (mode === "spentTillDateFy") {
+    return "";
+  }
+  if (mode === "currentMonthLiability") {
+    return "";
+  }
+  if (mode === "cashOutgoForMonth") {
+    return `(i) Total of Items delivered and bills prepared as on date (ii) Bills submitted as on date (iii) Expected cash outgo for FY ${displayFinancialYearLabel(context.financialYear)}`;
+  }
+  if (mode === "expectedExpenditureTillMonth") {
+    return "Total of (i) Spent till date (ii) Cash outgo for current month";
+  }
+  return "";
+}
+
 function ExpectedCashOutgoReport({
   rows,
-  base,
+  title,
+  description,
+  actions,
   selectedDays,
-  offsetDays,
   onDaysChange,
   onOpenMonth,
 }: {
   rows: ExpectedCashOutgoRow[];
-  base: "dp" | "receipt";
-  selectedDays: string;
-  offsetDays: number;
-  onDaysChange: (value: string) => void;
-  onOpenMonth: (monthKey: string) => void;
+  title: string;
+  description: string;
+  actions: ReactNode;
+  selectedDays?: string;
+  onDaysChange?: (value: string) => void;
+  onOpenMonth?: (monthKey: string) => void;
 }) {
-  const isReceipt = base === "receipt";
   return (
     <CashOutgoReport
       rows={rows}
-      title={isReceipt ? "Expected cash outgo by material receipt date" : "Expected cash outgo by DP date"}
-      description={
-        isReceipt
-          ? `Uses material receipt date plus ${offsetDays} days, excluding rows with payment date filled.`
-          : `Uses revised DP date when filled, otherwise DP date, plus ${offsetDays} days, excluding S.O. cancelled rows and rows with material receipt date or payment date filled.`
-      }
+      title={title}
+      description={description}
       emptyMessage="No expected cash outgo rows found."
+      actions={actions}
       onOpenMonth={onOpenMonth}
       controls={
-        <label className="flex w-36 flex-col gap-1 text-xs text-muted-foreground">
-          <span>Days after base date</span>
-          <input
-            type="number"
-            min="0"
-            value={selectedDays}
-            onChange={(event) => onDaysChange(event.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/40"
-          />
-        </label>
+        selectedDays !== undefined && onDaysChange ? (
+          <label className="flex w-36 flex-col gap-1 text-xs text-muted-foreground">
+            <span>Days after base date</span>
+            <input
+              type="number"
+              min="0"
+              value={selectedDays}
+              onChange={(event) => onDaysChange(event.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/40"
+            />
+          </label>
+        ) : undefined
       }
     />
   );
@@ -413,21 +658,26 @@ function ActualCashOutgoReport({
 
 function CurrentMonthLiabilityReport({
   rows,
+  title,
+  description,
+  actions,
   selectedDays,
-  offsetDays,
   onDaysChange,
 }: {
   rows: ExpectedCashOutgoRow[];
+  title: string;
+  description: string;
+  actions: ReactNode;
   selectedDays: string;
-  offsetDays: number;
   onDaysChange: (value: string) => void;
 }) {
   return (
     <CashOutgoReport
       rows={rows}
-      title="Current month liability"
-      description={`Uses material receipt date plus ${offsetDays} days, carrying forward unpaid amounts from previous months into the current month.`}
+      title={title}
+      description={description}
       emptyMessage="No unpaid liability found for the current month."
+      actions={actions}
       controls={
         <label className="flex w-36 flex-col gap-1 text-xs text-muted-foreground">
           <span>Days after base date</span>
@@ -444,18 +694,127 @@ function CurrentMonthLiabilityReport({
   );
 }
 
+function ReportHeaderActions({
+  divisions,
+  activeDivision,
+  onDivisionChange,
+  onPdf,
+  onExcel,
+}: {
+  divisions: ReturnType<typeof useAccessibleDivisions>;
+  activeDivision: string;
+  onDivisionChange: (division: string) => void;
+  onPdf: () => void;
+  onExcel: () => void;
+}) {
+  return (
+    <>
+      <label className="flex min-w-[220px] flex-col gap-1 text-xs text-muted-foreground">
+        <span>Division</span>
+        <select
+          value={activeDivision}
+          onChange={(event) => onDivisionChange(event.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/40"
+        >
+          <option value="all">All accessible divisions</option>
+          {divisions.map((division) => (
+            <option key={division.id} value={division.name}>
+              {division.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        onClick={onPdf}
+        className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
+      >
+        <FileText className="size-4" />
+        PDF
+      </button>
+      <button
+        type="button"
+        onClick={onExcel}
+        className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
+      >
+        <FileSpreadsheet className="size-4" />
+        Excel
+      </button>
+    </>
+  );
+}
+
+function MmgSummaryReport({
+  rows,
+  title,
+  loading,
+  actions,
+}: {
+  rows: MmgSummaryRow[];
+  title: string;
+  loading: boolean;
+  actions: ReactNode;
+}) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-6 shadow-[var(--shadow-card)]">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <p className="text-xs text-muted-foreground">
+            Selected fields and labels are managed from Settings.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end justify-end gap-2">{actions}</div>
+      </div>
+      {loading ? (
+        <div className="rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+          Updating MMG Summary...
+        </div>
+      ) : null}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="px-3 py-2 text-left font-semibold">Field</th>
+              <th className="px-3 py-2 text-right font-semibold">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length ? (
+              rows.map((row) => (
+                <tr key={row.key} className="border-b border-border/70 last:border-0">
+                  <td className="px-3 py-2 font-medium">{row.label}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{row.value}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={2} className="px-3 py-6 text-center text-muted-foreground">
+                  No MMG Summary fields selected.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function CashOutgoReport({
   rows,
   title,
   description,
   emptyMessage,
+  actions,
   controls,
   onOpenMonth,
 }: {
   rows: ExpectedCashOutgoRow[];
   title: string;
-  description: string;
+  description?: string;
   emptyMessage: string;
+  actions?: ReactNode;
   controls?: ReactNode;
   onOpenMonth?: (monthKey: string) => void;
 }) {
@@ -466,9 +825,12 @@ function CashOutgoReport({
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold">{title}</h2>
-          <p className="text-xs text-muted-foreground">{description}</p>
+          {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
         </div>
-        {controls}
+        <div className="flex flex-wrap items-end justify-end gap-2">
+          {controls}
+          {actions}
+        </div>
         <div className="grid grid-cols-2 gap-2 text-right text-xs">
           <div className="rounded-md border border-border bg-secondary/30 px-3 py-2">
             <div className="text-muted-foreground">Total Capital</div>
@@ -634,7 +996,11 @@ function CashOutgoTable({
   );
 }
 
-function CashOutgoTotalsRow({ totals }: { totals: Pick<ExpectedCashOutgoRow, "capital" | "revenue"> }) {
+function CashOutgoTotalsRow({
+  totals,
+}: {
+  totals: Pick<ExpectedCashOutgoRow, "capital" | "revenue">;
+}) {
   return (
     <tr className="border-t border-border bg-muted/40 font-semibold">
       <td className="px-3 py-2.5 text-right tabular-nums" />
@@ -945,11 +1311,22 @@ function printDelayStatusToPdf(rows: DelayStatusRow[], title: string) {
   void downloadDelayStatus(rows, title, "pdf");
 }
 
-async function downloadDelayStatus(
-  rows: DelayStatusRow[],
-  title: string,
-  format: "excel" | "pdf",
-) {
+function exportMmgSummary(rows: MmgSummaryRow[], title: string, format: "excel" | "pdf") {
+  void downloadBackendExport({
+    format,
+    title,
+    tables: [
+      {
+        headers: ["Field", "Value"],
+        rows: rows.length
+          ? rows.map((row) => [row.label, row.value])
+          : [["No MMG Summary fields selected."]],
+      },
+    ],
+  });
+}
+
+async function downloadDelayStatus(rows: DelayStatusRow[], title: string, format: "excel" | "pdf") {
   const exportColumns = delayStatusColumns.filter((column) => column.key !== "action");
   await downloadBackendExport({
     format,
@@ -1007,41 +1384,67 @@ function getExportFileName(title: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-function exportExpectedCashOutgoToExcel(rows: ExpectedCashOutgoRow[], title: string) {
-  exportCashOutgoToExcel(rows, title, "No expected cash outgo rows found.");
+function exportExpectedCashOutgoToExcel(
+  rows: ExpectedCashOutgoRow[],
+  title: string,
+  description?: string,
+) {
+  exportCashOutgoToExcel(rows, title, "No expected cash outgo rows found.", description);
 }
 
 function exportActualCashOutgoToExcel(rows: ExpectedCashOutgoRow[], title: string) {
   exportCashOutgoToExcel(rows, title, "No actual cash out go rows found.");
 }
 
-function exportCurrentLiabilityToExcel(rows: ExpectedCashOutgoRow[], title: string) {
-  exportCashOutgoToExcel(rows, title, "No unpaid liability found for the current month.");
+function exportCurrentLiabilityToExcel(
+  rows: ExpectedCashOutgoRow[],
+  title: string,
+  description?: string,
+) {
+  exportCashOutgoToExcel(
+    rows,
+    title,
+    "No unpaid liability found for the current month.",
+    description,
+  );
 }
 
-function exportCashOutgoToExcel(rows: ExpectedCashOutgoRow[], title: string, emptyMessage: string) {
-  void downloadCashOutgo(rows, title, emptyMessage, undefined, "excel");
+function exportCashOutgoToExcel(
+  rows: ExpectedCashOutgoRow[],
+  title: string,
+  emptyMessage: string,
+  description?: string,
+) {
+  void downloadCashOutgo(rows, title, emptyMessage, description, "excel");
 }
 
 function printExpectedCashOutgoToPdf(
   rows: ExpectedCashOutgoRow[],
   title: string,
-  _offsetDays: number,
-  _base: "dp" | "receipt",
+  description?: string,
 ) {
-  printCashOutgoToPdf(rows, title, "No expected cash outgo rows found.");
+  printCashOutgoToPdf(rows, title, "No expected cash outgo rows found.", description);
 }
 
 function printActualCashOutgoToPdf(rows: ExpectedCashOutgoRow[], title: string) {
   printCashOutgoToPdf(rows, title, "No actual cash out go rows found.");
 }
 
-function printCurrentLiabilityToPdf(rows: ExpectedCashOutgoRow[], title: string) {
-  printCashOutgoToPdf(rows, title, "No unpaid liability found for the current month.");
+function printCurrentLiabilityToPdf(
+  rows: ExpectedCashOutgoRow[],
+  title: string,
+  description?: string,
+) {
+  printCashOutgoToPdf(rows, title, "No unpaid liability found for the current month.", description);
 }
 
-function printCashOutgoToPdf(rows: ExpectedCashOutgoRow[], title: string, emptyMessage: string) {
-  void downloadCashOutgo(rows, title, emptyMessage, undefined, "pdf");
+function printCashOutgoToPdf(
+  rows: ExpectedCashOutgoRow[],
+  title: string,
+  emptyMessage: string,
+  description?: string,
+) {
+  void downloadCashOutgo(rows, title, emptyMessage, description, "pdf");
 }
 
 async function downloadCashOutgo(
@@ -1180,10 +1583,7 @@ const delayStatusColumns = [
   { key: "action", label: "Search", align: "left" },
 ] satisfies Array<{ key: DelayStatusColumnKey; label: string; align: "left" | "right" }>;
 
-function getExpectedCashOutgoByDpRows(
-  files: FileRecord[],
-  offsetDays = 0,
-): ExpectedCashOutgoRow[] {
+function getExpectedCashOutgoByDpRows(files: FileRecord[], offsetDays = 0): ExpectedCashOutgoRow[] {
   const totals = new Map<string, ExpectedCashOutgoRow>();
 
   files.forEach((file) => {
@@ -1231,8 +1631,10 @@ function getActualCashOutgoRows(files: FileRecord[]): ExpectedCashOutgoRow[] {
     if (isCancelledFile(file)) return;
     fileSupplyOrders(file).forEach((order) => {
       if (!hasFilledString(order.paymentDate) || isSoCancelledWithDate(order)) return;
+      const paymentDate = order.paymentDate;
+      if (!paymentDate) return;
 
-      addCashOutgoTotal(totals, order.paymentDate, file, order);
+      addCashOutgoTotal(totals, paymentDate, file, order);
     });
   });
 
@@ -1266,6 +1668,79 @@ function getCurrentMonthLiabilityRows(rows: ExpectedCashOutgoRow[]) {
 
 function getCurrentMonthKey() {
   return formatLocalDate(new Date()).slice(0, 7);
+}
+
+function getFinancialYearRange(financialYear: string) {
+  const startYear = readFinancialYearStart(financialYear) ?? new Date().getFullYear();
+  return {
+    startMonthKey: `${startYear}-04`,
+    endMonthKey: `${startYear + 1}-03`,
+  };
+}
+
+function filterMmgFilesByDivision(files: FileRecord[], activeDivision: string) {
+  if (activeDivision === "all") return files;
+  return files.filter((file) => file.division === activeDivision);
+}
+
+function isPreviousFinancialYearFile(file: FileRecord, financialYear: string) {
+  const selectedStart = readFinancialYearStart(financialYear);
+  const fileStart = readFinancialYearStart(file.year ?? "");
+  if (selectedStart === undefined || fileStart === undefined) return false;
+  return fileStart < selectedStart;
+}
+
+function readFinancialYearStart(financialYear: string) {
+  const match = financialYear.match(/\b(19\d{2}|20\d{2})\b/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function filterRowsByMonthRange(
+  rows: ExpectedCashOutgoRow[],
+  startMonthKey: string,
+  endMonthKey: string,
+) {
+  return rows.filter((row) => row.monthKey >= startMonthKey && row.monthKey <= endMonthKey);
+}
+
+function combineRowsForMonth(monthKey: string, rowGroups: ExpectedCashOutgoRow[][]) {
+  const totals = rowGroups
+    .flatMap((rows) => rows.filter((row) => row.monthKey === monthKey))
+    .reduce(
+      (sum, row) => ({
+        capital: sum.capital + row.capital,
+        revenue: sum.revenue + row.revenue,
+      }),
+      { capital: 0, revenue: 0 },
+    );
+  return createSingleMonthRow(monthKey, totals);
+}
+
+function combineRowsAsSingleMonth(monthKey: string, rowGroups: ExpectedCashOutgoRow[][]) {
+  const totals = rowGroups.flat().reduce(
+    (sum, row) => ({
+      capital: sum.capital + row.capital,
+      revenue: sum.revenue + row.revenue,
+    }),
+    { capital: 0, revenue: 0 },
+  );
+  return createSingleMonthRow(monthKey, totals);
+}
+
+function createSingleMonthRow(
+  monthKey: string,
+  totals: { capital: number; revenue: number },
+): ExpectedCashOutgoRow[] {
+  if (totals.capital === 0 && totals.revenue === 0) return [];
+  return [
+    {
+      monthKey,
+      month: formatMonthLabel(`${monthKey}-01`),
+      capital: Math.round(totals.capital),
+      revenue: Math.round(totals.revenue),
+      total: Math.round(totals.capital + totals.revenue),
+    },
+  ];
 }
 
 function addCashOutgoTotal(
@@ -1524,6 +1999,26 @@ function formatMonthLabel(date: string) {
   return new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric" }).format(
     new Date(time),
   );
+}
+
+function formatDateTitle(date: string) {
+  const time = parseLocalDateTime(date);
+  if (time === undefined) return date;
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+    .format(new Date(time))
+    .replace(/ /g, "-");
+}
+
+function formatMonthTitle(monthKey: string) {
+  const time = parseLocalDateTime(`${monthKey}-01`);
+  if (time === undefined) return monthKey;
+  return new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" })
+    .format(new Date(time))
+    .replace(" ", "-");
 }
 
 function formatCurrency(value: number) {

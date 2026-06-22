@@ -303,10 +303,7 @@ export function searchFiles(files: FileRecord[], params: FileSearchParams) {
     if (
       params.refloat &&
       !isYes(file.refloat) &&
-      !hasAny(file, [
-        "refloatBiddingDate",
-        "refloatBidOpeningDate",
-      ])
+      !hasAny(file, ["refloatBiddingDate", "refloatBidOpeningDate"])
     ) {
       return false;
     }
@@ -683,9 +680,7 @@ function isBgToBeReturned(file: FileRecord) {
 }
 
 function isDpExpired(file: FileRecord) {
-  return fileSupplyOrders(file).some(
-    (order) => isDateBeforeToday(getDeliveryPeriodDate(order)),
-  );
+  return fileSupplyOrders(file).some((order) => isDateBeforeToday(getDeliveryPeriodDate(order)));
 }
 
 function isDeliveryOverdue(file: FileRecord) {
@@ -921,6 +916,93 @@ function getDelayThresholdDays(value: string) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+function addDays(date: string | undefined, days: number) {
+  const time = parseLocalDateTime(date ?? "");
+  if (time === undefined) return undefined;
+  const next = new Date(time);
+  next.setDate(next.getDate() + days);
+  return formatLocalDate(next);
+}
+
+function readCashOutgoFilter(filter: string) {
+  const [, mode, rawMonthKey, rawOffsetDays] = filter.split(":");
+  const monthKey = decodeURIComponent(rawMonthKey ?? "");
+  const offsetDays = Number.parseInt(rawOffsetDays ?? "0", 10);
+  const validModes = [
+    "expectedDp",
+    "expectedReceipt",
+    "expectedReceiptPendingBill",
+    "billPreparation",
+    "billSent",
+    "actual",
+  ];
+  if (
+    !validModes.includes(mode) ||
+    !/^\d{4}-\d{2}$/.test(monthKey) ||
+    !Number.isFinite(offsetDays) ||
+    offsetDays < 0
+  ) {
+    return undefined;
+  }
+  return { mode, monthKey, offsetDays };
+}
+
+function monthMatches(date: string | undefined, monthKey: string) {
+  return hasDate(date) && date?.slice(0, 7) === monthKey;
+}
+
+function isCashOutgoFilterMatch(file: FileRecord, filter: string) {
+  const parsed = readCashOutgoFilter(filter);
+  if (!parsed || isCancelledFile(file)) return false;
+  return fileSupplyOrders(file).some((order) => {
+    if (parsed.mode === "expectedDp") {
+      const deliveryPeriodDate = getDeliveryPeriodDate(order);
+      return (
+        hasFilledString(deliveryPeriodDate) &&
+        !isYes(order.soCancelled) &&
+        !hasFilledString(order.materialReceiptDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(addDays(deliveryPeriodDate, parsed.offsetDays), parsed.monthKey)
+      );
+    }
+    if (parsed.mode === "expectedReceipt") {
+      return (
+        hasFilledString(order.materialReceiptDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(addDays(order.materialReceiptDate, parsed.offsetDays), parsed.monthKey)
+      );
+    }
+    if (parsed.mode === "expectedReceiptPendingBill") {
+      return (
+        hasFilledString(order.materialReceiptDate) &&
+        !hasFilledString(order.billPreparationDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(addDays(order.materialReceiptDate, parsed.offsetDays), parsed.monthKey)
+      );
+    }
+    if (parsed.mode === "billPreparation") {
+      return (
+        hasFilledString(order.materialReceiptDate) &&
+        hasFilledString(order.billPreparationDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(order.billPreparationDate, parsed.monthKey)
+      );
+    }
+    if (parsed.mode === "billSent") {
+      return (
+        hasFilledString(order.billSentForPaymentDate) &&
+        !hasFilledString(order.paymentDate) &&
+        monthMatches(order.billSentForPaymentDate, parsed.monthKey)
+      );
+    }
+    return (
+      hasFilledString(order.paymentDate) &&
+      !(isYes(order.soCancelled) && hasFilledString(order.soCancelledDate)) &&
+      monthMatches(order.paymentDate, parsed.monthKey)
+    );
+  });
+}
+
 function isPendingMilestone(file: FileRecord, milestone: (typeof milestoneDefinitions)[number]) {
   if (isCancelledFile(file)) return false;
   if (milestone.reviewed) {
@@ -1027,7 +1109,8 @@ function normalizeMilestoneName(value: string | undefined) {
 function isFileClosed(file: Pick<FileRecord, "completedMilestones">) {
   return Boolean(
     file.completedMilestones?.some(
-      (milestone) => normalizeMilestoneName(milestone) === normalizeMilestoneName(fileClosedMilestone),
+      (milestone) =>
+        normalizeMilestoneName(milestone) === normalizeMilestoneName(fileClosedMilestone),
     ),
   );
 }
@@ -1042,6 +1125,7 @@ function hasMilestoneDate(file: FileRecord, key: FileKey | SupplyOrderKey) {
 
 function matchesDashboardFilter(file: FileRecord, filter: string) {
   if (filter.startsWith("delayFile:")) return file.id === filter.slice("delayFile:".length);
+  if (filter.startsWith("cashOutgo:")) return isCashOutgoFilterMatch(file, filter);
   if (filter.startsWith("delayStatus:")) {
     const [, daysValue = "0", milestoneKey = "all"] = filter.split(":");
     return isDelayStatusMatch(file, getDelayThresholdDays(daysValue), milestoneKey);

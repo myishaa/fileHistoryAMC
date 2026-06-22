@@ -37,6 +37,7 @@ type SettingsRow = {
   table_field_presets: unknown;
   mmg_live_enabled: boolean;
   mmg_live_options: unknown;
+  mmg_summary_fields: unknown;
   active_user_id: string | null;
 };
 
@@ -185,6 +186,9 @@ async function mapSettings(row: SettingsRow, user?: AuthRequest["authUser"]): Pr
     mmgLiveOptions: fromDbJsonArray(row.mmg_live_options).filter(
       (option): option is string => typeof option === "string",
     ),
+    mmgSummaryFields: fromDbJsonArray(row.mmg_summary_fields).filter(
+      (field) => field && typeof field === "object" && !Array.isArray(field),
+    ),
     ...(liveStatusLockedFields !== undefined ? { liveStatusLockedFields } : {}),
     activeUserId: fromDbText(row.active_user_id) || undefined,
   };
@@ -267,7 +271,8 @@ async function getSettings(user?: AuthRequest["authUser"]) {
   return getCached(key, cacheTtl.settingsMs, async () => {
     const result = await pool.query<SettingsRow>(
       `select financial_year, selected_year, year_selection_locked, theme, theme_tint, deletion_password,
-              tcec_committees, milestones, table_field_presets, mmg_live_enabled, mmg_live_options, active_user_id
+              tcec_committees, milestones, table_field_presets, mmg_live_enabled, mmg_live_options,
+              mmg_summary_fields, active_user_id
        from app_settings
        where id = true`,
     );
@@ -339,6 +344,21 @@ function readStringArray(value: unknown, field: string) {
   return readArrayValue(value, field).filter((item): item is string => typeof item === "string");
 }
 
+function readMmgSummaryFields(value: unknown) {
+  return readArrayValue(value, "mmgSummaryFields")
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
+      const candidate = item as Record<string, unknown>;
+      if (typeof candidate.key !== "string") return undefined;
+      return {
+        key: candidate.key,
+        label: toDbText(candidate.label) || candidate.key,
+        enabled: candidate.enabled !== false,
+      };
+    })
+    .filter(Boolean);
+}
+
 async function replaceUserLiveStatusFields(ownerKey: string, fieldKeys: string[]) {
   await ensureUserLiveStatusPreferencesTable();
   await pool.query(
@@ -380,6 +400,7 @@ settingsRouter.patch(
       "themeTint",
       "tableFieldPresets",
       "liveStatusLockedFields",
+      "mmgSummaryFields",
     ]);
     const canUpdateTableFieldPresets =
       !("tableFieldPresets" in body) ||
@@ -388,8 +409,11 @@ settingsRouter.patch(
       user.role === "editor" ||
       user.role === "division_user" ||
       user.role === "viewer";
+    const canUpdateMmgSummaryFields =
+      !("mmgSummaryFields" in body) || user.role === "admin" || user.role === "sub_admin";
     const canUpdateUserPreference =
       canUpdateTableFieldPresets &&
+      canUpdateMmgSummaryFields &&
       bodyFields.length > 0 &&
       bodyFields.every((field) => userEditableFields.has(field));
     if (user.role !== "admin" && !canUpdateUserPreference)
@@ -443,6 +467,12 @@ settingsRouter.patch(
         JSON.stringify(readStringArray(body.mmgLiveOptions, "mmgLiveOptions")),
         "::jsonb",
       );
+    if ("mmgSummaryFields" in body)
+      addField(
+        "mmg_summary_fields",
+        JSON.stringify(readMmgSummaryFields(body.mmgSummaryFields)),
+        "::jsonb",
+      );
     if ("tableFieldPresets" in body && user.role === "admin") {
       addField(
         "table_field_presets",
@@ -479,7 +509,8 @@ settingsRouter.patch(
       !("tcecCommittees" in body) &&
       !("valueThresholdLevels" in body) &&
       !("tableFieldPresets" in body) &&
-      !("liveStatusLockedFields" in body)
+      !("liveStatusLockedFields" in body) &&
+      !("mmgSummaryFields" in body)
     ) {
       throw new HttpError(400, "No settings fields provided.");
     }

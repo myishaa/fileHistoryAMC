@@ -202,6 +202,12 @@ export function buildReportsSummary({
       reportFiles,
       expectedCashOutgoDays,
     ),
+    expectedCashOutgoReceiptPendingBillRows: getExpectedCashOutgoByReceiptPendingBillRows(
+      reportFiles,
+      expectedCashOutgoDays,
+    ),
+    expectedCashOutgoBillPreparationRows: getExpectedCashOutgoByBillPreparationRows(reportFiles),
+    billSentForPaymentRows: getBillSentForPaymentRows(reportFiles),
     actualCashOutgoRows: getActualCashOutgoRows(reportFiles),
     delayRows,
     delaySummary: getDelayStatusSummary(delayRows),
@@ -228,10 +234,7 @@ function getExpectedCashOutgoByDpRows(files: FileRecord[], offsetDays = 0): Cash
   return finalizeCashOutgoRows(totals);
 }
 
-function getExpectedCashOutgoByReceiptRows(
-  files: FileRecord[],
-  offsetDays = 0,
-): CashOutgoRow[] {
+function getExpectedCashOutgoByReceiptRows(files: FileRecord[], offsetDays = 0): CashOutgoRow[] {
   const totals = new Map<string, CashOutgoRow>();
 
   files.forEach((file) => {
@@ -243,6 +246,65 @@ function getExpectedCashOutgoByReceiptRows(
       if (!cashOutgoDate) return;
 
       addCashOutgoTotal(totals, cashOutgoDate, file, order);
+    });
+  });
+
+  return finalizeCashOutgoRows(totals);
+}
+
+function getExpectedCashOutgoByReceiptPendingBillRows(
+  files: FileRecord[],
+  offsetDays = 0,
+): CashOutgoRow[] {
+  const totals = new Map<string, CashOutgoRow>();
+
+  files.forEach((file) => {
+    if (isCancelledFile(file)) return;
+    fileSupplyOrders(file).forEach((order) => {
+      if (!hasFilledString(order.materialReceiptDate)) return;
+      if (hasFilledString(order.billPreparationDate)) return;
+      if (hasFilledString(order.paymentDate)) return;
+      const cashOutgoDate = addDays(order.materialReceiptDate, offsetDays);
+      if (!cashOutgoDate) return;
+
+      addCashOutgoTotal(totals, cashOutgoDate, file, order);
+    });
+  });
+
+  return finalizeCashOutgoRows(totals);
+}
+
+function getExpectedCashOutgoByBillPreparationRows(files: FileRecord[]): CashOutgoRow[] {
+  const totals = new Map<string, CashOutgoRow>();
+
+  files.forEach((file) => {
+    if (isCancelledFile(file)) return;
+    fileSupplyOrders(file).forEach((order) => {
+      if (!hasFilledString(order.materialReceiptDate)) return;
+      if (!hasFilledString(order.billPreparationDate)) return;
+      if (hasFilledString(order.paymentDate)) return;
+      const billPreparationDate = order.billPreparationDate;
+      if (!billPreparationDate) return;
+
+      addCashOutgoTotal(totals, billPreparationDate, file, order);
+    });
+  });
+
+  return finalizeCashOutgoRows(totals);
+}
+
+function getBillSentForPaymentRows(files: FileRecord[]): CashOutgoRow[] {
+  const totals = new Map<string, CashOutgoRow>();
+
+  files.forEach((file) => {
+    if (isCancelledFile(file)) return;
+    fileSupplyOrders(file).forEach((order) => {
+      if (!hasFilledString(order.billSentForPaymentDate)) return;
+      if (hasFilledString(order.paymentDate)) return;
+      const billSentForPaymentDate = order.billSentForPaymentDate;
+      if (!billSentForPaymentDate) return;
+
+      addCashOutgoTotal(totals, billSentForPaymentDate, file, order);
     });
   });
 
@@ -831,7 +893,8 @@ function isCancelledFile(file: FileRecord) {
 function isFileClosed(file: Pick<FileRecord, "completedMilestones">) {
   return Boolean(
     file.completedMilestones?.some(
-      (milestone) => normalizeMilestoneName(milestone) === normalizeMilestoneName(fileClosedMilestone),
+      (milestone) =>
+        normalizeMilestoneName(milestone) === normalizeMilestoneName(fileClosedMilestone),
     ),
   );
 }
