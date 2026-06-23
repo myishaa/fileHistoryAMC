@@ -73,6 +73,6 @@ const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => 
 
 app.use(errorHandler);
 
-app.listen(port, () => {
-  console.log(`Recordkeeper backend listening on http://localhost:${port}`);
+app.listen(port, "0.0.0.0", () => {
+  console.log(`Recordkeeper backend listening on http://0.0.0.0:${port}`);
 });
