@@ -154,7 +154,6 @@ function SettingsPage() {
   const adminSections = [
     { key: "workspace", label: "Workspace", content: <WorkspaceSettings /> },
     { key: "yearSetup", label: "Year Setup", content: <YearSetupPanel /> },
-    { key: "mmgLive", label: "MMG live", content: <MmgLiveSettings /> },
     { key: "mmgSummary", label: "MMG Summary", content: <MmgSummarySettings /> },
     { key: "divisions", label: "Divisions", content: <DivisionSettings /> },
     { key: "indentors", label: "Indentors", content: <IndentorSettings /> },
