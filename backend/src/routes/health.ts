@@ -15,7 +15,7 @@ healthRouter.get("/", async (_request, response, next) => {
 
     response.json({
       ok: true,
-      service: "recordkeeper-backend",
+      service: "filehistoryamc-backend",
       database: {
         ok: database?.ok === 1,
         time: database?.now,

@@ -1,5 +1,5 @@
 {
-  "name": "recordkeeper-backend",
+  "name": "filehistoryamc-backend",
   "private": true,
   "type": "module",
   "scripts": {

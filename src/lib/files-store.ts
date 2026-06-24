@@ -289,7 +289,7 @@ function emit() {
   listeners.forEach((l) => l());
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001").replace(
   /\/$/,
   "",
 );

@@ -15,6 +15,8 @@ export default defineConfig({
   vite: {
     server: {
       host: "localhost",
+      port: 5174,
+      strictPort: true,
       allowedHosts: ["mmgbuildup.asl.net"],
     },
   },
