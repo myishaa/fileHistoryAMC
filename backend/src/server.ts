@@ -19,7 +19,7 @@ import { HttpError } from "./utils/http.js";
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const isProduction = process.env.NODE_ENV === "production";
-const frontendOrigins = (process.env.FRONTEND_ORIGIN ?? "http://localhost:5173")
+const frontendOrigins = (process.env.FRONTEND_ORIGIN ?? "http://localhost:5174")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -46,7 +46,7 @@ app.use(express.json({ limit: "15mb" }));
 app.use(attachAuthUser);
 
 app.get("/", (_request, response) => {
-  response.json({ ok: true, service: "recordkeeper-backend" });
+  response.json({ ok: true, service: "filehistoryamc-backend" });
 });
 
 app.use("/api/health", healthRouter);
@@ -74,5 +74,5 @@ const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => 
 app.use(errorHandler);
 
 app.listen(port, "0.0.0.0", () => {
-  console.log(`Recordkeeper backend listening on http://0.0.0.0:${port}`);
+  console.log(`FilehistoryAMC backend listening on http://0.0.0.0:${port}`);
 });

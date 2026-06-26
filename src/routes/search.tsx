@@ -327,7 +327,7 @@ const printColumnGroups = [
 const allTableColumnKeys = printColumns.map((column) => column.key);
 const manualTablePresetId = "manual";
 const TABLE_FIELDS_DEFAULT_KEY_PREFIX = "ofms.searchTableDefaultFields.v2";
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001").replace(
   /\/$/,
   "",
 );
